@@ -41,6 +41,23 @@ const Arrow = ({ redo }) => (
 // fetchPreview(blocks): the owner's preview call, resolving to the server's answer.
 // previewDeps: what else redraws it (device, dark, the person previewed...).
 // metaAppend(which, token): puts a field at the end of the subject or the preview line.
+// CAMPAIGN-2 (Jonathan: "can not see the top of the screen" after clicking an image block). A block
+// is brought into view by scrolling the EMAIL PANE only: the frame's own page, and the pane around
+// the frame when the frame is taller than it. Never scrollIntoView, which scrolls every box around
+// it, the editor's shell and Steward's page included, and pushed the top bar under the header.
+export function scrollEmailTo(frame, box) {
+  if (!frame || !box) return;
+  const win = frame.contentWindow;
+  const top = box.getBoundingClientRect().top + (win ? win.scrollY : 0);   // the block's place in the email
+  if (win) win.scrollTo({ top: Math.max(0, top - win.innerHeight / 3), behavior: "smooth" });
+  let pane = frame.parentElement;
+  while (pane && !(pane.scrollHeight > pane.clientHeight && /(auto|scroll)/.test(getComputedStyle(pane).overflowY))) pane = pane.parentElement;
+  if (pane && pane.contains(frame) && !pane.hasAttribute("data-shell-pin")) {
+    const inPane = frame.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop + Math.min(top, frame.clientHeight);
+    pane.scrollTop = Math.max(0, inPane - pane.clientHeight / 3);
+  }
+}
+
 export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, readOnly, meta, metaAppend, fetchPreview, previewDeps = [], onOpenBrand, frameTestid = "email-preview-frame", narrow }) {
   const allowed = useMemo(() => blockTypes.map(t => t.key), [blockTypes]);
   const labels = useMemo(() => Object.fromEntries(blockTypes.map(t => [t.key, blockName(t.key, { [t.key]: t.label })])), [blockTypes]);
@@ -185,7 +202,7 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
       let doc = null;
       try { doc = frameRef.current && frameRef.current.contentDocument; } catch { doc = null; }
       const box = doc && doc.querySelector("[data-testid=email-block-selected]");
-      if (box && box.style.display !== "none" && box.scrollIntoView) box.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (box && box.style.display !== "none") scrollEmailTo(frameRef.current, box);
     }, 900);
     say(`${blockName(def.key)} added ${opts && opts.list ? "(a list) " : ""}${opts && opts.at != null ? "where you chose" : `under the ${b.selKey ? "selected part" : "last part"}`}. Click it to change it.`);
   };

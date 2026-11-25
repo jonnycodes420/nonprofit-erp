@@ -154,6 +154,8 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // people it would reach are that group. The Send button reads `wouldReach`
     // and is never live while `sendable` is 0, with `blocked` as its reason.
     audience: await audienceLine(orgId, aud, noun, req),
+    // CAMPAIGN-2 item 2: what a giving level means, with this org's cut points.
+    ...(seg.mode === "byTier" ? { tierSentence: await require("./campaignTiers").tierSentence(orgId) } : {}),
   });
 }));
 
@@ -196,8 +198,12 @@ async function audienceLine(orgId, aud, noun, req = null) {
   // COMMS-1: where the audience waits on Campaign emails, say where they are turned on.
   const TURN = require("./campaignTurnOn");
   const turnOn = TURN.turnOnNote({ off: groups.some(g => g.reason === "type_off"), isAdmin: TURN.isAdminReq(req) });
+  // CAMPAIGN-2 item 3: what the org is waiting on leads, over the whole audience.
+  const orgWhy = !off ? null : offReason === "demo_org" ? "nothing is sent from the demonstration organization."
+    : offReason === "not_onboarded" ? `email turns on once ${orgs} donor file is in.` : `Donor mail is off for ${orgName}.`;
+  const canReceive = require("./canReceive").canReceiveHeadline({ total, groups, orgWhy });
   return {
-    total, sendable, wouldReach, blocked, groups, noun, turnOn,
+    total, sendable, wouldReach, blocked, groups, noun, turnOn, canReceive,
     line: `${total.toLocaleString()} ${noun} \u00b7 ${sendable.toLocaleString()} can get this email${groups.length ? ": " + groups.map(g => g.sentence).join(" \u00b7 ") : ""}.`,
   };
 }
