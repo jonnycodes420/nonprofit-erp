@@ -76,7 +76,7 @@ async function read(query, orgId) {
     yours: { done: !!(o.has_logo && o.brand_primary && fiscal), parts: [
       { key: "name", label: "Name", ok: !!o.name, says: o.name },
       { key: "logo", label: "Logo", ok: !!o.has_logo, says: o.has_logo ? "Added" : "Not added yet" },
-      { key: "colours", label: "Colours", ok: !!o.brand_primary, says: o.brand_primary ? "Set" : "Not set yet" },
+      { key: "colors", label: "Colors", ok: !!o.brand_primary, says: o.brand_primary ? "Set" : "Not set yet" },
       { key: "fiscal", label: "Fiscal year", ok: fiscal, says: fiscal ? `Starts in ${MON[Number(vocab.fiscal_year_start_month) - 1]}` : "Not set yet" }] },
     people: { done: !!o.data_in_at, peopleIn, dataInAt: o.data_in_at,
       ways: {

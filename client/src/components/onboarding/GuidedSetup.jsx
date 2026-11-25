@@ -88,7 +88,7 @@ function Body({ s, onNavigate, reload }) {
   if (s.id === "yours") return <>
     {s.parts.map(p => <Part key={p.key} {...p} />)}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-      <button type="button" style={btn(true)} onClick={() => go("settings", { section: "brandkit" })}>Logo and colours →</button>
+      <button type="button" style={btn(true)} onClick={() => go("settings", { section: "brandkit" })}>Logo and colors →</button>
       <button type="button" style={btn(false)} onClick={() => go("settings", { section: "words" })}>Fiscal year →</button>
       <button type="button" style={btn(false)} onClick={() => go("settings", { section: "org" })}>Name →</button>
     </div></>;

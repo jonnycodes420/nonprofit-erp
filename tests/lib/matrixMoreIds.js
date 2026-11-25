@@ -114,6 +114,11 @@ async function seed(q, o, tag) {
   // AUCTIONS — a refund flag on this org's item.
   await ins(q, "auction_refund_flags", { id: `arf_${o}`, org_id: o, auction_id: `auc_${o}`, item_id: `aui_${o}`, stripe_payment_id: `pi_${o}`,
     amount: 10, payer_name: `${mark} Payer`, payer_email: `payer-${tag}@mx.local`, donor_id: d });
+  // ONBOARD-4 — the file this org's admin attached when booking the call (no org_id: it is
+  // the org's by its admin's email), and a "Send it to us" job.
+  await ins(q, "sales_bookings", { id: `sbk_${o}`, name: `${mark} Booker`, org_name: `${mark} Org`, email: `admin-${tag}@mx.local`,
+    file_name: `${mark}.csv`, file_type: "text/csv", file_size: 7, file_data: "\\x" + Buffer.from(mark).toString("hex") });
+  await ins(q, "onboard_concierge_jobs", { id: `ocj_${o}`, org_id: o, file_name: `${mark}.csv`, file_size: 7 });
 }
 
 // org B's id for one param. Paths are matched by prefix; a param this module
@@ -121,6 +126,7 @@ async function seed(q, o, tag) {
 function resolve(p, n, B) {
   const R = [
     [/^\/going-out\/sent\//, { id: `ams_${B}` }],
+    [/^\/onboarding\/(concierge\/booking|booking-file)\//, { id: `sbk_${B}` }],   // ONBOARD-4: org B's booking file
     [/^\/going-out\/held\//, { id: `mblk_${B}` }],
     [/^\/donors\/:id\/blocked-mail\/:bid/, { bid: `mblk_${B}` }],
     [/^\/donors\/:id\/emails-received\/:kind\/:ref/, { kind: "journey", ref: `mds_${B}` }],
