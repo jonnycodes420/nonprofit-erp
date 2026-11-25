@@ -78,6 +78,11 @@ export const WRITE_TO_READ = [
 // fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
 // answers "other") unless it is named here, with why no figure on any screen shows it.
 export const NO_SCREEN_READS = [
+  // ONBOARD-5: the setup page's own progress, its yearly events and the website-colors read are
+  // shown only on the setup page, which re-reads itself (Home's card reads it when Home opens).
+  { method: "POST", re: /^\/onboarding\/guided\/(at|confirm|finish)$/, why: "setup progress shows only on the setup page, which re-reads it, and on Home's card when Home opens" },
+  { method: "POST", re: /^\/onboarding\/setup\/site-colors$/, why: "reading her website's colors writes nothing" },
+  { method: "POST", re: /^\/onboarding\/setup\/events(\/remove)?$/, why: "her yearly events are listed only on the setup page's Funds step, which re-reads them" },
   // ONBOARD-4: a skip is shown only on the guided setup card, which re-reads itself; the
   // concierge map and Load run on /ops for ANOTHER org, whose people no /ops screen shows.
   { method: "POST", re: /^\/onboarding\/guided\/skip$/, why: "a skipped setup step shows only on the guided setup card, which re-reads itself" },

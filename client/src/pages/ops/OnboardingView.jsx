@@ -107,19 +107,21 @@ export default function OnboardingView({ data, error, onReload }) {
       <p style={says}>One row per customer org. The stage is the first gate not met, read from signals; nobody sets it. Days count on the stage's own clock: paper from the verbal yes, data from paper, kickoff and the first month from data in. Click a row for its checklist.</p>
       {data.rows.length === 0 ? <p style={says}>No customer org yet.</p> :
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead><tr>{["Org", "Stage", "Days", "Next action", "First charge", "MRR"].map(h => <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, opacity: 0.65, padding: "0 12px 8px 0" }}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Org", "Stage", "Setup", "Days", "Next action", "First charge", "MRR"].map(h => <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, opacity: 0.65, padding: "0 12px 8px 0" }}>{h}</th>)}</tr></thead>
           <tbody>
             {data.rows.flatMap(r => [
               <tr key={r.orgId} data-onb-row={r.orgId} data-stage={r.stage} data-red={r.red ? "1" : "0"} onClick={() => setOpen(o => (o === r.orgId ? null : r.orgId))}
                 style={{ cursor: "pointer", background: r.red ? `${BRASS}22` : "transparent" }} aria-expanded={open === r.orgId}>
                 <td style={{ ...cell, fontWeight: 700 }}>{r.name}{r.waitingOn ? <div style={{ fontWeight: 400, fontSize: 12.5, opacity: 0.75 }}>Waiting on: {r.waitingOn}</div> : null}</td>
                 <td style={cell}><Dots row={r} /><div style={{ fontSize: 12, marginTop: 3 }}>{r.title}</div></td>
+                <td style={cell} data-onb-setup="1">{!r.setup ? "Not opened" : r.setup.finishedAt ? "Finished" : r.setup.atTitle ? `Step ${r.setup.atN} of 10 · ${r.setup.atTitle}` : "Opened"}
+                  {r.setup && r.setup.skipped.length ? <div style={{ fontSize: 12, opacity: 0.75 }}>Skipped: {r.setup.skipped.join(", ")}</div> : null}</td>
                 <td style={cell} data-onb-days="1">{r.stage === "billing" ? "–" : r.daysInStage == null ? "–" : countLabel(r.daysInStage, "day")}</td>
                 <td style={cell} data-onb-next="1">{r.red ? <span style={{ background: `${BRASS}55`, padding: "1px 6px", borderRadius: 6, fontWeight: 700, marginRight: 6 }}>late</span> : null}{r.next}</td>
                 <td style={cell}>{r.firstChargeOn ? dayWords(r.firstChargeOn) : "–"}</td>
                 <td style={cell}>{r.stage === "billing" ? usd(r.mrrNowCents) : r.mrrAgreedCents ? `${usd(r.mrrAgreedCents)} agreed` : "–"}</td>
               </tr>,
-              open === r.orgId ? <tr key={r.orgId + ":d"}><td colSpan={6} style={{ padding: 0 }}><Detail orgId={r.orgId} onSaved={onReload} /></td></tr> : null,
+              open === r.orgId ? <tr key={r.orgId + ":d"}><td colSpan={7} style={{ padding: 0 }}><Detail orgId={r.orgId} onSaved={onReload} /></td></tr> : null,
             ])}
           </tbody>
         </table>}

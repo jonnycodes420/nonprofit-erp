@@ -64,6 +64,7 @@ async function shape(query, orgId, donors, q) {
     `SELECT h.id, h.name, d.id AS person_id, d.name AS person_name FROM households h
        JOIN donors d ON d.household_id = h.id AND d.org_id = h.org_id AND d.deleted_at IS NULL AND d.erased_at IS NULL
       WHERE h.org_id = ? AND h.id = ANY(?::text[]) ORDER BY h.id, (d.id = h.primary_donor_id) DESC, d.total_giving DESC NULLS LAST, d.id`, [orgId, hhIds]) : [];
+  const pattern = hhIds.length ? ((await query(`SELECT addressee_pattern FROM orgs WHERE id = ?`, [orgId]).catch(() => []))[0] || {}).addressee_pattern || null : null;
   const nameOf = new Map(), peopleOf = new Map();
   for (const r of hh) { nameOf.set(r.id, r.name); (peopleOf.get(r.id) || peopleOf.set(r.id, []).get(r.id)).push(r.person_name); }
   const inRows = new Map();
@@ -74,7 +75,7 @@ async function shape(query, orgId, donors, q) {
     // the primary person first, then the household's own order
     const here = new Set((inRows.get(d.household_id) || []).filter(x => addrKey(x) === addrKey(d)).map(x => x.name));
     const names = (peopleOf.get(d.household_id) || []).filter(n => here.has(n));
-    return HG.addresseeOf(names.length ? names : [d.name]);
+    return HG.addresseeOf(names.length ? names : [d.name], pattern);
   };
   if (String(q.collapse || "") === "household") {
     const seen = new Set();
