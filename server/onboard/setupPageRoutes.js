@@ -27,6 +27,10 @@ const crypto = require("crypto");
 const GUIDED = require("./guided");
 const DATA = require("./setupData");
 
+// "You're set"'s people in and lifetime giving open their rows through this source. It joins
+// figureSources.js's SOURCES here, at boot, because that file is at its size cap (ARCH-1).
+Object.assign(require("../../figureSources").SOURCES, require("./setupSources")());
+
 function mount(app, ctx) {
   const { query, run, wrap, requireAuth, requireAdmin, checkWriteAccess, actor } = ctx;
   const who = req => (actor ? actor(req) : { id: req.user.userId, name: String(req.user.name || req.user.email || "user").slice(0, 120) });
@@ -111,7 +115,7 @@ function mount(app, ctx) {
     const w = who(req);
     await run(`INSERT INTO org_yearly_events (id, org_id, name, month, letters_month, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)`,
       [id, req.user.orgId, name, month, letters, w.id, w.name]);
-    if (req.audit) req.audit.entity("org_yearly_event", id, name);
+    if (req.audit) req.audit.entity("yearly_event", id, name);
     res.status(201).json({ ok: true, id, ...(await DATA.funds(query, req.user.orgId)) });
   }));
 

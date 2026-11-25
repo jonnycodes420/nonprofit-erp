@@ -168,11 +168,10 @@ async function assignOwners({ query, run }, orgId, rule, who) {
   else {
     const DS = require("../../donorStatus");
     const cuts = await DS.cutsFor(orgId);
-    // The Major tag's own rule (shared/numbers/tags.js): giving in the last 12 months at or above the cut.
-    const today = await DS.todayFor(orgId);
-    where += ` AND id IN (SELECT g.donor_id FROM gifts g WHERE g.org_id = ? AND ${MONEY("g")} AND g.date > (?::date - INTERVAL '12 months')
-                          GROUP BY g.donor_id HAVING ROUND(SUM(g.amount) * 100) >= ?)`;
-    args.push(orgId, today, Number(cuts.majorCents));
+    // The Major tag's own condition, the one the Donors list's Giving level: Major filter uses.
+    const tag = DS.tagCondition("major", orgId, await DS.todayFor(orgId), cuts);
+    where += ` AND ${tag.sql}`;
+    args.push(...tag.args);
   }
   const r = pendingInvite
     ? await run(`UPDATE donors SET assigned_to = NULL, assigned_to_name = NULL, pending_assignee_invite_id = ?, pending_assignee_name = ?, updated_at = NOW() WHERE ${where}`,
