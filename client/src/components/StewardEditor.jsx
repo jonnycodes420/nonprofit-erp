@@ -21,6 +21,20 @@
 // Below 900 px the rails are sheets opened from the top bar and the preview
 // fills the screen. The shell owns none of the item's state: each editor
 // passes its sections, its preview and its actions, and keeps its own saves.
+//
+// BUILDER-1 · THE BUILDER LAYOUT (layout="builder"), every email from 24 Nov,
+// on Jonathan's word (mockup D). The same shell, laid out as an email builder:
+//
+//   Top bar     white, with the same parts (Back, name and badge, Desktop /
+//               Phone, the editor's tools such as Preview as and Undo / Redo,
+//               the quiet actions, ONE emerald primary).
+//   Path line   where the selection sits ("Email › Body › Image").
+//   Left pane   what can be added: the editor's tabs (Elements, Blocks, Fields).
+//   Canvas      the thing itself on cream, typed in and clicked to select.
+//   Right pane  settings for what is selected, or for the whole thing.
+//
+// Below 900 px both panes are sheets, as the rails are. Pages keep the rails
+// layout for now; a page editor moves to the builder by passing layout too.
 import { useState, useEffect, useRef } from "react";
 import { T } from "./shared";
 import { apiFetch } from "../api";
@@ -130,7 +144,10 @@ function Sheet({ title, onClose, side = "left", children, testid }) {
 // primary:   { label, onClick, disabled, reason, testid } the one action
 // left:      the rail's sections (RailSection elements)
 // right:     the right rail's contents, or null
-export default function StewardEditor({
+export default function StewardEditor(props) {
+  return props.layout === "builder" ? <BuilderLayout {...props} /> : <RailsLayout {...props} />;
+}
+function RailsLayout({
   testid = "steward-editor", kind, back, name, badge, devices = ["phone", "desktop"], device, onDevice,
   toggles = [], status, actions = [], primary, notice, left, leftTitle = "Settings", right, rightTitle = "Status",
   children, fixed = true,
@@ -200,6 +217,106 @@ export default function StewardEditor({
             {right}
           </aside>
         )}
+      </div>
+      {narrow && sheet === "left" && left && <Sheet title={leftTitle} onClose={() => setSheet(null)} testid="editor-left-sheet">{left}</Sheet>}
+      {narrow && sheet === "right" && right && <Sheet title={rightTitle} side="right" onClose={() => setSheet(null)} testid="editor-right-sheet">{right}</Sheet>}
+    </div>
+  );
+}
+
+// ── BUILDER-1 · THE BUILDER LAYOUT ─────────────────────────────────────────
+// Four colours: ink words on white panes, the canvas on cream, emerald for the
+// one action and the selection, brass only for the type badge.
+const BL = { pane: T.white, line: T.bg2, canvas: T.bg, dim: T.ink3 };
+const PANE_L = 260, PANE_R = 300;
+const bQuiet = on => ({ background: on ? T.ink : T.white, color: on ? T.white : T.ink, border: "1px solid " + (on ? T.ink : T.bg3), borderRadius: 9,
+  padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" });
+const bPrimary = disabled => ({ background: T.green, color: T.white, border: "1.5px solid " + T.green, borderRadius: 9, padding: "7px 16px", fontSize: 13, fontWeight: 700,
+  cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: disabled ? 0.5 : 1 });
+export const builderQuiet = bQuiet;
+
+// leftTabs / rightTabs are not the shell's: each pane is whatever the editor
+// passes. `tools` sit after Desktop / Phone (Preview as, Undo, Redo); `crumb`
+// is the path line; `onCanvasClick` hears a click on the cream around the thing.
+function BuilderLayout({
+  testid = "steward-editor", kind, back, name, badge, devices = ["desktop", "phone"], device, onDevice,
+  toggles = [], tools = null, status, actions = [], primary, notice, crumb, left, leftTitle = "Elements", right, rightTitle = "Settings",
+  children, onCanvasClick, sheet: sheetAsk,
+}) {
+  const narrow = useNarrow();
+  const [sheet, setSheet] = useState(null);
+  // An editor may ask for a sheet to open ({ side }) or to close ({ side: null }),
+  // e.g. Settings from the path line, or the Elements sheet once a tile is added.
+  useEffect(() => { if (narrow && sheetAsk) setSheet(sheetAsk.side || null); }, [sheetAsk, narrow]);
+  const backEl = back && (
+    <button type="button" data-testid="editor-back" aria-label={back.label || "Back"} onClick={back.onClick || (() => { window.location.href = back.href; })} style={{ ...bQuiet(false), padding: "6px 11px" }}>
+      {"← "}{back.short || back.label || "Back"}
+    </button>);
+  const seg = (
+    <div role="group" aria-label="Preview width" style={{ display: "inline-flex", border: "1px solid " + T.bg3, borderRadius: 9, overflow: "hidden", background: T.white }}>
+      {!narrow && devices.map(d => (
+        <button key={d} type="button" data-testid={"editor-device-" + d} aria-pressed={device === d} onClick={() => onDevice && onDevice(d)}
+          style={{ border: 0, background: device === d ? T.ink : T.white, color: device === d ? T.white : T.ink, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+          {d === "phone" ? "Phone" : d === "desktop" ? "Desktop" : d}
+        </button>
+      ))}
+      {toggles.map(t => (
+        <button key={t.id} type="button" data-testid={"editor-toggle-" + t.id} aria-pressed={!!t.on} onClick={t.onClick}
+          style={{ border: 0, borderLeft: "1px solid " + T.bg3, background: t.on ? T.ink : T.white, color: t.on ? T.white : T.ink, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{t.label}</button>
+      ))}
+    </div>
+  );
+  const quietActions = actions.filter(Boolean).map(a => (
+    <button key={a.id} type="button" data-testid={a.testid || "editor-" + a.id} disabled={a.disabled} onClick={a.onClick}
+      style={{ ...bQuiet(!!a.active), opacity: a.disabled ? 0.5 : 1, cursor: a.disabled ? "not-allowed" : "pointer" }}>{a.label}</button>
+  ));
+  const primaryEl = primary && (
+    <button type="button" data-testid={primary.testid || "editor-primary"} data-commit onClick={primary.onClick} disabled={!!primary.disabled}
+      title={primary.disabled && primary.reason ? primary.reason : undefined} style={bPrimary(!!primary.disabled)}>{primary.label}</button>
+  );
+  const pane = (side, body) => (
+    <aside data-testid={side === "left" ? "editor-left-rail" : "editor-right-rail"} data-pane={side}
+      style={{ width: side === "left" ? PANE_L : PANE_R, flexShrink: 0, background: BL.pane, [side === "left" ? "borderRight" : "borderLeft"]: "1px solid " + BL.line,
+        overflow: "hidden", minHeight: 0, maxHeight: "100%", display: "flex", flexDirection: "column" }}>
+      {body}
+    </aside>
+  );
+  return (
+    <div data-testid={testid} data-editor-kind={kind} data-layout="builder"
+      style={{ height: "100%", flex: 1, background: BL.canvas, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", color: T.ink, minHeight: 0 }}>
+      <div data-testid="editor-topbar" style={{ display: "flex", alignItems: "center", gap: 10, padding: narrow ? "8px 12px" : "9px 16px", background: T.white, borderBottom: "1px solid " + BL.line, flexWrap: "wrap", flexShrink: 0 }}>
+        {backEl}
+        <span data-testid="editor-name" style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 19, minWidth: 0, maxWidth: narrow ? "48vw" : 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+        {badge && <span data-testid="editor-badge" style={{ fontSize: 11.5, fontWeight: 700, background: T.gold50, border: "1px solid " + T.gold, color: T.ink, borderRadius: 99, padding: "1px 10px", whiteSpace: "nowrap" }}>{badge}</span>}
+        <span style={{ flex: 1 }} />
+        {!crumb && <span data-testid="editor-status" style={{ fontSize: 12, color: BL.dim, whiteSpace: "nowrap" }}>{status}</span>}
+        {!narrow && seg}
+        {!narrow && tools}
+        {!narrow && quietActions}
+        {primaryEl}
+        {narrow && (
+          <div style={{ display: "flex", gap: 6, width: "100%", flexWrap: "wrap", alignItems: "center" }}>
+            {left && <button type="button" data-testid="editor-open-settings" onClick={() => setSheet("left")} style={bQuiet(sheet === "left")}>{leftTitle}</button>}
+            {right && <button type="button" data-testid="editor-open-status" onClick={() => setSheet("right")} style={bQuiet(sheet === "right")}>{rightTitle}</button>}
+            {toggles.length > 0 && seg}
+            {tools}
+            {quietActions}
+          </div>
+        )}
+      </div>
+      {primary && primary.disabled && primary.reason && (
+        <div data-testid="editor-primary-reason" style={{ background: T.gold50, color: T.ink, fontSize: 12.5, padding: "7px 16px", lineHeight: 1.45, borderBottom: "1px solid " + T.gold300 }}>{primary.reason}</div>
+      )}
+      {notice}
+      {crumb && <div style={{ fontSize: 12.5, color: BL.dim, padding: "7px 18px", background: T.white, borderBottom: "1px solid " + BL.line, flexShrink: 0, display: "flex", gap: 8, alignItems: "center", minHeight: 18 }}>
+        <div data-testid="editor-crumb" style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, minWidth: 0 }}>{crumb}</div>
+        <span data-testid="editor-status" style={{ fontSize: 12, color: BL.dim, whiteSpace: "nowrap" }}>{status}</span>
+      </div>}
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        {left && !narrow && pane("left", left)}
+        <main data-testid="editor-canvas" onClick={e => { if (onCanvasClick && e.target === e.currentTarget) onCanvasClick(); }}
+          style={{ flex: 1, minWidth: 0, display: "flex", minHeight: 0, background: BL.canvas }}>{children}</main>
+        {right && !narrow && pane("right", right)}
       </div>
       {narrow && sheet === "left" && left && <Sheet title={leftTitle} onClose={() => setSheet(null)} testid="editor-left-sheet">{left}</Sheet>}
       {narrow && sheet === "right" && right && <Sheet title={rightTitle} side="right" onClose={() => setSheet(null)} testid="editor-right-sheet">{right}</Sheet>}

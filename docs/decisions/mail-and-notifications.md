@@ -131,8 +131,14 @@ the morning email unless the person turned on its own reminder, so no step goes 
   StewardEditor. The preview is the server's render with `editable: true` (`renderEmail`, preview mode only):
   typed fields carry `data-st-edit="<block>.<field>"` (a text block is one region, Enter makes a paragraph) and
   every field is a chip (`data-st-token`) filled for the person previewed, so typing around it keeps the field;
-  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped); "+ Field"
-  puts a chip at the caret. A locked block (the tax lines) is never marked and has no Remove. A send never
+  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped). A field
+  always lands somewhere (BUILDER-1): from the Fields tab it goes at the caret when she is typing in the selected
+  text, else at the end of the selected text block, else of the first text block, as `{{field}}` in the words
+  themselves, and a toast says where ("First name added at the end of the letter"). The Fields tab shows each
+  field's value for the person previewed (`fieldInfo` on the preview answer), or that it is empty for them. Undo
+  and Redo cover typing, settings, adding, moving and removing back to the last save; History is the saved
+  versions. A block waiting for its event, giving page or video is a box saying so in a preview (none in a send,
+  which refuses it). A locked block (the tax lines) is never marked and has no Remove. A send never
   carries any of it. A campaign keeps its own blocks (`campaigns.email_blocks`, written by PUT/POST
   `emailBlocks`), and an older HTML campaign is converted to blocks when it is opened (`htmlToBlocks`), never in
   the database. Unsaved blocks preview through `POST /email-preview`.
