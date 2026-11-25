@@ -732,6 +732,7 @@ const PARAM_EXEMPT = [
   // REDTEAM-1: params that name no row of any org, so there is no org B value to aim at.
   [/^\/mail-types\/:key/, "param is an automatic-email TYPE KEY from the fixed registry in mailTypes.js; the setting is the token's own org's row"],
   [/^\/groups\/starters\/:key$/, "param is a STARTER GROUP key from a fixed registry; preview and create act on the token's own org"],
+  [/^\/email-blocks\/ready\/:key\/use$/, "param is a READY-MADE BLOCK key from the fixed registry in shared/emailReadyBlocks.js; the copy and its photo are the token's own org's (BUILDER-2A)"],
   [/^\/atlas\/progress\/:key$/, "param is a progress key in server/atlas/progress.js, an in-memory map keyed by the token's own org and user; there is no row"],
   [/^\/capture\/:id\/settled$/, "TEST_MODE-only hook that awaits an in-memory promise and returns no row; 404 for every id in production"],
 ];
