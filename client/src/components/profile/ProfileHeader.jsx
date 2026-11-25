@@ -18,6 +18,7 @@ import { MarkDeceasedModal, UndoDeceasedModal, DeceasedBanner } from "./Deceased
 import { useVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerStatus";   // RULES-1 item 7
 import { CallScriptModal, ImpactSummaryModal, ExportDoneModal, openJourneyPicker, downloadPersonData } from "./MoreActions";   // ATLAS-3, ATLAS-4
 import { MergedFromBanner } from "./MergedFromBanner";   // HOUSEHOLD-1 item 5
+import { useDonorSince } from "./donorSince";   // PROFILE-4
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -89,7 +90,8 @@ function MoreMenu({groups,onPick,onClose}){
   );
 }
 
-function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen}){
+function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen,noGifts}){
+  const since=useDonorSince(donor.id,noGifts);   // PROFILE-4: the quiet line under the name
   const volSt=useVolunteerStatus(donor.id);   // RULES-1 item 7: shared with the role line's Mark as former
   const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
   const [moreOpen,setMoreOpen]=useState(null);   // ATLAS-3: "call" or "impact"
@@ -97,24 +99,33 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
   const exportData=async()=>{ try{ setExported(await downloadPersonData(donor)); }catch(e){ setExported({error:e?.message||"The export did not download. Try again."}); } };
   return <>
         <MergedFromBanner donor={donor} isReadOnly={isReadOnly} onDone={onRecordChanged}/>{/* HOUSEHOLD-1 item 5 */}
-        <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"16px 0 0",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:20,rowGap:0,alignItems:"start"}}>
-          <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:16}}>
-            <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"6px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>← Donors</button>
+        {/* PROFILE-4 · A SHORT HEADER. Back on its own small line; then one row:
+            the face (44px), the name in the display face at 26px with its tags
+            beside it, and the actions on the right, all top-aligned (a photo or
+            wrapped tags never move the name). One quiet line under the
+            name (Donor since, the contact bits), then the numbers strip. Less
+            than half the old height (Jonathan, 24 Nov: "cut that white window
+            in half"), and it scrolls away with the page; only the tabs stick. */}
+        <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"10px 0 0",display:"grid",gridTemplateColumns:"44px minmax(0,1fr) auto",columnGap:14,rowGap:0,alignItems:"center"}}>
+          <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:6}}>
+            <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"1px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:22}}>← Donors</button>
           </div>
-          <div className="dph-avatar" data-testid="dp-avatar" style={{gridColumn:1,gridRow:"2 / span 3",alignSelf:"start"}}>
-            <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl} size={72}/>
+          {/* PROFILE-4: the face, the name with its tags, and the actions are one
+              wrapping row: the name stays on one line and the actions drop under
+              it only when they cannot fit beside it. At 390 the row is
+              display:contents, so the phone's grid order is unchanged. */}
+          <div className="dph-row" data-testid="dp-head-row" style={{gridColumn:"1 / -1",gridRow:2,display:"flex",flexWrap:"wrap",alignItems:"flex-start",columnGap:14,rowGap:8,minWidth:0}}>
+          <div className="dph-avatar" data-testid="dp-avatar" style={{gridColumn:1,gridRow:2,alignSelf:"start",width:44,flex:"none"}}>
+            <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl} size={44}/>
           </div>
-          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:2,gridRow:2,minWidth:0,alignSelf:"center",minHeight:44,display:"flex",alignItems:"center"}}>   {/* PROFILE-3: the name's row is the actions' row */}
-            <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,fontSize:38,fontWeight:400,color:T.ink,letterSpacing:"-0.015em",
-              fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.08,overflowWrap:"break-word"}}>{headName||"\u00a0"}</h1>
+          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:2,gridRow:2,minWidth:0,flex:"1 1 160px",alignSelf:"start",display:"flex",alignItems:"center",flexWrap:"wrap",columnGap:12,rowGap:0}}>   {/* PROFILE-4: the name and its tags share the actions' row */}
+            <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,padding:"5px 0 1px",fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
+              fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.15,overflowWrap:"break-word",minWidth:0}}>{headName||"\u00a0"}</h1>
+            {headTags.length>0&&<div className="dph-tags" data-testid="dp-head-tags" style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              {headTags[0]&&<div className="dph-tag1" data-testid="dp-head-tag-1" style={{whiteSpace:"nowrap"}}>{headTags[0]}</div>}
+              {headTags[1]&&<div className="dph-tag2" data-testid="dp-head-tag-2" style={{whiteSpace:"nowrap"}}>{headTags[1]}</div>}
+            </div>}
           </div>
-          {/* PROFILE-3: the name, the tags and the contact line start on one edge. */}
-          {headTags.length>0&&<div className="dph-tags" data-testid="dp-head-tags" style={{gridColumn:"2 / -1",gridRow:3,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:8}}>
-            {headTags[0]&&<div className="dph-tag1" data-testid="dp-head-tag-1" style={{whiteSpace:"nowrap"}}>{headTags[0]}</div>}
-            {headTags[1]&&<div className="dph-tag2" data-testid="dp-head-tag-2" style={{whiteSpace:"nowrap"}}>{headTags[1]}</div>}
-          </div>}
-          <ContactLine donor={donor} isReadOnly={isReadOnly} onAdd={onEdit}/>
-          <DeceasedBanner donor={donor}/>
           {/* PROFILE-1 — THREE BUTTONS AND A MENU, AT EVERY WIDTH. The header
               carried five actions across the top of the record, which is four
               more than anybody presses in a row; at 390 the overflow already
@@ -124,7 +135,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
               BUTTON with a menu, never a link, because it does something on
               this page rather than going somewhere. Everything that was in the
               row is in the menu, so nothing was dropped. */}
-          <div className="dph-actions" data-testid="dp-actions" style={{gridColumn:3,gridRow:2,alignSelf:"center",display:"flex",gap:8,flexShrink:0,alignItems:"center",position:"relative",flexWrap:"nowrap",justifyContent:"flex-end"}}>
+          <div className="dph-actions" data-testid="dp-actions" style={{gridColumn:3,gridRow:2,alignSelf:"start",marginLeft:"auto",display:"flex",gap:8,flexShrink:0,alignItems:"center",position:"relative",flexWrap:"nowrap",justifyContent:"flex-end"}}>
             {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
                 buttons in two different colours (a brass "Log a conversation" and
                 an emerald "Request Gift"), so nothing on it was the obvious thing
@@ -307,6 +318,9 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
             {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}} openStep={dpThread&&dpThread.kind==="thread"?{id:dpThread.id,label:(dpThread.nextStep||{}).label||"",due:String((dpThread.nextStep||{}).due||"").slice(0,10)}:null}
               onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
           </div>
+          </div>{/* /dph-row */}
+          <ContactLine donor={donor} isReadOnly={isReadOnly} onAdd={onEdit} since={since}/>
+          <DeceasedBanner donor={donor}/>
       </div>
   </>;
 }
