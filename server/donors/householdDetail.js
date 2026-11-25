@@ -42,6 +42,8 @@ async function detail(query, orgId, view, { org, today, photoUrl }) {
     HG.byYear(query, orgId, view.id, org, today),
     require("../tasks/nextStep").nextStepsFor(query, orgId, ids, today),
   ]);
+  // ONBOARD-5: how this org addresses a couple (null: "Debbie and Jeff Vogel").
+  const pattern = ((await query(`SELECT addressee_pattern FROM orgs WHERE id = ?`, [orgId]).catch(() => []))[0] || {}).addressee_pattern || null;
   const byId = new Map(people.map(p => [p.id, p]));
   const sharers = p => String(p.address || "").trim() ? people.filter(q => q.id !== p.id && sameAddress(p, q)) : [];
   const lead = byId.get(view.primary_donor_id) || byId.get(ids[0]);
@@ -64,10 +66,10 @@ async function detail(query, orgId, view, { org, today, photoUrl }) {
       preferences: PREFS.filter(([k]) => p[k] === true || p[k] === 1).map(([, w]) => w),
       sameAddressAs: sharers(p).map(q => q.id),
       // CONTACT-1: the envelope to this address names only the people who live there, this person first.
-      addresseeHere: sharers(p).length ? HG.addresseeOf([p.name, ...sharers(p).map(q => q.name)]) : null,
+      addresseeHere: sharers(p).length ? HG.addresseeOf([p.name, ...sharers(p).map(q => q.name)], pattern) : null,
     })),
     // the primary person first, as the export's Addressee
-    addressee: HG.addresseeOf([...ids].sort((x, y) => (y === view.primary_donor_id) - (x === view.primary_donor_id)).map(nameOf)),
+    addressee: HG.addresseeOf([...ids].sort((x, y) => (y === view.primary_donor_id) - (x === view.primary_donor_id)).map(nameOf), pattern),
   };
 }
 

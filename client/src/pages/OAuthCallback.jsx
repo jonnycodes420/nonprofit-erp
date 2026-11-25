@@ -26,6 +26,15 @@ import { apiFetch } from "../api";
 // before any tab is mounted), so it takes the public pages' tokens rather than
 // hand-copying a palette — which is the exact drift publicTheme.js exists to
 // stop, and which the brand guard catches within a minute of trying.
+
+// ONBOARD-5: a connection started on the setup page comes back to that page, once.
+function setupReturn() {
+  try {
+    const v = sessionStorage.getItem("steward.setup.return");
+    sessionStorage.removeItem("steward.setup.return");
+    return v && v.startsWith("/onboard/setup") ? v : null;
+  } catch { return null; }
+}
 import { T } from "./publicTheme";
 // SALES-1: the sales mailbox's own consent marks its state's nonce ("sales.").
 // The state is base64url of "org\0user\0nonce" (shared/oauth.js encodeState);
@@ -91,7 +100,7 @@ export default function OAuthCallback() {
           // FIX-33: a mailbox lands straight on Settings > Connections, where
           // the card shows "Connected as ..." with its first read.
           if (provider === "google" || provider === "microsoft")
-            setTimeout(() => nav(`/dashboard?tab=settings&sub=connections#inbox`, { replace: true }), 1200);
+            setTimeout(() => nav(setupReturn() || `/dashboard?tab=settings&sub=connections#inbox`, { replace: true }), 1200);
         }
       })
       .catch(e => setState({ phase: "failed",
@@ -110,7 +119,7 @@ export default function OAuthCallback() {
 
   // Everything lands on Connections (FIX-13 Part 5: the one page); a
   // mailbox lands on its own card, open.
-  const back = () => nav(`/dashboard?tab=settings&sub=connections${provider === "google" || provider === "microsoft" ? "#inbox" : ""}`, { replace: true });
+  const back = () => nav(setupReturn() || `/dashboard?tab=settings&sub=connections${provider === "google" || provider === "microsoft" ? "#inbox" : ""}`, { replace: true });
   useEffect(() => {
     if (state.phase !== "done") return;
     const t = setTimeout(back, 2200);

@@ -21,7 +21,13 @@ function mount(app, { query, run, wrap, opsOnly, opsLimiter }) {
   // ONBOARD-4: the Stuck column and "Send it to us", above /ops/onboarding/:orgId so their paths are theirs.
   require("./opsConciergeRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   app.get("/ops/onboarding", opsLimiter, opsOnly, wrap(async (req, res) => {
-    try { res.json({ ok: true, ...(await BOARD.board(query)) }); }
+    try {
+      const b = await BOARD.board(query);
+      // ONBOARD-5: which setup page each org is on, and which it skipped.
+      const prog = await require("./guided").progressFor(query, (b.rows || []).map(r => r.orgId));
+      for (const r of b.rows || []) r.setup = prog[r.orgId] || null;
+      res.json({ ok: true, ...b });
+    }
     catch (e) { console.warn(`[ops] onboarding could not be read: ${e.message}`); res.json({ ok: false, error: "The onboarding board could not be read. Try again in a minute." }); }
   }));
 
