@@ -459,7 +459,7 @@ async function emailEditorEverywhere(browser) {
     const n = idx.length;
     const unselected = [];
     for (const i of idx) {
-      const type = await page.evaluate(k => { const d = document.querySelector('[data-testid="email-preview-frame"]').contentDocument; const r = d.querySelector(`tr[data-st-block="${k}"]`); if (!r) return null; r.querySelector("td").click(); return r.getAttribute("data-st-type"); }, i).catch(() => null);
+      const type = await page.evaluate(k => { const d = document.querySelector('[data-testid="email-preview-frame"]').contentDocument; const r = d.querySelector(`tr[data-st-block="${k}"]`); if (!r) return null; r.querySelector("td").click(); const top = String(k).split(".")[0]; return top === String(k) ? r.getAttribute("data-st-type") : d.querySelector(`tr[data-st-block="${top}"]`).getAttribute("data-st-type"); }, i).catch(() => null);   // BUILDER-2B: a row inside a Box ("10.children.0") selects its Box
       const shown = await page.waitForFunction(ty => (document.querySelector('[data-testid="rail-block"]') || {}).dataset?.blockType === ty, type, { timeout: 4000 }).then(() => true).catch(() => false);
       if (!shown) unselected.push(`${i}:${type}`);
     }

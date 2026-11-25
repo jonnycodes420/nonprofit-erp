@@ -19,6 +19,7 @@ import { errorMessage } from "../lib/domainError";
 // EDITOR-1: every email opens in the one editor (EmailEditor.jsx, on StewardEditor).
 import { EmailEditor, EMAILED_LETTERS } from "./EmailEditor";
 import { retryImport } from "../lib/lazyRetry";
+import { SOCIAL_NETWORKS } from "../../../shared/socialNetworks.js";   // BUILDER-2B: Brand's social links
 import DupeName from "./DupeName";   // POLISH-8: two templates of one name say which is which
 const TPL_DUPE = { madeOf: c => c.designed && (c.designed.createdAt || c.designed.created_at), statusOf: c => c.designed ? "yours" : "Steward's starter" };
 
@@ -245,7 +246,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
       {err && <div style={problemBox}>{err}</div>}
 
       {tab === "brand" && (LazyBrandPanel
-        ? <Suspense fallback={<Spin />}><LazyBrandPanel onChanged={load} /></Suspense>
+        ? <Suspense fallback={<Spin />}><LazyBrandPanel onChanged={load} socialNetworks={SOCIAL_NETWORKS} /></Suspense>
         : <div style={card}>Your brand (logo, colors and type) is set on your donor page settings, and every email reads it when it is shown or sent.</div>)}
       {tab === "media" && (LazyMediaLibrary
         ? <Suspense fallback={<Spin />}><LazyMediaLibrary /></Suspense>
