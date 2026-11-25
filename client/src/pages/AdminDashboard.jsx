@@ -10,7 +10,8 @@ import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
 import AdminOpsNav from "./ops/AdminOpsNav";
 import StartLinkPanel from "../components/admin/StartLinkPanel";   // ONBOARD-1
-import OrgMenuPanel from "../components/admin/OrgMenuPanel";   // NAV-1 (menu): an org's sidebar and Major Gifts tabs
+import OrgMenuPanel from "../components/admin/OrgMenuPanel";
+import BackgroundWorkSwitch from "../components/admin/BackgroundWorkSwitch";   // BGWORK-1   // NAV-1 (menu): an org's sidebar and Major Gifts tabs
 import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
@@ -743,6 +744,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
               </select>
               {kindNote && <span style={{ fontSize: 11, color: A.muted }}>{kindNote}</span>}
             </div>
+            <BackgroundWorkSwitch org={org} adminFetch={adminFetch} A={A} />
             {org.kind_reason && <div style={{ fontSize: 11, color: A.muted, marginBottom: 6 }}>Why: {org.kind_reason}</div>}
             <div style={{ fontSize: 12, color: A.muted }}>Created {fmtDate(org.created_at)}</div>
           </div>

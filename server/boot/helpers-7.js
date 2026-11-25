@@ -656,17 +656,11 @@ async function checkPlanLimit(org, dimension) {
 // Refreshed after every mail read and on the 15-minute tick. A stale
 // connection is also one ERROR line, which is what puts it in the daily
 // error digest (HARDEN-1's error-digest.yml reads the Railway error lines).
+// BGWORK-1: live orgs only, the same set the mail read runs for (server/mail/staleMailboxes.js).
 async function refreshMailboxSyncHealth({ log = false } = {}) {
-  const rows = await query(
-    `SELECT m.id, m.provider, m.status, m.created_at,
-            (SELECT MAX(r.finished_at) FROM mailbox_sync_runs r
-              WHERE r.user_id = m.user_id AND r.provider = m.provider AND r.kind = 'mail' AND r.ok) AS last_ok
-       FROM mailbox_connections m
-      WHERE m.status IN ('active','error') AND m.paused IS NOT TRUE AND m.credentials_sealed IS NOT NULL`).catch(() => null);
-  if (!rows) return mailboxSyncHealth;
-  const now = Date.now();
-  const stale = rows.filter(r => r.status === "error"
-    || (r.last_ok ? now - new Date(r.last_ok).getTime() > SYNC_STALE_MS : now - new Date(r.created_at).getTime() > SYNC_STALE_MS));
+  const got = await require("../mail/staleMailboxes").staleMailboxes(query, { staleMs: SYNC_STALE_MS }).catch(() => null);
+  if (!got) return mailboxSyncHealth;
+  const { rows, stale } = got;
   if (log) for (const r of stale)
     console.error(`[mailbox-stale] ${r.provider} connection ${r.id} has not read successfully since ${r.last_ok ? new Date(r.last_ok).toISOString() : "it was connected"}${r.status === "error" ? " (permission refused)" : ""}`);
   // FIX-47: each stale connection by provider and when it last read, so the
