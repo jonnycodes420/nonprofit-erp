@@ -59,6 +59,10 @@ async function leg({ ok, F, base, api, tok }) {
     await api("POST", "/atlas", tok, { text: "Tell me about Walter", source: "typed" });
     await page.goto(APP + "/app/home", { waitUntil: "networkidle", timeout: 45000 });
     await page.click('[data-testid="sidebar-tell-steward"]');
+    // ATLAS-11 item 4: Atlas reopens on her conversation ("Tell me about Walter" above); Start over gives the empty box.
+    const so = await page.waitForSelector('[data-testid="atlas-start-over"]', { timeout: 15000 }).catch(() => null);
+    ok("§3 ATLAS-11 Atlas reopens on her last ask, with Start over", !!so);
+    if (so) await so.click();
     const box = await page.waitForSelector('[data-testid="tell-text"]');
     const ph = await box.getAttribute("placeholder");
     ok("§3 the textbox opens empty", (await box.inputValue()) === "", await box.inputValue());

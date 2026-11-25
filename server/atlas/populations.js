@@ -49,12 +49,16 @@ const day = d => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) ? `${MON[Number(d.
 async function populationAnswer(key, { get, query, orgId }) {
   const P = populationOf(key);
   if (!P) return null;
-  let people = [];
+  let people = [], units = null, atStakeCents = null;
   if (P.report) {
     const r = await get(`/reports/${P.report}`);
     if (r.status >= 300 || !r.body || !Array.isArray(r.body.rows)) return { line: `I couldn't read the ${P.word} report just now. Reports > ${P.word} has it. ${P.definition}` };
     people = r.body.rows.map(x => ({ donorId: x.id, name: x.name, cents: Math.round((Number(x.priorYearTotal) || 0) * 100), lifetimeCents: Math.round((Number(x.lifetimeGiving) || 0) * 100) }));
     people.sort((a, b) => b.cents - a.cents || String(a.donorId).localeCompare(String(b.donorId)));
+    // ATLAS-11 item 2: the report's own households (buntUnits) and dollars (its atStake figure), never summed here.
+    units = Array.isArray(r.body.units) ? r.body.units.length : null;
+    const st = r.body.figures && r.body.figures.atStake;
+    atStakeCents = st && st.cents != null ? Number(st.cents) : st && st.value != null ? Math.round(Number(st.value) * 100) : null;
   } else {
     const GR = require("../../groups");
     const df = await GR.buildDonorFilter(orgId, P.rules);
@@ -75,10 +79,14 @@ async function populationAnswer(key, { get, query, orgId }) {
     return { donorId: p.donorId, name: p.name, amount, lifetime, reason: `${amount}; ${lifetime}` };
   });
   const are = count === 1 ? "person is" : "people are";
+  // ATLAS-11 item 2: count, households and dollars, as Reports > LYBUNT says them.
+  const hh = units != null ? `, in ${units.toLocaleString("en-US")} ${units === 1 ? "household" : "households"}` : "";
+  const gave = atStakeCents != null ? `. Together they gave ${usd(atStakeCents)} ${key === "lybunt" ? "last fiscal year" : "in the last year each of them gave"}` : "";
   return {
-    line: `${count.toLocaleString("en-US")} ${are} ${P.word}${P.report ? ", the same list as Reports > " + P.word : ""}. ${P.definition}`,
+    line: `${count.toLocaleString("en-US")} ${are} ${P.word}${hh}${gave}${P.report ? ". The same list as Reports > " + P.word : ""}. ${P.definition}`,
     answer: { type: "list", question: P.word, count, unit: "people", ids: people.map(p => p.donorId), reason: P.definition.replace(/^[^:]+:\s*/, "").replace(/\.$/, ""),
-      more: Math.max(0, count - shown.length), people: shown, countSentence: `${count.toLocaleString("en-US")} ${count === 1 ? "person matches" : "people match"}.`, population: key },
+      more: Math.max(0, count - shown.length), people: shown, countSentence: `${count.toLocaleString("en-US")} ${count === 1 ? "person matches" : "people match"}.`, population: key,
+      ...(units != null ? { households: units } : {}), ...(atStakeCents != null ? { totalCents: atStakeCents } : {}) },
   };
 }
 

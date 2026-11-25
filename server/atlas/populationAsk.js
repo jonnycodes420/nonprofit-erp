@@ -53,6 +53,10 @@ const FILL = new Set(("how many who whos which what whats is are was were be bee
   "currently now today right there got show me list count number total totals in so far yet still already tell about see find get let know " +
   "please would like to can could us a an count gone become became considered counted as some just exactly here " +
   "anyone anybody somebody someone").split(/\s+/));
+// ATLAS-11 item 2 (Jarvis: "cannot give LYBUNT dollars"): the money words of a count question. A
+// population answer always says its dollars, so "LYBUNT dollars" and "how much did they give" are it too.
+const MONEY_FILL = new Set(("and how much many did do does they them their give gave given giving dollars dollar money worth value " +
+  "stake at risk total totals sum amount amounts raise raised households household families family last year's").split(/\s+/));
 const CALL_FILL = new Set("should shall must call calls calling ring phone reach out contact first next tomorrow week this today start with among from back win winback bring get reengage re engage reactivate try ought i who whom to".split(/\s+/));
 
 function norm(text) {
@@ -79,8 +83,9 @@ function readPopulation(text) {
   if (hit.has("lybunt") && hit.has("lapsed")) hit.delete("lapsed");
   const fiscal = FISCAL.test(t);
   rest = rest.replace(new RegExp(FISCAL.source, "g"), " ").replace(new RegExp(CALL.source, "g"), " ");
+  const withMoney = [...hit].every(id => id === "lybunt" || id === "sybunt");   // the reports that carry the dollars
   const left = rest.split(/\s+/).map(w => w.replace(/^'+|'+$/g, "").replace(/'s$/, "")).filter(Boolean)
-    .filter(w => !FILL.has(w) && !(call && CALL_FILL.has(w)));
+    .filter(w => !FILL.has(w) && !(call && CALL_FILL.has(w)) && !(!call && withMoney && MONEY_FILL.has(w)));
   if (left.length) return null;
   let ids = [...hit];
   let ambiguous = false;

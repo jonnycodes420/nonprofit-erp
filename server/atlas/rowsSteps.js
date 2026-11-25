@@ -34,18 +34,23 @@ async function run(st, { log, save, get, query, orgId, parse }) {
     const prior = await WR.lastAnswer(query, orgId, st.follows, parse);
     // ATLAS-10 item 1: "Tell me more" after a person's brief shows more (every open item, more
     // conversations), never "that's everything" while the brief was holding lines back.
-    if (st.mode === "more" && prior && prior.type === "person" && prior.donorId && !prior.more) {
+    // ATLAS-11 item 3: a lifetime answer about one person ("Margaret's total") goes on the same way.
+    const morePerson = prior && ((prior.type === "person" && !prior.more) || (prior.type === "giving_total" && (prior.donorIds || []).length === 1));
+    if (st.mode === "more" && morePerson) {
+      const pid = prior.donorId || prior.donorIds[0];
       const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
       const OT = require("../../orgTime");
-      const pa = await require("./answers").personAnswer({ query, orgId, donorId: prior.donorId, today: OT.orgToday(o || {}), more: true });   // ORG_TZ_SEAM_OK
+      const pa = await require("./answers").personAnswer({ query, orgId, donorId: pid, today: OT.orgToday(o || {}), more: true });   // ORG_TZ_SEAM_OK
       // ATLAS-10 follow-up (staging re-check, Rufus Tallgrass): two gifts of $25 on one day are two
       // lines with the same words, so what the brief showed is counted line by line, never as a set.
+      // ATLAS-11 item 3: only what the first answer didn't say is drawn (the brief is still above it).
       const shownBefore = new Map();
       for (const f of prior.facts || []) shownBefore.set(f.line, (shownBefore.get(f.line) || 0) + 1);
-      const added = pa ? pa.facts.filter(f => { const n = shownBefore.get(f.line) || 0; if (n) { shownBefore.set(f.line, n - 1); return false; } return true; }).length : 0;
-      if (pa && added) out = { line: pa.spoke, answer: { type: "person", ...pa }, link: { tab: "donor", donorId: prior.donorId } };
-      else if (pa) out = { line: `That brief was everything Steward holds on ${pa.name}: nothing in it was held back. Their record has the full timeline.`, link: { tab: "donor", donorId: prior.donorId, section: "timeline" } };
+      const added = pa ? pa.facts.filter(f => { if (prior.type === "giving_total" && f.kind === "giving") return false; const n = shownBefore.get(f.line) || 0; if (n) { shownBefore.set(f.line, n - 1); return false; } return true; }) : [];
+      if (pa && added.length) out = { line: `Here's more on ${pa.name}, beyond what I just said.`, answer: { type: "person", ...pa, facts: added }, link: { tab: "donor", donorId: pid } };
+      else if (pa) out = { line: `That brief was everything Steward holds on ${pa.name}: nothing in it was held back. Their record has the full timeline.`, link: { tab: "donor", donorId: pid, section: "timeline" } };
     }
+    if (!out && st.mode === "more") out = await require("./moreRows").moreRows(prior, { query, orgId });   // ATLAS-11 item 3: the rows behind a number, the next of a list
     if (!out) out = WR.followUpLine(st.mode, prior);
   } else if (st.kind === "population") {
     out = await POP.populationAnswer(st.key, { get, query, orgId });

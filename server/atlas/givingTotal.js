@@ -23,12 +23,20 @@ const PATTERNS = [
   /\bwhat (?:did|has|have)\s+(.+?)\s+(?:give|given|gave|donate|donated)\b(?:\s+(?:in total|altogether|together|so far|overall|lifetime))?/i,
   /\b(?:total|lifetime|combined) giving (?:for|of|from)\s+(.+?)(?:[?.!]|$)/i,
   /\bhow many gifts (?:did|has|have)\s+(.+?)\s+(?:make|made|give|given|gave)\b/i,
+  // ATLAS-11 item 2 (Jarvis, 25 Nov: "only the 'Brief me on X' phrasing works for lifetime giving"):
+  // "Margaret's total", "what is Margaret's lifetime giving", "lifetime for Margaret", "Margaret Chen total".
+  /^\s*(?:what(?:'s|’s| is| was)\s+)?(.+?)['’]s?\s+(?:lifetime|total|giving)(?:\s+(?:giving|given|gifts|total))?(?:\s+so far)?\s*[?.!]*\s*$/i,
+  /^\s*(?:what(?:'s|’s| is)\s+)?(?:the\s+)?(?:lifetime|total)(?:\s+(?:giving|given|gifts))?\s+(?:for|of|from)\s+(.+?)\s*[?.!]*\s*$/i,
+  /^\s*(.+?)\s+(?:lifetime|total)(?:\s+(?:giving|given))?\s*[?.!]*\s*$/i,
 ];
+// ATLAS-11: what the new shapes must never read as a person ("this year's total", "the Annual Fund total").
+const NOT_A_PERSON = /\b(?:year|month|week|quarter|today|fund|funds|campaign|appeal|drive|event|gala|goal|lybunt|sybunt|donors?|people|giving|org|organization|organisation|our|we|us|grand|overall|monthly|annual|everyone|everybody|all)\b/i;
 function parseGivingQuestion(words) {
   const t = String(words || "").trim();
   for (const [i, re] of PATTERNS.entries()) {
     const m = t.match(re);
     if (!m) continue;
+    if (i >= 4 && (NOT_A_PERSON.test(m[1]) || !/[a-z]/i.test(m[1]) || m[1].split(/\s+/).length > 4)) continue;
     const names = splitNames(m[1]);
     if (!names.length) continue;
     return { names, count: i === 3 };
