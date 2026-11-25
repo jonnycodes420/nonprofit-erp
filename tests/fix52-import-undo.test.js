@@ -201,6 +201,9 @@ async function main() {
   ok("§3 the receipt offers Undo, for 30 days", rc.canUndo === true && rc.undoUntil && (new Date(rc.undoUntil) - testNow()) > 29 * 86400e3, JSON.stringify([rc.canUndo, rc.undoUntil]));
   const list = (await api("GET", "/imports", tok)).body.imports || [];
   ok("§3 the Imports list shows it done, reconciled", list.some(x => x.id === RUN && x.reconciled && x.state === "done"), JSON.stringify(list.map(x => [x.id, x.state, x.reconciled])));
+  // POLISH-11 item 5 (W-1119-Atlas-13): each row carries what Undo can still do, the receipt's own window.
+  const row5 = list.find(x => x.id === RUN) || {};
+  ok("§3 …and its row says until when Undo is open, the same date as the receipt", row5.canUndo === true && row5.undoUntil === rc.undoUntil, JSON.stringify([row5.canUndo, row5.undoUntil, rc.undoUntil]));
 
   // §4 stage follows role
   const st = await q(`SELECT external_donor_id AS x, stage FROM donors WHERE org_id=$1 AND created_import_id=$2`, [ORG, RUN]);

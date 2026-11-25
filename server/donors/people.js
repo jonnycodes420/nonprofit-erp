@@ -32,7 +32,7 @@ PT_READY.then(m => { PT = m; });
 // FIX-1 D — the roles a person can carry that a chip or a list may name.
 // "other" is not a role, it is the absence of one: normalizeTypes floors an
 // empty list at it, and turning any role on replaces it.
-const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
+const PEOPLE_ROLES = ["donor", "volunteer", "staff_board", "guest"];   // ATLAS-10 item 4: Guest is a role the + menu offers
 async function hasHistory(orgId, donorId) {
   const [r] = await query(
     `SELECT (EXISTS (SELECT 1 FROM interactions i WHERE i.org_id=? AND i.donor_id=? AND i.type <> ALL(?::text[])
@@ -77,6 +77,8 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
     // history yet" here, never "0, Distant", which would call a person Steward
     // knows nothing about cold.
     noHistory: !(await hasHistory(orgId, d.id)),
+    // ATLAS-10 item 3: Engagement counts touches, not gifts; the card names the last gift beside it.
+    lastGiftDate: ((await require("../../shared/numbers/lastGift").lastGifts(query, orgId, [d.id]).catch(() => new Map())).get(d.id) || {}).date || null,
     // FIX-24 2b: "the most recent touch N days ago" said for today, not for the day the scores ran.
     band: band.key, bandLabel: band.label, reason: row ? engagementMod.reasonFor(row, orgToday(await orgTz(orgId)),   // ORG_TZ_SEAM_OK
       ((await require("../../meetings").lastContactWith(orgId, d.id)) || {}).date || null) : null,   // COUNTS-1: the one Last contact
@@ -365,7 +367,7 @@ app.get("/people/:id", requireAuth, wrap(async (req, res) => {
     ? await require("../volunteers/volunteerRecord").readRecord(req.user.orgId, row.id) : null;
   res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
              volunteer_status: PT.typesOf(row).includes("volunteer")
-               ? { status: volRec ? volRec.status : "active", statusWord: volRec ? volRec.statusWord : "Active" } : null,
+               ? { status: volRec ? volRec.status : "active", statusWord: volRec ? volRec.statusWord : "Active", undoUntil: volRec ? volRec.undoUntil : null } : null,   // POLISH-11: Undo on return
              first_gift_date: row.first_gift_date || null,
              // IMPORT-4: gifts on file but none dated reads "Donor since: unknown".
              gift_count: Number(row.gift_count) || 0,
@@ -389,7 +391,13 @@ app.put("/people/:id/roles", requireAuth, checkWriteAccess, wrap(async (req, res
   // VOL-3 item 1: taking the Volunteer role off is "Mark as former". The role stays on the record,
   // so their hours and history stay with it; the status says they no longer volunteer, and Undo
   // (POST /donors/:id/volunteer-status/undo) puts back the status before it.
-  if (role === "volunteer" && !on && was.includes("volunteer")) {
+  // ATLAS-10 item 4: Remove takes a role itself off (`remove: true`). Their hours, shifts and history
+  // stay on file (nothing is deleted), and a person always keeps at least one role.
+  const remove = req.body?.remove === true && !on;
+  if (remove && was.includes(role) && !was.some(t => t !== role && t !== "other")) {
+    return res.status(409).json({ error: "last_role", sentence: `${row.name} needs at least one role. Add another before removing this one.` });
+  }
+  if (role === "volunteer" && !on && !remove && was.includes("volunteer")) {
     const VR = require("../volunteers/volunteerRecord");
     const out = await VR.setStatus(req.user.orgId, row.id, "former", actor(req));
     if (req.audit) { req.audit.action("marked a volunteer former"); req.audit.entity("donor", row.id, row.name); }
@@ -407,7 +415,7 @@ app.put("/people/:id/roles", requireAuth, checkWriteAccess, wrap(async (req, res
     // Who changed it, in the audit log (the row has no updated_by).
     writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "person_roles", row.id, { from: was, to: next });
     // BUILD-94 Part 3 — ADDED AS VOLUNTEER is a trigger, on the transition only.
-    if (!was.includes("volunteer") && next.includes("volunteer")) {
+    if (!was.includes("volunteer") && next.includes("volunteer") && req.body?.undo !== true) {   // ATLAS-10: an Undo of Remove is not a new volunteer
       enrollInSequences(req.user.orgId, row.id, "added_volunteer", {}, actor(req))
         .catch(e => console.error("[seq] volunteer trigger:", e.message));
     }

@@ -207,6 +207,12 @@ async function person(name) {
   ok("§5 a typed-not-picked campaign is refused, not dropped: \"No campaign called 'Spring'. Create it?\"",
     typed.status === 400 && typed.body.code === "campaign_not_found" && typed.body.error === "No campaign called 'Spring'. Create it?" && afterG3 === beforeG3,
     { s: typed.status, b: typed.body, beforeG3, afterG3 });
+  // POLISH-11 item 3 (W-1125-Finance-T1): "Spring" beside a draft "Spring mwtwyt8w" still offers Create;
+  // only a campaign named exactly that (case and spacing ignored) takes it away.
+  const AM = await import(require("url").pathToFileURL(require("path").join(__dirname, "..", "client", "src", "lib", "attributionMatch.js")).href);
+  const partial = AM.attributionChoices(["Spring mwtwyt8w"], "Spring"), same = AM.attributionChoices(["Spring mwtwyt8w", "spring "], "  SPRING");
+  ok("§5 a partial match is a suggestion and Create 'Spring' is still offered; an exact name (any case or spacing) is not offered again",
+    partial.offerCreate === true && partial.close === "Spring mwtwyt8w" && same.offerCreate === false && same.exact === true, { partial, same });
   const typedEdit = await api("PUT", `/gifts/${g1id}`, tok, { campaign: "Spring" });
   ok("§5 the edit refuses a typed campaign too, and the gift keeps its own", typedEdit.status === 400 && (await giftOf(g1id)).campaign_id === camp3.body.id, typedEdit.status);
   const named = await api("POST", `/donors/${gp3}/gifts`, tok, { amount: "40.50", date: TODAY, type: "cash", campaign: "lantern walk 2026" });

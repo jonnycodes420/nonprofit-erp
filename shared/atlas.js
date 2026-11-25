@@ -19,7 +19,8 @@
 // The name is one value. The server reads ATLAS_NAME from its environment and
 // every screen reads it from /atlas/status, so a new name is a variable
 // change and a restart, never a build.
-import AD from "./atlasDates.js";   // ATLAS-5: dates in code, in the org's day
+import AD from "./atlasDates.js";
+import { READING_OFF } from "./atlasReading.js";   // ATLAS-10 item 7   // ATLAS-5: dates in code, in the org's day
 import { aboutInstruction } from "./draftAbout.js";   // FLOWS-18: the About note opens the draft
 
 export const ATLAS_DEFAULT_NAME = "Atlas";
@@ -282,6 +283,7 @@ export function readClause(c) {
   const nm = capName(st.who);
   // What the name swallowed is the rest of the clause ("Margaret yesterday").
   if (nm && nm !== st.who) { st.whenWords = `${st.who.slice(nm.length)} ${st.whenWords}`.trim(); st.who = nm; }
+  if (st.kind === "about" && /['’]s$/.test(st.who)) st.who = st.who.replace(/['’]s$/, "");   // ATLAS-10: "Margaret Chen's giving" is Margaret Chen
   if (["add_to_journey", "add_to_group", "remove_from_journey", "find", "log_conversation"].includes(st.kind) && !capName(st.who)) return { ...st, kind: "other", who: "" };
   return st;
 }
@@ -291,7 +293,11 @@ function readClauseRaw(c) {
   if (/^(undo|take back|reverse)\b.*\b(that|it|last)\b|^undo$/i.test(t)) return { ...blank, kind: "undo" };
   // ATLAS-3: two people linked is not a merge. "Link Stephen and Margaret (as spouses)".
   { const m = t.match(new RegExp(`^(?:[Ll]ink|[Cc]onnect)\\s+${NAME}\\s+(?:and|with|to)\\s+${NAME}`)); if (m) return { ...blank, kind: "link", who: m[1], target: m[2] }; }
-  { const m = t.match(new RegExp(`^(?:tell me about|what do (?:we|i) know about|brief me on|who is)\\s+${NAME}\\s*$`, "i")); if (m) return { ...blank, kind: "about", who: m[1] }; }
+  // ATLAS-10 item 1 (W-1124): a brief is a brief however it is asked: "Can you brief me on Margaret
+  // Chen?", "Please brief me on…", "Brief me about…", "Prep me for…", "Brief me on Margaret Chen before
+  // our coffee", "What's the next step for Priya?". readClause keeps the capitalised name; what follows
+  // it is the clause's rest, and "'s" comes off ("Margaret Chen's giving" is Margaret Chen).
+  { const m = t.match(new RegExp(`^(?:(?:hey |ok(?:ay)? )?(?:atlas[,]?\\s+)?)?(?:(?:please|can you|could you|would you|will you)\\s+)?(?:tell me about|tell me more about|what do (?:we|i) know about|brief me (?:on|about)|give me a brief(?:ing)? on|prep me (?:for|on)|who is|what(?:'s| is) (?:the )?next (?:step|move) (?:for|with))\\s+(?:(?:Dr|Mr|Mrs|Ms|Mx)\\.?\\s+)?${NAME}(?:['’]s\\b)?(?:[\\s,].*)?\\s*[?.!]*$`, "i")); if (m) return { ...blank, kind: "about", who: m[1].replace(/['’]s$/, "") }; }
   // ATLAS-3: the profile's "Draft an email" asks in these words, AI on or off.
   { const m = t.match(new RegExp(`^(?:[Dd]raft|[Ww]rite)\\s+(?:an?\\s+)?(?:email|note|thank-you|thank you)(?:\\s+note)?\\s+(?:to|for)\\s+${NAME}`)); if (m) return { ...blank, kind: "draft_email", who: m[1] }; }
   if (/\bmerge\b/i.test(t)) { const m = t.match(new RegExp(`merge\\s+${NAME}\\s+(?:and|with|into)\\s+${NAME}`)); return { ...blank, kind: "merge", who: m ? m[1] : "", target: m ? m[2] : "" }; }
@@ -349,7 +355,8 @@ export function previewLines(text) {
 
 // ── WHAT ATLAS SAYS ────────────────────────────────────────────────────────
 // Brief, first person, one line per thing. Each line carries where it lives.
-export const AI_OFF_LINE = "My reading is off for this organization, so I can log a conversation, find someone, and add someone to a journey by its exact name. Say it plainly and I'll do that.";
+// ATLAS-10 item 7: the refusal opens with the one reading-off line Settings > Atlas shows (shared/atlasReading.js).
+export const AI_OFF_LINE = `${READING_OFF} I can still log a conversation, find someone, brief you on a person ("Brief me on" and their name), and add someone to a journey by its exact name. Say it plainly and I'll do that.`;
 // POLISH-6 (W-1107-Atlas-07): a refusal is one plain sentence, never a quoted
 // fragment cut mid-word. A question about something Steward does not keep
 // ("what is Renee's favorite color") says so by name; anything else says the

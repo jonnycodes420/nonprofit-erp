@@ -142,6 +142,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   peer-to-peer page they run (5), an event ticket (3), an auction they bid in (3) and a membership year
   (3) sit beside meetings, calls and shifts, each from its own table and each opening its rows through
   `donor-engagement-part` (shared/engagementWeights.js `TOUCH_POINTS`). (WIRE-1 addendum)
+- **Engagement is touches, never gifts, and says so (ATLAS-10, 25 Nov 2026).** With no touch in 24 months the
+  profile reads "No touches in 24 months · last gift <date>", never "Nothing in 24 months" beside a recent gift;
+  gifts count in Generosity.
+- **A role can be removed, never the last one (ATLAS-10).** Each role in the profile's role menu has Remove,
+  with Undo. Removing Volunteer takes the role off; their shifts, hours and history stay on file. "Mark as former"
+  (RULES-1) stays the way to keep the role and stop counting them active. A person always keeps one role.
+  An application from someone who already volunteers closes itself (`server/volunteers/alreadyVolunteer.js`).
 - **A Group is an `audiences` row.** `kind` 'dynamic' keeps `rules` (the donor list filters, evaluated
   live by `groups.js buildDonorFilter`, so membership is never stored); 'static' keeps its people in
   `group_members`. No second list table. (PARITY-1)

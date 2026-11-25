@@ -181,7 +181,7 @@ async function who(req) {
 // ── What the page reads ─────────────────────────────────────────────────────
 const PERSON_COLS = `id, org_id, name, kind, person_types, email, email2, phone, mobile, address, address2, city, state, zip, country,
   employer, household_id, deceased, do_not_contact, do_not_mail, email_unreachable, email_unreachable_reason,
-  address_unmailable, address_unmailable_reason, total_giving, gift_count, last_gift_date, created_at, updated_at,
+  address_unmailable, address_unmailable_reason, total_giving, gift_count, first_gift_date, last_gift_date, created_at, updated_at,
   created_import_id, deleted_at, erased_at`;
 // One person in a pair, as a pair's row shows them (declared above every reader: the TDZ rule).
 const brief = d => d && ({ id: d.id, name: d.name, email: d.email, phone: d.phone || d.mobile || null,

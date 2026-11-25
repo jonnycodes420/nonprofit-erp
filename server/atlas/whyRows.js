@@ -177,6 +177,16 @@ async function homeAnswer(which, get, tz = null) {
   if (which === "goal_left") {
     const r = await get("/home/annual-goal");
     const g = r.status < 300 && r.body ? r.body.goal : null;
+    // ATLAS-10 item 7 (W-1125-Atlas-T8): one goal running is Home's goal bar; several, and she named none, asks which.
+    const running = (r.body && r.body.running) || [];
+    if (running.length > 1) {
+      const each = running.map(x => `${x.name} (${usd(Math.max(0, x.goalCents - x.raisedCents))} left of ${usd(x.goalCents)})`);
+      return { line: `${running.length} goals are running: ${each.join("; ")}. Which one did you mean?${g ? ` Home's goal bar is ${g.label}.` : ""}`, link: { tab: "fundraising" } };
+    }
+    if (!g && running.length === 1) {
+      const x = running[0], left = Math.max(0, x.goalCents - x.raisedCents);
+      return { line: `${usd(left)} is left to reach ${x.name}: ${usd(x.raisedCents)} raised of the ${usd(x.goalCents)} goal.`, link: { tab: "fundraising" } };
+    }
     if (!g) return { line: "There's no annual goal set, so there's nothing left to count. Set one in Fundraising and Home will show it." };
     const target = (g.also || []).find(a => a.key === "goal");
     const raised = Math.round((Number(g.value) || 0) * 100), goal = Math.round((Number(target && target.value) || 0) * 100);

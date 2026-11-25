@@ -33,8 +33,10 @@ export function useVolunteerStatus(id) {
 }
 
 // What GET /people/:id said (volunteer_status), without clearing a sentence on screen.
+// POLISH-11 item 2: and whether the last change can still be undone (the record's undoUntil), so
+// Undo is there again when she comes back to the person, not only right after the press.
 export function seedVolunteerStatus(id, rec) {
-  if (rec && rec.status) put(id, { status: rec.status, statusWord: rec.statusWord });
+  if (rec && rec.status) put(id, { status: rec.status, statusWord: rec.statusWord, undo: !!(rec.undoUntil && Date.parse(rec.undoUntil) > Date.now()) });
 }
 
 export async function markFormer(id, from) {

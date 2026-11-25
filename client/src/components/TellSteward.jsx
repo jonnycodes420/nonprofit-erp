@@ -190,7 +190,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   // ── ASKING ATLAS ──────────────────────────────────────────────────────────
   // The spinners go up before the request leaves, so the first thing she sees
   // comes in well under two seconds whatever the model takes.
-  async function send(words0) {
+  async function send(words0, threadNow = thread) {
     if (listening) stop();
     const words = String(words0 != null ? words0 : (text + (interim ? " " + interim : ""))).trim();
     if (words.length < 3) { setErr("Tell me what happened, what to do, or what you want to know."); return; }
@@ -199,7 +199,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     setPending({ text: words, lines: previewLines(words) });
     setRequest(null); setAnswers({}); setBusy(true); setErr("");
     try {
-      const r = await apiFetch("/atlas", { method: "POST", body: JSON.stringify(askBody(words, { source, donorId: donor ? donor.id : undefined, thread, progressKey: watch() })) });
+      const r = await apiFetch("/atlas", { method: "POST", body: JSON.stringify(askBody(words, { source, donorId: donor ? donor.id : undefined, thread: threadNow, progressKey: watch() })) });
       setRequest(r.request);
       if (r.request && r.request.status === "done") told({ memoId: r.request.id });   // the page behind shows it at once
     } catch (e) { setErr(said(e)); }
@@ -247,7 +247,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   }
   const go = link => { const t = followLink(link); if (!t || !onNavigate) return; onClose(); onNavigate(t[0], t[1]); };
   // ATLAS-3: Tell me more keeps what was said; the next ask follows on from it.
-  const another = () => { setThread(t => continueThread(t, request)); setRequest(null); setPending(null); setText(""); finalText.current = ""; setSource("typed"); };
+  // ATLAS-10 item 1 (W-1124): Tell me more asks for more, as if she had said it; it never just closes the answer.
+  const tellMore = () => { const th = continueThread(thread, request); setThread(th); setRequest(null); setText(""); setSource("typed"); send("Tell me more", th); };
 
   const asking = request && request.status === "needs_answers";
   const lines = (request && request.lines) || [];
@@ -370,7 +371,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
           <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
             {!request.undoneAt && lines.some(l => l.undoable) ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/atlas/${request.id}/undo`)} style={btn(false)}>Undo all of it</button> : <span />}
             <div style={{ display: "flex", gap: 10 }}>
-              <button data-testid="atlas-tell-more" onClick={another} style={btn(false)}>Tell me more</button>
+              <button data-testid="atlas-tell-more" disabled={busy} onClick={tellMore} style={btn(false)}>Tell me more</button>
               <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
             </div>
           </div>

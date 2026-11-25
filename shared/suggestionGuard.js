@@ -92,6 +92,8 @@ export const CLAIM_TERMS = [
   // a date the world set
   "deadline", "deadlines", "cycle", "anniversary", "gala", "match", "matching", "expires",
   "expiring", "closes", "closing",
+  // ATLAS-10 item 5: something she did that Steward can't show unless the record has it
+  "video",
 ];
 
 const lc = s => String(s ?? "").toLowerCase();
@@ -335,7 +337,7 @@ export function dropLog(dropped, reasons = []) {
 //           meetings: [{ date, type }], events: [name], orgName, today }
 const VIDEO_WORDS = /\b(video|videos|recorded|recording|filmed|film|clip|vlog)\b/i;
 const URL_RE = /\bhttps?:\/\/[^\s<>"')]+/gi;
-const MEETING_WORDS = /\b(when we met|we met|our meeting|our conversation|our call|our chat|when we spoke|we spoke|spoke with you|talking with you|talked with you|our visit|your visit|visiting you|over coffee|over lunch|at lunch)\b/i;
+const MEETING_WORDS = /\b(when we met|we met|our meeting|our conversation|our call|our chat|when we spoke|we spoke|spoke with you|talking with you|talked with you|our visit|your visit|visiting you|over coffee|over lunch|at lunch|i called|when i called|i visited|my visit|my call|i stopped by|i dropped by)\b/i;   // ATLAS-10 item 5: a call or a visit she made is a claim too
 const EVENT_WORDS = /\b(gala|dinner|reception|luncheon|breakfast|auction|tournament|5k|fun run|open house|tour|concert|festival|ceremony|celebration|fundraiser|event)\b/i;
 const MERGE_TAG = /\{\{\s*[a-z_]+\s*\}\}/gi;
 // A sum is a claim about THEIR money when the sentence is about giving.

@@ -307,6 +307,13 @@ const T = civilToday();
   ok("§VOL-3 …the role and the record stay (their history stays)", JSON.stringify(v3pt.person_types).includes("volunteer") && v3r1.people.some(p => p.id === NEW && p.status === "former"), v3pt.person_types);
   const actOff = await api("GET", "/figures/volunteers-active/rows?pageSize=200", tok);
   ok("§VOL-3 …and the Active volunteers card's rows leave them out, footing to the card", actOff.status === 200 && actOff.body.totalRows === v3c1.roster.value && !(actOff.body.rows || []).some(r => r.donorId === NEW), [actOff.body.totalRows, v3c1.roster.value]);
+  // POLISH-11 item 2 (W-1125-Volunteers-T2): Undo survives leaving the page. Coming back to the person
+  // (a fresh read), the record still offers it, and Recent changes lists it with the same Undo.
+  const backP11 = await api("GET", `/people/${NEW}`, tok);
+  const rc2 = ((await api("GET", "/recent-changes", tok)).body.rows || []).find(r => r.kind === "volunteer_status" && r.id === "vstatus:" + NEW);
+  ok("§VOL-3 back on the person, Undo is still offered (the record's window), and Recent changes lists it",
+    backP11.status === 200 && backP11.body.volunteer_status && !!backP11.body.volunteer_status.undoUntil && rc2 && /former volunteer/.test(rc2.sentence)
+    && rc2.undo.path === `/donors/${encodeURIComponent(NEW)}/volunteer-status/undo`, { vs: backP11.body.volunteer_status, rc2 });
   const und = await api("POST", `/donors/${NEW}/volunteer-status/undo`, tok, {});
   const v3c2 = await vol3Counts(), v3r2 = await vol3Roster();
   ok("§VOL-3 Undo puts them back to active and the count returns", und.status === 200 && und.body.record.status === "active" && v3c2.roster.value === v3c0.roster.value && v3r2.sentence === v3r0.sentence, [und.body, v3c2.roster.value]);
@@ -373,6 +380,35 @@ const T = civilToday();
   const team = await api("GET", "/events/evt_par3v_gala/volunteer-team", tok);
   ok("§VOL-3 the event page shows its shift and who is on it",
     evSlot.status === 201 && team.status === 200 && team.body.shifts.length === 1 && team.body.shifts[0].people.some(p => p.id === NEW) && team.body.shifts[0].needed === 4, team.body);
+
+  // ── ATLAS-10 item 4: an application from someone who already volunteers closes itself; a role can be
+  //    removed (with Undo), Volunteer's hours staying put; Guest is a role; the last role stays.
+  //    Red on main: the second application waits in Pending; Guest is refused (400); remove is "Mark as former".
+  {
+    const ROLES = async id => (await q(`SELECT person_types FROM donors WHERE id=$1`, [id]))[0].person_types;
+    const qid2 = (await api("GET", "/volunteer-hub/recruitment", tok)).body.questions[0].id;
+    const again2 = new URLSearchParams({ name: "Gale Giver", email: "gale.giver@par3v.local", [`q_${qid2}`]: "yes", availability: "Saturdays" });
+    await fetch(`${require("./helpers").BASE}/volunteer-with/parity-vol-t/apply`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: again2.toString() });
+    const [second] = await q(`SELECT status, decided_by, person_id FROM volunteer_applications WHERE org_id=$1 AND LOWER(email)='gale.giver@par3v.local' ORDER BY submitted_at DESC LIMIT 1`, [ORG]);
+    ok("§ATLAS-10 Gale, already a volunteer, applies again: it closes itself onto her record, by system:already-volunteer", second && second.status === "approved" && second.decided_by === "system:already-volunteer" && second.person_id === GIVER, second);
+    await q(`INSERT INTO volunteer_applications (id,org_id,name,email,status,via) VALUES ('vap_a10_old',$1,'Gale Giver','gale.giver@par3v.local','pending','page')`, [ORG]);
+    const list = (await api("GET", "/volunteer-hub/applications", tok)).body || {};
+    ok("§ATLAS-10 one already waiting is listed apart as Already a volunteer, never in Pending or its count",
+      !(list.applications || []).some(a => a.id === "vap_a10_old") && (list.alreadyVolunteer || []).some(a => a.id === "vap_a10_old" && a.personId === GIVER)
+      && list.pending === (list.applications || []).length, { pending: list.pending, already: list.alreadyVolunteer });
+    const g1 = await api("PUT", `/people/${GIVER}/roles`, tok, { role: "guest", on: true });
+    ok("§ATLAS-10 Guest is a role the + menu can add", g1.status === 200 && (await ROLES(GIVER)).includes("guest"), g1.body);
+    const hoursBefore = (await q(`SELECT COUNT(*)::int AS n FROM volunteer_shifts WHERE org_id=$1 AND person_id=$2`, [ORG, GIVER]))[0].n;
+    const rm = await api("PUT", `/people/${GIVER}/roles`, tok, { role: "volunteer", on: false, remove: true });
+    ok("§ATLAS-10 Remove Volunteer takes the role off, and every shift stays on her record",
+      rm.status === 200 && !(await ROLES(GIVER)).includes("volunteer") && (await q(`SELECT COUNT(*)::int AS n FROM volunteer_shifts WHERE org_id=$1 AND person_id=$2`, [ORG, GIVER]))[0].n === hoursBefore, { status: rm.status, roles: await ROLES(GIVER) });
+    const un = await api("PUT", `/people/${GIVER}/roles`, tok, { role: "volunteer", on: true, undo: true });
+    ok("§ATLAS-10 Undo puts Volunteer back", un.status === 200 && (await ROLES(GIVER)).includes("volunteer"));
+    const solo = await mkPerson("Imelda Strand", "imelda.strand@par3v.local");
+    await q(`UPDATE donors SET person_types='["staff_board"]'::jsonb WHERE id=$1`, [solo]);
+    const last = await api("PUT", `/people/${solo}/roles`, tok, { role: "staff_board", on: false, remove: true });
+    ok("§ATLAS-10 a person's last role cannot be removed", last.status === 409 && last.body.error === "last_role" && JSON.stringify(await ROLES(solo)) === '["staff_board"]', last.body);
+  }
 
   await closeDb();
   summary();

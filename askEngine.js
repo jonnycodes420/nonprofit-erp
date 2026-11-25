@@ -86,8 +86,11 @@ const DONOR_METRIC_RULES = {
 };
 // The rules a donor-level metric reads: its own, and for the Donors list the
 // rules the question named (zip, an event they came to, a city...).
+// ATLAS-10 item 7 (W-1125-Atlas-T5): every donor-level count reads the question's own rules too, so
+// "how many lapsed donors in Lexington" counts Lexington's, never every lapsed donor under Lexington's name.
 const donorMetricRules = plan => (plan.metric === "donor_list"
-  ? { ...DONOR_METRIC_RULES.donor_list, ...((plan.filters && plan.filters.rules) || {}) } : DONOR_METRIC_RULES[plan.metric]);
+  ? { ...DONOR_METRIC_RULES.donor_list, ...((plan.filters && plan.filters.rules) || {}) }
+  : DONOR_METRIC_RULES[plan.metric] ? { ...((plan.filters && plan.filters.rules) || {}), ...DONOR_METRIC_RULES[plan.metric] } : undefined);
 // The rows a donor-level metric counts (lapsed, monthly), from the shared filter.
 async function donorRows(orgId, rules) {
   const df = await GR.buildDonorFilter(orgId, rules);

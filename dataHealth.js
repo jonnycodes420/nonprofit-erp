@@ -121,6 +121,14 @@ const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 //           { family: true } for the Possible families line · a shared phone
 //           and nothing else
 const RANK = { high: 3, medium: 2, low: 1 };
+// ATLAS-10 item 6: both have given, and their giving spans (first to last gift) overlap or come
+// within a year of each other.
+const dayNum = v => { const t = Date.parse(String(v || "").slice(0, 10) + "T00:00:00Z"); return Number.isFinite(t) ? t / 86400000 : null; };
+function givingOverlaps(a, b) {
+  const span = p => { const l = dayNum(p.last_gift_date); const f = dayNum(p.first_gift_date) ?? l; return Number(p.gift_count) > 0 && l != null ? [f, l] : null; };
+  const x = span(a), y = span(b);
+  return !!x && !!y && Math.max(x[0], y[0]) <= Math.min(x[1], y[1]) + 365;
+}
 function judgePair(a, b, { near = null, shared = null } = {}) {
   let rel = nameRelation(a.name, b.name);
   // HOTFIX-RHYTHM: "Gary Clark" and "Mary Clark", "Mark White" and "Mary
@@ -180,6 +188,10 @@ function judgePair(a, b, { near = null, shared = null } = {}) {
     return { family: true, reasons: [sameAddress && "same address", sameEmail && "same email", samePhone && "same phone"].filter(Boolean).map(w => `${w}, two different first names`) };
   }
   if (samePhone && !rel && !near) meet("low", "same phone, different names");
+  // ATLAS-10 item 6 (W-1124, "Osric Ravensmere appears twice in the Lapsing list with different emails"):
+  // the same full name, two different emails, and both giving in the same stretch of years is one
+  // person entered twice far more often than two people, so it is offered, and says why.
+  if (rel === "same" && !sameEmail && givingOverlaps(a, b)) meet("medium", "same name, different emails, both giving in the same years");
   // HOTFIX-RHYTHM: a name alone is a pair only when nothing says two people:
   // "Mary Wilson" and "Mark Wilson" at two addresses, with two emails, are two.
   if (!confidence && nd && rel && !RV.contradicts(a, b, { shared, addressKey })) meet("low", `name only: ${nd.sentence}; no address, phone or email in common`);
