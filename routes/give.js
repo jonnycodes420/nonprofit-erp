@@ -7055,6 +7055,15 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   if (b.directoryState !== undefined) setStr("directory_state", b.directoryState, 40);
   if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
   if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
+  // BUILDER-2A: the org's social links, which an email's Social block reads. https only; "" clears one.
+  if (b.socialLinks !== undefined) {
+    const { cleanSocialLinks, SOCIAL_NETWORKS } = await import("../shared/emailMoreBlocks.js");
+    const given = b.socialLinks && typeof b.socialLinks === "object" ? b.socialLinks : {};
+    const clean = cleanSocialLinks(given);
+    const bad = SOCIAL_NETWORKS.filter(n => String(given[n.key] || "").trim() && !clean[n.key]);
+    if (bad.length) return res.status(400).json({ error: "bad_social_link", message: `Use a full link starting with https:// for ${bad.map(n => n.key === "website" ? "your website" : n.label).join(", ")}.` });
+    updates.push("social_links = ?"); params.push(Object.keys(clean).length ? JSON.stringify(clean) : null);
+  }
   // MONEY-4: the EIN is set in Settings, Tax Receipts (orgs.ein) only; einLine is no longer saved here.
   // BUILD-60 Part 2 — per-frequency, org-configurable amount ladders. A valid
   // ladder is 3–6 positive whole-dollar tiers; null/"" clears back to the

@@ -9,7 +9,7 @@
 // something an inbox can't show.
 //
 // A block may carry:
-//   style   { align, width, pad:[t,r,b,l], mt, mb, border, borderColor, radius, bg, hide }
+//   style   { align, width, height (images, BUILDER-2A), pad:[t,r,b,l], mt, mb, border, borderColor, radius, bg, hide }
 //   and its own settings, by type:
 //     richtext   size (px), lineHeight
 //     image      link (https:// or {{give_link}})
@@ -28,16 +28,21 @@ export const EMAIL_INNER = 536;   // 600 less 32 each side: the widest anything 
 export const LIMITS = {
   width: [40, EMAIL_INNER], pad: [0, 80], margin: [0, 80], radius: [0, 32],
   size: [13, 24], lineHeight: [1.2, 2.2], thickness: [1, 8], spacing: [0, 48],
+  height: [20, 1200],   // BUILDER-2A: an image's height, its shape kept
 };
 
 // Which style settings each type's render honours. The Style tab reads this,
 // so a setting the renderer can't draw for that type is never offered.
 const BOXED = ["align", "width", "pad", "mt", "mb", "border", "bg", "hide"];
 export const STYLE_CAPS = {
-  richtext: BOXED, image: BOXED, photos2: ["pad", "mt", "mb", "border", "bg", "hide"], stats: BOXED, quote: BOXED,
+  richtext: BOXED, image: [...BOXED, "height"], photos2: ["pad", "mt", "mb", "border", "bg", "hide"], stats: BOXED, quote: BOXED,
   button: ["align", "width", "pad", "mt", "mb", "bg", "hide"], event: BOXED, givingpage: BOXED,
   divider: ["width", "align", "mt", "mb", "bg", "hide"], giftsummary: BOXED, signature: BOXED,
   hero: ["align", "mt", "mb", "hide"], video: ["mt", "mb", "hide"], header: ["mt", "mb", "hide"], footer: [],
+  // BUILDER-2A: the full builder's blocks (shared/emailMoreBlocks.js). A Box's
+  // look is all style; Social takes alignment; Code is its own HTML inside.
+  columns: BOXED, box: ["width", "pad", "mt", "mb", "border", "bg", "hide"],
+  social: ["align", "pad", "mt", "mb", "bg", "hide"], code: ["pad", "mt", "mb", "bg", "hide"],
 };
 export const capsOf = type => STYLE_CAPS[type] || [];
 
@@ -55,6 +60,7 @@ export function cleanStyle(s, type) {
   const out = {};
   if (caps.has("align") && ALIGNS.includes(s.align)) out.align = s.align;
   if (caps.has("width") && s.width != null) { const w = num(s.width, LIMITS.width); if (w != null) out.width = w; }
+  if (caps.has("height") && s.height != null && out.width == null) { const h = num(s.height, LIMITS.height); if (h != null) out.height = h; }   // BUILDER-2A
   if (caps.has("pad") && Array.isArray(s.pad) && s.pad.length === 4) {
     const p = s.pad.map(v => num(v, LIMITS.pad));
     if (p.every(v => v != null)) out.pad = p;
@@ -153,9 +159,13 @@ export function styledRow(S, inner, pad, cls, colors, PAD) {
   }
   const padCss = S.pad ? S.pad.map(n => `${n}px`).join(" ") : pad;
   if (S.border) {
+    // BUILDER-2A: with a border, the ground is inside it (a cream box is cream
+    // within its line); the cell around it stays the card, so the sheet's edge
+    // still shows beside it.
     const r = S.radius ? `border-radius:${S.radius}px;` : "";
-    body = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${borderHex(S, colors)};${r}border-collapse:separate;"><tr><td${alignAttr} style="padding:${S.pad ? padCss : "16px 20px"};${alignCss}">${body}</td></tr></table>`;
-    return `<tr><td class="${klass}"${alignAttr} bgcolor="${bg}" style="background:${bg};padding:${S.pad ? `0 ${PAD}px` : pad};${alignCss}">${body}</td></tr>`;
+    const inBg = S.bg ? ` bgcolor="${bg}"` : "";
+    body = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"${inBg} style="${S.bg ? `background:${bg};` : ""}border:1px solid ${borderHex(S, colors)};${r}border-collapse:separate;"><tr><td${alignAttr} style="padding:${S.pad ? padCss : "16px 20px"};${alignCss}">${body}</td></tr></table>`;
+    return `<tr><td class="${cls}"${alignAttr} bgcolor="${colors.card}" style="background:${colors.card};padding:${S.pad ? `0 ${PAD}px` : pad};${alignCss}">${body}</td></tr>`;
   }
   return `<tr><td class="${klass}"${alignAttr} bgcolor="${bg}" style="background:${bg};padding:${padCss};${alignCss}">${body}</td></tr>`;
 }
@@ -175,3 +185,23 @@ export function hideRow(rowHtml, hide, editable) {
   return rowHtml.replace(/^<tr\b/, `<tr class="st-hide-desktop" style="display:none;mso-hide:all;"`);
 }
 export const HIDE_CSS_PHONE = ".st-hide-phone{display:none !important;}\n.st-hide-desktop{display:table-row !important;}\n.st-btn-full{width:100% !important;}\n.st-btn-full a{display:block !important;}";
+
+// BUILDER-2A item 4 · THE SCHEMA, PUBLISHED. Every style field, its values or
+// limits, and the types that take it, read from the constants above (one home:
+// nothing here is a second copy of a limit). The editor's Style tab and
+// BUILDER-2's new blocks read this, so the screen never hard-codes a field.
+const FIELD_OF = {
+  align:  { kind: "enum", label: "Alignment", values: ALIGNS },
+  width:  { kind: "px", label: "Width", min: LIMITS.width[0], max: LIMITS.width[1] },
+  height: { kind: "px", label: "Height (the shape is kept)", min: LIMITS.height[0], max: LIMITS.height[1] },
+  pad:    { kind: "sides", label: "Padding", min: LIMITS.pad[0], max: LIMITS.pad[1], order: ["top", "right", "bottom", "left"] },
+  mt:     { kind: "px", label: "Space above", min: LIMITS.margin[0], max: LIMITS.margin[1] },
+  mb:     { kind: "px", label: "Space below", min: LIMITS.margin[0], max: LIMITS.margin[1] },
+  border: { kind: "enum", label: "Border", values: ["none", "thin"], colors: BORDER_COLORS, radius: { min: LIMITS.radius[0], max: LIMITS.radius[1] } },
+  bg:     { kind: "enum", label: "Background", values: BACKGROUNDS },
+  hide:   { kind: "enum", label: "Hide on", values: ["none", "phone", "desktop"] },
+};
+export const EMAIL_BLOCK_STYLE = Object.freeze({
+  fields: FIELD_OF,
+  types: Object.fromEntries(Object.entries(STYLE_CAPS).map(([t, caps]) => [t, caps.slice()])),
+});
