@@ -10,8 +10,11 @@ Increase's referred nonprofits arrive at from January.
   `signup_closed`, pointing to /book) and writes and sends nothing. The close link and everything the
   public door shared with it (plans, the Stripe price check, Checkout, the agreement, provisioning)
   are untouched. `SignupPage.jsx` and the old `/invitation` page (it quoted a founding price) are
-  deleted; `/signup`, `/demo` and `/invitation` go to `/book` in the router and at the edge
-  (vercel.json), keeping `?partner=`.
+  deleted; `/signup`, `/demo` and `/invitation` go to `/book` at the edge (vercel.json redirects,
+  keeping `?partner=`; `scripts/ci/local-preview.js` now applies the same redirects). The router
+  carries no route for them: perf-app measured Home's first look at 249 KB (budget 248) with a
+  redirect component on the entry, so it went, with a shorter What's new entry: −43 bytes gzipped
+  against main's own build.
 - **No prices on the site.** The price block is one line ("Pricing depends on the size of your donor
   file…") and Book a call; every hero has one button; FAQs and Terms no longer state a figure or
   "when you sign up". The included-features words moved to `shared/included.json` so the site can

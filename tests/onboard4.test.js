@@ -70,8 +70,10 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
     const main = fs.readFileSync(path.join(CLIENT, "src", "main.jsx"), "utf8");
     const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
     const red = s => (vj.redirects || []).find(r => r.source === s);
-    ok("§1 /signup, /demo and /invitation go to /book (the router and the edge)", ["/signup", "/demo", "/invitation"].every(s => new RegExp(`path="${s}"\\s+element=\\{<ToBook />\\}`).test(main) && red(s) && red(s).destination === "/book")
+    ok("§1 /signup, /demo and /invitation go to /book at the edge, and the app has no page for them", ["/signup", "/demo", "/invitation"].every(s => red(s) && red(s).destination === "/book" && !new RegExp(`path="${s}"`).test(main))
       && !fs.existsSync(path.join(CLIENT, "src", "pages", "SignupPage.jsx")), (vj.redirects || []).map(r => r.source));
+    const lp = fs.readFileSync(path.join(ROOT, "scripts", "ci", "local-preview.js"), "utf8");
+    ok("§1 …and the local preview applies the same redirects, so a local walk sees what production serves", /\.redirects \|\| \[\]/.test(lp) && /Location: red\.destination/.test(lp));
   }
 
   // ── §2 · NO PRICE AND NO "FREE" ON THE PUBLIC SITE ──────────────────────────────────

@@ -14,7 +14,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   });
 }
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch, API } from "./api";
 import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged } from "./lib/orgBinding";
 import { installCommitGuard } from "./lib/commitGuard";
@@ -218,11 +218,6 @@ function PublicOnly({ children }) {
 // Connections (FIX-13, INT builds), and an old bookmark used to fall through to
 // the home page. Signed in, it opens the Connections page in the app; signed
 // out, the public Connections page.
-// ONBOARD-4: /signup, /demo and /invitation are the booking page now; the query (a partner code) comes along.
-function ToBook() {
-  return <Navigate to={"/book" + useLocation().search} replace />;
-}
-
 function OldIntegrations() {
   const { auth } = useAuth();
   const hash = typeof window !== "undefined" ? window.location.hash : "";
@@ -297,10 +292,11 @@ function Root() {
           {/* ONBOARD-4 item 1 — PUBLIC SIGNUP IS CLOSED (Jonathan, 23 Nov 2026).
               Nobody signs up cold: every org signs after a call, through the
               close link Jonathan sends. /signup (and the old /demo form) go to
-              /book, keeping ?partner=, and POST /public/signup refuses. The
-              page that sold a band from the website is gone. */}
-          <Route path="/signup"    element={<ToBook />} />
-          <Route path="/demo"      element={<ToBook />} />
+              /book at the edge (vercel.json redirects, which keep ?partner=;
+              scripts/ci/local-preview.js applies the same table), and POST
+              /public/signup refuses. Nothing in the app links to them, so the
+              router carries no route for them: Home's first look stays under
+              its byte budget. The page that sold a band is gone. */}
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           {/* ONBOARD-1 — "Set up Steward for me". A new org lands here after
               Checkout; the step-by-step /welcome is one link away. */}
@@ -341,7 +337,6 @@ function Root() {
           <Route path="/lost-and-found" element={<LostAndFound />} />
           <Route path="/refer/:token" element={<ReferralPage />} />
           <Route path="/quote/:token" element={<QuotePage />} />
-          <Route path="/invitation" element={<ToBook />} />   {/* ONBOARD-4: the old request-an-invitation page quoted a price */}
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
               consumes the fragment token). */}
           {/* BUILD-54 §4 — edit mode rides the EXISTING staff session (the
