@@ -6,7 +6,8 @@ import { useState, useEffect, useRef } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { useChanged } from "../lib/changes";   // FLOWS-13 item 1: the letterhead follows a saved logo or name
 import { pickPeople, usePeoplePicker } from "../lib/people";
-import { T, Spin } from "./shared";
+import { T } from "./shared";
+import { SkeletonSection } from "./Skeleton";   // POLISH-11: the section draws at once
 import { errorMessage } from "../lib/domainError";
 
 const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
@@ -47,7 +48,7 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
     ? { ...r, signatureName: r.signatureDefault.name, signatureTitle: r.signatureTitle || r.signatureDefault.title } : r);
   useEffect(() => { apiFetch("/brand-kit").then(r => setK(withDefault(r))).catch(() => setK(false)); }, []);
   useChanged(["org"], () => { apiFetch("/brand-kit").then(r => { if (r) setK(x => (x ? { ...x, logo: r.logo, orgName: r.orgName } : withDefault(r))); }).catch(() => {}); });
-  if (k === null) return <div style={{ padding: 30 }}><Spin /></div>;
+  if (k === null) return <SkeletonSection title="Brand kit" fields={6} label="Loading the brand kit" />;
   if (!k) return <div style={card}>The brand kit could not be loaded.</div>;
   const can = isAdmin && !isReadOnly;
   const save = async () => {

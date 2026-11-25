@@ -111,6 +111,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/onboard4b").run(pool);   // ONBOARD-4 Part B: the guided setup and "Send it to us"
   await require("./ddl/onboard5").run(pool);   // ONBOARD-5: the ten-step setup page
   await require("./ddl/order1").run(pool);   // ORDER-1: the order on the close link, and its signature
+  await require("./ddl/polish11").run(pool);   // POLISH-11: a volunteer status change keeps its Undo window
 // SPLIT-2 db.js piece 49
 }
 // SPLIT-2 end

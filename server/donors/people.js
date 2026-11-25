@@ -367,7 +367,7 @@ app.get("/people/:id", requireAuth, wrap(async (req, res) => {
     ? await require("../volunteers/volunteerRecord").readRecord(req.user.orgId, row.id) : null;
   res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
              volunteer_status: PT.typesOf(row).includes("volunteer")
-               ? { status: volRec ? volRec.status : "active", statusWord: volRec ? volRec.statusWord : "Active" } : null,
+               ? { status: volRec ? volRec.status : "active", statusWord: volRec ? volRec.statusWord : "Active", undoUntil: volRec ? volRec.undoUntil : null } : null,   // POLISH-11: Undo on return
              first_gift_date: row.first_gift_date || null,
              // IMPORT-4: gifts on file but none dated reads "Donor since: unknown".
              gift_count: Number(row.gift_count) || 0,

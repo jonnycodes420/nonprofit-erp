@@ -245,7 +245,8 @@ export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onD
         onClick={async () => { setMsg(""); try { await onUpdate(active); } catch (e) { setMsg((e && e.sentence) || (e && e.message) || "That view did not update."); } }}
         style={{ ...primary, padding: "6px 10px" }}>Update “{active.name}”</button>}
       {active && active.mine && edited && !naming && <button type="button" data-testid="dir-view-save-new" onClick={() => setNaming(true)} style={btn}>Save as new</button>}
-      {active && active.mine && !naming && <button type="button" data-testid="dir-view-delete" onClick={() => onDelete(active)}
+      {active && active.mine && !naming && <button type="button" data-testid="dir-view-delete"
+        onClick={async () => { setMsg(""); try { await onDelete(active); } catch (e) { setMsg((e && e.sentence) || (e && e.message) || "That view was not deleted."); } }}
         style={{ background: "none", border: "none", padding: 0, color: T.ink3, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Delete this view</button>}
       {msg && <span role="alert" style={{ fontSize: 12, color: T.ink }}>{msg}</span>}
     </span>

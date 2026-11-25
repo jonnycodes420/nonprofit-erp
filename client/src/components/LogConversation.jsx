@@ -82,8 +82,10 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const [err, setErr] = useState("");
   const [file, setFile] = useState(null);   // PARITY-1 Part B
   // UNDO-1 item 4: the person's open next step, which a touch with a next step closes. She sees it and may keep it.
+  // POLISH-11 item 1: it is the person's one next step (a Thread step or a task, the profile's own rule),
+  // and Keep it open is the default: nothing she planned closes unless she says so.
   const [openStep, setOpenStep] = useState(null);
-  const [keepOpen, setKeepOpen] = useState(false);
+  const [keepOpen, setKeepOpen] = useState(true);
   const lineRef = useRef(null);
   useEffect(() => { lineRef.current?.focus(); }, []);
   useEffect(() => {
@@ -91,10 +93,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
     apiFetch("/touch-types").then(r => { if (alive) setCustom(Array.isArray(r && r.custom) ? r.custom : []); }).catch(() => {});
     apiFetch("/org/team").then(r => { if (alive) setTeam(Array.isArray(r) ? r.filter(u => u && u.id && !u.deactivated_at) : []); }).catch(() => {});
     if (!editing && !noteMode) apiFetch(`/donors/${donor.id}/planned-touches`).then(r => { if (alive) setPlanned(Array.isArray(r && r.planned) ? r.planned : []); }).catch(() => {});
-    if (!editing && !noteMode) apiFetch(`/threads?donorId=${encodeURIComponent(donor.id)}`).then(r => {
-      const t = alive && ((r && r.list) || []).find(x => x && x.kind !== "task");
-      const label = t && ((t.nextStep && t.nextStep.label) || t.next_step_label || t.label);
-      if (alive) setOpenStep(label ? { id: t.id, label } : null);
+    if (!editing && !noteMode) apiFetch(`/donors/${encodeURIComponent(donor.id)}/next-step`).then(r => {
+      const s = alive && r && r.step;
+      if (alive) setOpenStep(s && s.label ? { id: s.id, label: s.label, kind: s.kind, taskId: s.taskId || null } : null);
     }).catch(() => {});
     if (!editing) apiFetch("/finance/funds").then(r => { if (alive) setFunds(Array.isArray(r) ? r : []); }).catch(() => {});
     return () => { alive = false; };
@@ -162,6 +163,8 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         ...(thread && thread.id ? { threadId: thread.id } : {}),
         ...(fromMove ? { fromMove: true } : {}),   // ONBOARD-2: logged from one of Steward's moves
         ...(closesStep && keepOpen ? { keepOpen: true } : {}),   // UNDO-1: she kept her open step
+        // POLISH-11: her open step is a task and she chose Close it: the touch closes it, inside its Undo.
+        ...(closesStep && !keepOpen && openStep.taskId ? { closeTaskId: openStep.taskId } : {}),
         nextStep: !step ? { skipped: true }
           : { type: nextStepTypeForLabel(step), label: step, due: nsDue, time: sanitizeStepTime(nsTime) || undefined,
               source: nsSource === "rule" ? "touch" : null },

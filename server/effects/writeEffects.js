@@ -30,6 +30,8 @@ const RESTORABLE = {
   cultivation_plan_steps: ["status", "closed_at", "closed_by", "closed_by_name", "thread_id"],
   cultivation_plans: ["status", "closed_at"],
   threads: ["closed_at", "close_kind", "close_reason", "closing_interaction_id"],
+  // POLISH-11: a touch that closes a person's next step when that step is a task.
+  tasks: ["done", "completed_at", "completed_by_name"],
   event_attendees: ["status", "quantity", "level_id", "registration_gift_id", "sponsor_pledge_id", "recognition", "gift_amount"],
 };
 
