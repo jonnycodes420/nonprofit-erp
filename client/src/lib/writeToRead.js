@@ -78,6 +78,10 @@ export const WRITE_TO_READ = [
 // fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
 // answers "other") unless it is named here, with why no figure on any screen shows it.
 export const NO_SCREEN_READS = [
+  // BUILDER-2B: a saved email block is shown only in the editor's Blocks tab, which re-reads
+  // itself after a save, a rename or a delete; no other screen lists or counts them.
+  { method: "POST", re: /^\/email-blocks$/, why: "a saved email block is shown only in the editor's Blocks tab, which re-reads itself" },
+  { method: "PUT", re: /^\/email-blocks\/[^/]+$/, why: "renaming a saved email block shows only in the Blocks tab, which re-reads itself" },
   // SENDS-2: building a send plan writes only the list she is shown (send_plans); nothing is sent.
   { method: "POST", re: /^\/send-plans$/, why: "a send plan is the list shown before a bulk send; no screen counts plans" },
   // LETTERS-1: reading a Word file and previewing letters write nothing; a letter template and a
