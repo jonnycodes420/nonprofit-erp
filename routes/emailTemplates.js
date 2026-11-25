@@ -657,11 +657,13 @@ app.post("/email-templates/:id/test", requireAuth, checkWriteAccess, wrap(async 
         _stewardOrgId: orgId, _stewardKind: "campaign_test",
         html: p.html,
       });
-      if (error) throw new Error(error.message);
+      if (error) throw Object.assign(new Error(error.message), { name: error.name });
       delivered = true;
     } catch (e) {
       console.error("[email-template] test send failed:", e.message);
-      return res.status(502).json({ error: "send_failed", message: "The test could not be sent just now. Nothing about the template changed." });
+      // SENDS-3 item 2: a refusal is 409 with its words; only the provider is a 502 (with words too).
+      const w = require("../server/mail/testSendWords").afterError(e, "template");
+      return res.status(w.status).json({ ...w.body, message: w.body.message || w.body.sentence });
     }
   }
   res.json({ sent: delivered, to, from: identity.from, problems: p.problems, counted: false,

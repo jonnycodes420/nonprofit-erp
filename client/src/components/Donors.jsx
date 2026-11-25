@@ -105,7 +105,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const LF=listFilters.f;
   const setLF=listFilters.set;
   const dirStage=LF.stage, dirAssignee=LF.owner, dirDesignation=LF.designation, dirHousehold=LF.household;
-  const dirPeople=LF.people, dirImport=LF.fromImport, dirStatus=LF.status, activeViewId=LF.savedView;
+  const dirPeople=LF.people, dirImport=LF.fromImport, dirAtlas=LF.fromAtlas, dirStatus=LF.status, activeViewId=LF.savedView;   // SENDS-3: dirAtlas, one Atlas answer's people
   const dirWhere=useMemo(()=>{try{const w=LF.where?JSON.parse(LF.where):null;return w&&Array.isArray(w.conditions)?{join:w.join==="or"?"or":"and",conditions:w.conditions}:EMPTY_WHERE;}catch{return EMPTY_WHERE;}},[LF.where]);
   const setDirStage=v=>setLF({stage:v}), setDirAssignee=v=>setLF({owner:v}), setDirDesignation=v=>setLF({designation:v});
   const setDirHousehold=v=>setLF({household:v}), setDirPeople=v=>setLF({people:v}), setDirStatus=v=>setLF({status:v});
@@ -239,7 +239,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // IMPORT-2: "Bring in your notes" from a profile or the donor import's last screen.
   useEffect(()=>{const open=()=>setShowHistory(true);window.addEventListener("steward:history-import",open);return()=>window.removeEventListener("steward:history-import",open);},[]);
   // PARITY-1 — one tag or closeness filter, "level:major", "closeness:warm".
-  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirWhereStr,dirDir,DIR_PAGE_SIZE,dirPeople,dirImport,dirUnitsOn]);
+  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirWhereStr,dirDir,DIR_PAGE_SIZE,dirPeople,dirImport,dirAtlas,dirUnitsOn]);
   useEffect(()=>{
     if(view!=="directory"||listSetup)return;
     let live=true;
@@ -268,6 +268,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         if(roleQ)qs.set("role",roleQ);
         qs.set("roleCounts","1");
         if(dirImport)qs.set("fromImport",dirImport);
+        if(dirAtlas)qs.set("fromAtlas",dirAtlas);
         if(dirSearch.trim())qs.set("search",dirSearch.trim());
         if(dirStage)qs.set("stage",dirStage);
         if(dirAssignee)qs.set("assignedTo",dirAssignee);
@@ -302,7 +303,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       }
     })();
     return()=>{cancelled=true;};
-  },[view,layoutReady,dirUnitsOn,DIR_PAGE_SIZE,dirCols,dirWhereStr,dirDir,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirReloadKey,dirPeople,dirImport]);
+  },[view,layoutReady,dirUnitsOn,DIR_PAGE_SIZE,dirCols,dirWhereStr,dirDir,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirReloadKey,dirPeople,dirImport,dirAtlas]);
   // LIST-1: the layout, saved for her (PUT), reset (DELETE), or set as the
   // org's starting layout (admins). Views are a name for columns + filters.
   const persistLayout=async next=>{
@@ -348,7 +349,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     const c=v.chips||{};
     const w=v.filters&&Array.isArray(v.filters.conditions)?{join:v.filters.join==="or"?"or":"and",conditions:v.filters.conditions}:EMPTY_WHERE;
     setLF({savedView:v.id,where:whereParam(w),search:c.search||"",stage:c.stage||"",owner:c.owner||"",designation:c.designation||"",
-      status:c.status||"",household:c.household||"",people:c.people||"",fromImport:""});
+      status:c.status||"",household:c.household||"",people:c.people||"",fromImport:"",fromAtlas:""});
   };
   // LIST-6 item 4: back on the list with a view in the address (?sv=) and no filter beside it, the
   // view is applied, once its list of views has arrived. With filters beside it, those are the list
@@ -965,9 +966,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       </Card>}
 
       {addWarn&&<div data-testid="add-email-warning" role="status" style={{background:T.bg2,border:"1px solid "+T.gold600,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,margin:"0 0 10px",display:"flex",gap:10,alignItems:"center"}}><span style={{flex:1}}>{addWarn}</span><button type="button" onClick={()=>setAddWarn("")} style={{background:"none",border:"none",color:T.greenDk,fontWeight:700,cursor:"pointer"}}>OK</button></div>}
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirUnitsOn&&dirUnits?dirUnits.unitCounts.units:dirTotal} units={dirUnitsOn&&dirUnits?dirUnits:null} householdsTogether={dirUnitsOn} setHouseholdsTogether={on=>persistLayout({householdsTogether:on}).catch(e=>console.warn("[list-layout]",e&&e.message))} updating={!!dirWant&&dirWant!==dirGot&&dirRows!==null} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setLF({fromImport:""})}
-        anyFilter={!!(dirSearch.trim()||dirStage||dirAssignee||dirDesignation||dirHousehold||dirStatus||dirWhereStr||dirImport)}
-        exportParams={{role:(dirPeopleShown||dirPeople)==="contacts"?"contact":(dirPeopleShown||dirPeople)==="everyone"?"":"donor",...(dirImport?{fromImport:dirImport}:{}),search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} viewEdited={viewEdited} onPickView={pickView} onSaveView={saveView} onUpdateView={updateView} onClearFilters={clearFilters} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirUnitsOn&&dirUnits?dirUnits.unitCounts.units:dirTotal} units={dirUnitsOn&&dirUnits?dirUnits:null} householdsTogether={dirUnitsOn} setHouseholdsTogether={on=>persistLayout({householdsTogether:on}).catch(e=>console.warn("[list-layout]",e&&e.message))} updating={!!dirWant&&dirWant!==dirGot&&dirRows!==null} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setLF({fromImport:""})} fromAtlas={dirAtlas} clearFromAtlas={()=>setLF({fromAtlas:""})}
+        anyFilter={!!(dirSearch.trim()||dirStage||dirAssignee||dirDesignation||dirHousehold||dirStatus||dirWhereStr||dirImport||dirAtlas)}
+        exportParams={{role:(dirPeopleShown||dirPeople)==="contacts"?"contact":(dirPeopleShown||dirPeople)==="everyone"?"":"donor",...(dirImport?{fromImport:dirImport}:{}),...(dirAtlas?{fromAtlas:dirAtlas}:{}),search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} viewEdited={viewEdited} onPickView={pickView} onSaveView={saveView} onUpdateView={updateView} onClearFilters={clearFilters} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}
 
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
       {wholeOrgView&&view!=="reengage"&&orgPeople&&reWaiting&&<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the list's filters…</div>}

@@ -663,7 +663,7 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   let next = null;
   if (done === 1) { const nid = await REPEAT.afterDone({ query, run }, orgId, t, (await taskDays(orgId)).today); if (nid) next = await readTask(orgId, nid); }
   else await REPEAT.afterUndone({ run }, orgId, t);
-  res.json({ ...(await readTask(orgId, t.id)), next });
+  res.json({ ...(await readTask(orgId, t.id)), next, listed: done === 1 });   // SENDS-3: Recent changes lists the tick from the server
 }));
 
 // FIX-34 · A THANK-YOU TASK DOES THE THANKING. The task's Thank-you button
