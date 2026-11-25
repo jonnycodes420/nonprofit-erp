@@ -43,7 +43,7 @@ export function ImportsHistory(){
       </div>
       {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
       {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
-      {rows&&rows.length===0&&<div data-testid="imports-empty" style={{fontSize:13,color:T.ink3}}>No imports yet. The first file you load will appear here with its name.</div>}
+      {rows&&rows.length===0&&<div data-testid="imports-empty" style={{fontSize:13,color:T.ink3}}>No imports yet. Each file you load will appear here with its name, what it brought in, and until when you can undo it.</div>}
       {rows&&rows.length>0&&(
         <div style={{overflowX:"auto"}}>
           <table data-testid="imports-table" style={{borderCollapse:"collapse",width:"100%",minWidth:640}}>
@@ -67,7 +67,11 @@ export function ImportsHistory(){
                         style={{background:"none",border:"none",padding:0,font:"inherit",color:T.greenDk,textDecoration:"underline",cursor:"pointer"}}>{r.archived?"Unarchive":"Archive"}</button></div>}
                     {/* FIX-52: a spreadsheet import still being written, or one rolled back */}
                     {(r.state==="in_progress"||r.state==="failed")&&<div data-testid="imports-state" style={{fontSize:11.5,color:r.state==="failed"?T.terra700:T.greenDk,marginTop:2}}>{r.sentence}</div>}
-                    {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone</div>}
+                    {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone{r.reversedAt?` ${displayDate(r.reversedAt)}`:""}</div>}
+                    {/* POLISH-11 item 5: what Undo can still do, on the row itself */}
+                    {r.state==="done"&&<div data-testid="imports-undo-window" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>
+                      {r.canUndo&&r.undoUntil?`Undo available until ${displayDate(r.undoUntil)}`
+                        :r.undoUntil?`Undo window closed on ${displayDate(r.undoUntil)}`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
                     {/* BUILD-88a A.7 — a run made before funds and payment
                         methods were written says so, and says what to do. */}
                     {(r.notices||[]).map((n,i)=>(

@@ -307,6 +307,13 @@ const T = civilToday();
   ok("§VOL-3 …the role and the record stay (their history stays)", JSON.stringify(v3pt.person_types).includes("volunteer") && v3r1.people.some(p => p.id === NEW && p.status === "former"), v3pt.person_types);
   const actOff = await api("GET", "/figures/volunteers-active/rows?pageSize=200", tok);
   ok("§VOL-3 …and the Active volunteers card's rows leave them out, footing to the card", actOff.status === 200 && actOff.body.totalRows === v3c1.roster.value && !(actOff.body.rows || []).some(r => r.donorId === NEW), [actOff.body.totalRows, v3c1.roster.value]);
+  // POLISH-11 item 2 (W-1125-Volunteers-T2): Undo survives leaving the page. Coming back to the person
+  // (a fresh read), the record still offers it, and Recent changes lists it with the same Undo.
+  const backP11 = await api("GET", `/people/${NEW}`, tok);
+  const rc2 = ((await api("GET", "/recent-changes", tok)).body.rows || []).find(r => r.kind === "volunteer_status" && r.id === "vstatus:" + NEW);
+  ok("§VOL-3 back on the person, Undo is still offered (the record's window), and Recent changes lists it",
+    backP11.status === 200 && backP11.body.volunteer_status && !!backP11.body.volunteer_status.undoUntil && rc2 && /former volunteer/.test(rc2.sentence)
+    && rc2.undo.path === `/donors/${encodeURIComponent(NEW)}/volunteer-status/undo`, { vs: backP11.body.volunteer_status, rc2 });
   const und = await api("POST", `/donors/${NEW}/volunteer-status/undo`, tok, {});
   const v3c2 = await vol3Counts(), v3r2 = await vol3Roster();
   ok("§VOL-3 Undo puts them back to active and the count returns", und.status === 200 && und.body.record.status === "active" && v3c2.roster.value === v3c0.roster.value && v3r2.sentence === v3r0.sentence, [und.body, v3c2.roster.value]);

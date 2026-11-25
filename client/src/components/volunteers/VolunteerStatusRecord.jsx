@@ -20,7 +20,8 @@ const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 
 export function VolunteerStatusRecord({ donor, record, isReadOnly, onChanged }) {
   const [msg, setMsg] = useState("");
-  const [undo, setUndo] = useState(false);
+  // POLISH-11 item 2: Undo is open while the record says so (a day after the change), on every visit.
+  const [undo, setUndo] = useState(!!(record && record.undoUntil && Date.parse(record.undoUntil) > Date.now()));
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(null);
   const rec = record || { status: "active", statusWord: "Active", availability: [], roles: [], hoursPerWeek: null };

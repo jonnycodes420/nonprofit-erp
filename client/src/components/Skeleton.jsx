@@ -94,3 +94,20 @@ export function SkeletonPublic() {
     </div>
   );
 }
+
+// POLISH-11 item 6 (W-1121-Atlas-10): a Settings section while its data is on its way: its heading
+// and the shape of its fields at once, never a blank card with a spinner.
+export function SkeletonSection({ title, fields = 5, label = "Loading" }) {
+  return (
+    <div role="status" aria-label={label} data-testid="skeleton-section" style={{ ...card, display: "flex", flexDirection: "column", gap: 14 }}>
+      <style>{PULSE}</style>
+      {title ? <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>{title}</div> : <SkeletonBar width={200} height={18} />}
+      {Array.from({ length: fields }, (_, i) => (
+        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <SkeletonBar width={i % 2 ? "22%" : "30%"} height={10} />
+          <SkeletonBar width={i % 3 === 2 ? "60%" : "100%"} height={34} />
+        </div>
+      ))}
+    </div>
+  );
+}

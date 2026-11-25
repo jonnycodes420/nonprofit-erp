@@ -172,6 +172,26 @@ const surfaces = async (tok, label) => { const r = await assertSurfacesAgree(ORG
   ok("§3 its Undo reopens the step and takes the touch's new step away", ut.status === 200 && afterUndo.length === 1
     && afterUndo[0].next_step_label === "Call about the spring visit" && /open again/.test(ut.body.sentence || ""), { ut: ut.body, afterUndo });
 
+  // ── §3b POLISH-11 item 1: the next step is a task, and Keep it open is the default ──
+  // HOW IT GOES RED: the dialog reads only Thread steps (a task step gives no choice), Keep it open
+  // starts unchecked, or Close it on a task leaves the task open / Undo does not reopen it.
+  const IVO = await person("d_undo1_ivo", "Ivo Brackenridge");
+  await q(`INSERT INTO tasks (id, org_id, donor_id, title, due, done, created_by, created_by_name) VALUES ('tk_undo1_ivo', $1, $2, 'Drop off the spring photos', $3, 0, 'system:test', 'UNDO-1 fixture')`, [ORG, IVO, dayOffset(2)]);
+  const step = await api("GET", `/donors/${IVO}/next-step`, tok);
+  ok("§3b the person's next step is read with the profile's rule, a task included", step.status === 200 && step.body.step && step.body.step.kind === "task"
+    && step.body.step.taskId === "tk_undo1_ivo" && step.body.step.label === "Drop off the spring photos", step.body);
+  const dlg = require("fs").readFileSync(require("path").join(__dirname, "..", "client", "src", "components", "LogConversation.jsx"), "utf8");
+  ok("§3b the dialog reads that step and starts on Keep it open", /\/donors\/\$\{encodeURIComponent\(donor\.id\)\}\/next-step/.test(dlg) && /const \[keepOpen, setKeepOpen\] = useState\(true\)/.test(dlg));
+  const closeIt = await api("POST", `/donors/${IVO}/conversations`, tok, { touchKind: "call", line: "Talked; photos next week.", closeTaskId: "tk_undo1_ivo",
+    nextStep: { type: "follow_up", label: "Send the photo book", due: dayOffset(9) } });
+  const tk = await one(`SELECT done FROM tasks WHERE id='tk_undo1_ivo'`, []);
+  const ivoLine = (await recent(tok)).find(r => r.kind === "effect_touch" && /Ivo Brackenridge/.test(r.sentence));
+  ok("§3b Close it on a task closes that task, and Recent changes says so", closeIt.status === 201 && Number(tk.done) === 1 && ivoLine
+    && ivoLine.sentence === "Logged a call with Ivo Brackenridge; it closed the next step: Drop off the spring photos.", { st: closeIt.status, tk, ivoLine });
+  const undoIvo = await api("POST", ivoLine.undo.path, tok, {});
+  const tk2 = await one(`SELECT done FROM tasks WHERE id='tk_undo1_ivo'`, []);
+  ok("§3b its Undo opens the task again", undoIvo.status === 200 && Number(tk2.done) === 0, { u: undoIvo.body, tk2 });
+
   // ── §4 invite, then register ─────────────────────────────────────────────
   const NELL = await person("d_undo1_nell", "Nell Ashgrove");
   const ev = await api("POST", "/events", tok, { name: "Lantern Supper (test)", eventType: "gala", date: dayOffset(40) });
