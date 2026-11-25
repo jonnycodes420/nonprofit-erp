@@ -128,6 +128,8 @@ function mount(ctx) {
   require("./opsImportRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   // STAGE-1: the Ship to customers card, behind this same door.
   require("./shipRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter, buildSha });
+  // BGWORK-1: "Run background work for this test org", the admin org panel's switch, behind this same door.
+  require("./backgroundWork").mount(app, { query, run, wrap, door: opsOnly });
   // NUMBERS-6: the Numbers card (the nightly check, real orgs first), behind this same door.
   require("./opsNumbersRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   // DEVBOARD-3: the Journey and How-it-works tabs, behind this same door.
