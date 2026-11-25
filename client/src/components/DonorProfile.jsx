@@ -62,6 +62,7 @@ import { useProfilePipeline } from "./profile/useProfilePipeline";
 import { useProfileGiving } from "./profile/useProfileGiving";
 import { useProfileFiles } from "./profile/useProfileFiles";
 import { useProfileRail } from "./profile/useProfileRail";
+import { useStuckTabs } from "./profile/useStuckTabs"; import { ProfileTabsRow } from "./profile/ProfileTabsRow";   // PROFILE-4
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,onRecordChanged,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
   const { gifts, setGifts, giftLoading, setGiftLoading, giftReadErr, setGiftReadErr, giftReadSeq, localInts, setLocalInts, figs, setFigs, rel, setToldNonce, before, scores, canMajorGifts, publicFiling, setPublicFiling, filingLookupOpen, setFilingLookupOpen, prospectBriefOpen, setProspectBriefOpen, status, logMeeting, setLogMeeting, eraseOpen, setEraseOpen, stepEdit, setStepEdit, stepBusy, setStepBusy, pgOpen, setPgOpen, suggestOpen, setSuggestOpen, briefOpen, setBriefOpen, inboxConnected, eraseWord, setEraseWord, eraseBusy, eraseMsg, setEraseMsg, exportPersonData, erasePerson, loadRel, loadRailRef, sequences, dpThread, dpItems, convoOpen, setConvoOpen, editingInt, setEditingInt, planOpen, setPlanOpen, dpItemsLoaded, openProposals, proposalsKnown, propData, reloadProps, loadDpThread, relationships, broughtIn, relLoading, relPickerOpen, setRelPickerOpen, relSearch, setRelSearch, relType, setRelType, relSaving, relErr, setRelErr, linkDonor, unlinkDonor, retypeRelationship, relPickerResults, relPickerPending, cfData, setCfData, cfEditing, setCfEditing, cfEditVal, setCfEditVal, cfSaved, setCfSaved, cfShowAll, setCfShowAll, cfError, setCfError, giftCfDefs, giftCfEditStr, donorEvents, localScore, localTier, localConf, localRationale, scoreLoading, recalcScore, showReassign, setShowReassign, reassignId, setReassignId, reassignLoading, setReassignLoading, draftCopied, copyDraftEmail } = useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInteractionAdded, initialOpenConversation, initialOpenCompose, initialOpenBrief, getAI });
@@ -71,6 +72,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const { viewMaterial, deleteMaterial, impactPdfLoading, videoThanksOpen, setVideoThanksOpen, volOpen, setVolOpen, makeVolOpen, setMakeVolOpen, setMadeVol, isVolunteer, yourPageMsg, sendYourPageLink, downloadImpactSummary, exportGiftsCSV, saveStep, deleteStep, openForNextMove, yearDrill, setYearDrill, snoozing, snoozeErr, snoozeThread, contactPerson, headName, callName, noGifts, headTags, aboutStatusTags } = useProfileFiles({ loadMaterials, donor, onInteractionAdded, setToldNonce, loadRel, reloadProps, loadDpThread, loadGiftsFull, giftCfDefs, giftsFull, stepEdit, setStepEdit, setStepBusy, localInts, rel, dpTab, setDpTab, pledges, actMode, recurringSub, dpItems, openProposals, aiMap, getAI, dpItemsLoaded, gifts, giftLoading, giftReadErr, figs, status, railData });
   const { railNextNode, railPledgeNode, nothingLogged, nextMoveNode } = useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit, setStepEdit, stepBusy, dpThread, dpItems, setConvoOpen, setPlanOpen, openProposals, proposalsKnown, loadDpThread, saveStep, deleteStep, snoozing, snoozeErr, snoozeThread, callName, setDpTab, pledges, setAddGiftForm, setAddGiftOpen, tasks, gifts, giftLoading, giftReadErr, giftsFull, tlCounts, getAI, org, setSuggestOpen, isTeam, openForNextMove });
   const { onTaskOutcome, finishUi } = useProfileFinish({ donor });   // FLOWS-20: a call or meeting ticked on the profile opens the Tasks page's finish dialog
+  const stuckTabs = useStuckTabs({ isPhone, dpTab });   // PROFILE-4: the tab row sticks with the name
 
   return(
     <div className="fade-in page-takeover dp3-frame" data-testid="donor-profile" ref={frameRef} style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>{finishUi}
@@ -92,22 +94,24 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {/* PROFILE-2 · THE WHITE BAND: the header, the four numbers, then the tabs
               as its bottom edge. It sits in the main column, so the rail beside it
               runs from the top of the profile. */}
-          {/* PROFILE-3 · THE PIN: the header band, the numbers and the tabs stay at the
-              top of the main column while the timeline scrolls under them. */}
-          <div className="dp3-pin" data-testid="dp-pin" style={{position:"sticky",top:0,zIndex:6,background:T.white,borderBottom:"1px solid "+T.bg3}}>
+          {/* PROFILE-4 · THE HEADER SCROLLS AWAY. PROFILE-3 pinned the band, the
+              numbers and the tabs together, so on a full record the timeline had
+              a window of about 460px under them. Now the band scrolls with the
+              page and only the tab row below sticks. */}
           <div data-testid="dp-band" className="dp3-band" style={{background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
       {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
             below it the mark (photo or initials, one size) sits top-aligned with
             the name, and everything about the person is one column beside it.
             Centred rows let the mark and Back float to the middle of a column
             whose height changed with the person, so a photo moved the name. */}
-        {/* PROFILE-2 · THE HEADER, TWO ROWS. Row one: the face (72px), the name in
+        {/* PROFILE-4 made it one row (profile/ProfileHeader.jsx says how). Before that,
+            PROFILE-2 · THE HEADER, TWO ROWS. Row one: the face (72px), the name in
             the display serif, and the actions on the right (Log a call is the one
             emerald). Row two: the top tag under the face and the second under the
             name: at most two tags here, the rest are in About on the rail. The
             roles line, closeness, drift and recurring sentences moved to the rail
             (About and Engagement), so the header is the person and what to do. */}
-        <ProfileHeader {...{onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen}}/>
+        <ProfileHeader {...{onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen,noGifts}}/>
         {(figs||donor.figures)&&<ProfileNumbers figures={figs||donor.figures}/>}
           </div>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
@@ -119,30 +123,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {nextMoveNode}
             <div style={{background:RAIL.bg,color:RAIL.text,borderRadius:14,padding:"16px 16px 4px"}}>{railNextNode}{railPledgeNode}</div>
           </div>}
-          <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
-          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"nowrap",overflowX:"auto",flex:1,minWidth:0,scrollbarWidth:"none",gap:24}}>
-            {profileTabsFor(isVolunteer).map(([id,label])=>{
-              // PROFILE-2: Giving counts gifts AND pledges (a $50,000 pledge read "Gifts & pledges 0").
-              const n=id==="giving"?(giftLoading||giftReadErr?null:giftCountReal+pledges.length)
-                :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0)
-                :id==="notes"?(tlCounts.note||0):id==="files"?(fileTally.known?fileTally.uploaded:null):null;   // STALE-2: the one file tally
-              return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:"2px solid "+(dpTab===id?T.greenDk:"transparent"),padding:"12px 0 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13.5,fontWeight:dpTab===id?700:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",minHeight:44,display:"inline-flex",alignItems:"center"}}>
-                {label}
-                {/* PROFILE-3: a count only when there is something to count; never "0". */}
-                {n>0&&<span data-tab-count={id} style={{marginLeft:6,background:T.bg2,borderRadius:99,padding:"1px 7px",fontSize:10.5,fontWeight:700,color:T.ink3}}>{n}</span>}
-              </button>;
-            })}
-          </div>
-          {/* PROFILE-2: search the timeline, live. */}
-          <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,paddingLeft:8}}>
-            {tlSearchOpen&&<input autoFocus value={tlSearch} onChange={e=>{setTlSearch(e.target.value);if(!TAB_KIND[dpTab]&&dpTab!=="activity")setDpTab("activity");}} placeholder="Search this record" aria-label="Search this record" data-testid="dp-tl-search"
-              onKeyDown={e=>{if(e.key==="Escape"){setTlSearch("");setTlSearchOpen(false);}}} style={{width:180,padding:"7px 10px",fontSize:13,borderRadius:8}}/>}
-            <button type="button" data-testid="dp-tl-search-btn" aria-label={tlSearchOpen?"Close search":"Search this record"} onClick={()=>{if(tlSearchOpen){setTlSearch("");setTlSearchOpen(false);}else setTlSearchOpen(true);}}
-              style={{background:"none",border:"none",cursor:"pointer",padding:8,minWidth:40,minHeight:40,color:T.ink3,fontSize:17,lineHeight:1}}>{tlSearchOpen?"×":<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>}</button>
-          </div>
-          </div>
-          </div>{/* /dp3-pin */}
+          <ProfileTabsRow {...{stuckTabs,donor,photoUrl,headName,isVolunteer,dpTab,setDpTab,giftLoading,giftReadErr,giftCountReal,pledges,tlCounts,fileTally,tlSearch,setTlSearch,tlSearchOpen,setTlSearchOpen}}/>{/* PROFILE-4 */}
 
+          {/* PROFILE-4: the tab panes are at least a column tall, so switching tabs
+              while the row is stuck can put the new tab's top just under it. */}
+          <div className="dp4-panes" data-testid="dp-panes">
           {/* ── OVERVIEW (PROFILE-1 header) ──────────────────────────────
               Top to bottom: the next meeting, How did it go?, Lately, the ask,
               Highlights, then About. Everything else that lived here has a
@@ -203,6 +188,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           <ListTabs {...{household,contactPerson,onEdit,onSelectRelatedDonor,contact:railData&&railData.contact,fileTally,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial,onTaskOutcome}}/>
           <ProfileDialogs {...{relationships,createHousehold,donor,eraseBusy,eraseMsg,eraseOpen,erasePerson,eraseWord,hhModalOpen,hhPeople,hhPick,hhSearch,isAdmin,setEraseOpen,setEraseWord,setHhModalOpen,setHhPick,setHhSearch}}/>
+          </div>{/* /dp4-panes */}
         </div>
 
         {/* ── THE RAIL (PROFILE-1) ────────────────────────────────────────
