@@ -42,14 +42,16 @@ function LabelDef({ label, def }) {
 
 // The quiet note beside a value (a date, the old system's share, the fiscal
 // year's dates) is one line; when the strip is short of room it ends in "…"
-// and the whole note is its hover title. Only a cell with a note gives way.
+// and the whole note is its hover title. Only a cell with a note gives way,
+// and Lifetime's (the long "from your old system" one) first: PROFILE-4b kept
+// Last gift's date beside it.
 const fullTitle = el => { if (el && el.innerText && el.scrollWidth > el.clientWidth) el.title = el.innerText.replace(/\s+/g, " "); else if (el) el.removeAttribute("title"); };
 
-function Tile({ label, def, testid, f, kind, figureKey, suffix = "", under = null }) {
+function Tile({ label, def, testid, f, kind, figureKey, suffix = "", under = null, giveWay = 1 }) {
   const filled = has(f);
   const noted = filled && !!under;
   return (
-    <div className="dp3-tile dp4-cell" data-testid={testid} style={{ minWidth: 0, flex: noted ? "0 1 auto" : "none", display: "flex", flexDirection: "column", gap: 1, padding: "6px 22px 8px 0", marginRight: 22, borderRight: "1px solid " + T.bg3 }}>
+    <div className="dp3-tile dp4-cell" data-testid={testid} style={{ minWidth: 0, flex: noted ? `0 ${giveWay} auto` : "none", display: "flex", flexDirection: "column", gap: 1, padding: "6px 16px 8px 0", marginRight: 16, borderRight: "1px solid " + T.bg3 }}>
       <LabelDef label={label} def={def} />
       <div style={{ display: "flex", alignItems: "baseline", flexWrap: "nowrap", columnGap: 6, minWidth: 0 }}>
         <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3, color: T.ink, whiteSpace: "nowrap", flex: "none" }}>
@@ -84,7 +86,7 @@ export function ProfileNumbers({ figures }) {
   return (
     <div className="dp4-strip" data-testid="dp-header-figures"
       style={{ display: "flex", flexWrap: "nowrap", alignItems: "stretch", margin: "10px 0 0 var(--dp-indent,58px)", borderTop: "1px solid " + T.bg3 }}>
-      <Tile label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime" f={F.lifetime} kind="money" figureKey="profile.lifetime" under={lifeUnder} />
+      <Tile label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime" f={F.lifetime} kind="money" figureKey="profile.lifetime" under={lifeUnder} giveWay={10000} />
       <Tile label="This fiscal year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear" f={F.thisYear} kind="money" figureKey="profile.thisYear" under={fyUnder} />
       <Tile label="Last gift" def={censusById("profile.lastGift").sentence} testid="dp-fig-lastGift" f={F.lastGift} kind="money" figureKey="profile.lastGift"
         under={lg && lg.date ? `${displayDate(lg.date)}${lg.method && !/^(unknown|needs you)$/i.test(lg.method) ? ` · ${lg.method}` : ""}` : null} />

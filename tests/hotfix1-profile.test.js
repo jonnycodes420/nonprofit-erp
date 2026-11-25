@@ -393,10 +393,13 @@ async function seed() {
       const m = document.querySelector('[data-testid="dp-main-column"]'), t = document.querySelector('[data-testid="dp-tabs"]');
       const nm = document.querySelector('[data-testid="dp-stuck-name"]');
       return { scrollTop: Math.round(m.scrollTop), tabsTop: Math.round(t.getBoundingClientRect().top - m.getBoundingClientRect().top),
-        name: nm ? nm.innerText.replace(/\s+/g, " ").trim() : null, winY: window.scrollY };
+        name: nm ? nm.innerText.replace(/\s+/g, " ").trim() : null, winY: window.scrollY,
+        // PROFILE-4b: staging, Margaret Chen at 1440: the stuck name pushed Notes and Files past the row's edge.
+        hidden: [...t.querySelectorAll('[role="tab"]')].filter(b => b.getBoundingClientRect().right > t.getBoundingClientRect().right + 1).map(b => b.dataset.tab) };
     });
     ok("§P4 after scrolling the middle column, the tab bar is at its top", stuck.scrollTop > 0 && Math.abs(stuck.tabsTop) <= 1 && stuck.winY === 0, stuck);
     ok("§P4 …with the person's name beside the tabs", !!stuck.name && /Verity Yarrowdale/.test(stuck.name), stuck);
+    ok("§P4 …and every tab still in view beside it", Array.isArray(stuck.hidden) && stuck.hidden.length === 0, stuck);
     await page.evaluate(() => { document.querySelector('[data-testid="dp-main-column"]').scrollTop = 0; });
     await page.waitForTimeout(300);
 
