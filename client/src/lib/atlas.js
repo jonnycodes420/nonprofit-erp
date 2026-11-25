@@ -22,6 +22,8 @@ export function linkTarget(link) {
     case "events": return ["events", { eventId: link.eventId }];
     case "journeys": return ["journeys", { journeyId: link.journeyId }];
     case "groups": return ["groups", link.groupId ? { groupId: link.groupId } : {}];
+    // SENDS-3 item 4: Open list, the People list narrowed to one answer's people (nothing made).
+    case "people": return ["donors", { people: "everyone", fromAtlas: link.actionId }];
     case "tasks": return ["tasks", {}];
     case "communications": return ["communications", { subtab: "milestones", highlightDraftId: link.draftId }];
     case "data-health": return ["donors", { view: "health" }];

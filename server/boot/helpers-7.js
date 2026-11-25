@@ -86,14 +86,19 @@ async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a r
     // zone, so a pledge in a western org used to start its dunning cadence
     // hours early — a reminder email about money, sent on the wrong day.
     // SCALE-5: the hourly pass (no orgId) is for live orgs only.
+    // SENDS-3 item 1: "overdue" is pledgeSchedule.overdueOf (server/pledges/overdueNow.js),
+    // the profile's own rule, never the pledge's single due_date.
+    const ON = require("../pledges/overdueNow");
     const _overdueOrgs = await query(`SELECT id, timezone FROM orgs WHERE ${orgId ? "id = ?" : "id = ANY(?::text[])"}`, [orgId || await require("../orgs/liveOrgs").liveOrgIds(query)]);
+    const _todayOf = new Map();
     for (const _o of _overdueOrgs) {
-      await run(
-        `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
-         WHERE org_id=? AND status='open' AND first_overdue_at IS NULL AND due_date::date < ?::date
-           AND COALESCE(is_match,false) = false`,
-        [_o.id, orgToday(_o)]
-      );
+      _todayOf.set(_o.id, orgToday(_o));
+      const cands = await query(`SELECT id, amount, due_date FROM pledges WHERE org_id=? AND status='open' AND first_overdue_at IS NULL
+                                    AND COALESCE(is_match,false) = false`, [_o.id]);
+      const od = await ON.overdueByPledge(query, _o.id, cands, _todayOf.get(_o.id));
+      const late = cands.filter(p => (od.get(p.id) || {}).overdue).map(p => p.id);
+      if (late.length) await run(`UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
+                                   WHERE org_id=? AND id = ANY(?) AND first_overdue_at IS NULL`, [_o.id, late]);
     }
 
     // Step 2 — send whatever's due, exactly like processDunning().
@@ -110,8 +115,18 @@ async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a r
          AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
          AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND p.org_id = ?" : ""}`, orgId ? [orgId] : []
     );
-    picked.push(...rows.map(p => ({ orgId: p.org_id, pledgeId: p.id })));
-    for (const p of rows) {
+    // SENDS-3 item 1: a stamp is not a reason. A pledge with nothing past due
+    // on its schedule today gets no reminder, whatever its stamp says (the
+    // stale stamps are listed by scripts/ops/sends3-pledge-stamps.js).
+    const due = [];
+    for (const org of [...new Set(rows.map(p => p.org_id))]) {
+      const mine = rows.filter(p => p.org_id === org);
+      const today = _todayOf.get(org) || orgToday(await orgTz(org));   // ORG_TZ_SEAM_OK
+      const od = await ON.overdueByPledge(query, org, mine, today);
+      due.push(...mine.filter(p => (od.get(p.id) || {}).overdue));
+    }
+    picked.push(...due.map(p => ({ orgId: p.org_id, pledgeId: p.id })));
+    for (const p of due) {
       try {
         const orgRows = await query(
           "SELECT id, name, org_slug, pledge_reminder_enabled, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?",

@@ -1300,7 +1300,9 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
     + ". It sends nothing and starts nothing.";
   // INTEGRITY-2: who has activity since, named in the confirm with the choice up front (undoPeople.js)
   const activitySince = imp.reversed_at ? [] : await require("./undoPeople").peopleWithActivity(query, orgId, imp, sj.restoredFromTrash || []);
-  res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence, activitySince: activitySince.slice(0, 200), activitySinceCount: activitySince.length });
+  // SENDS-3 item 5: the receipts the movable people hold, asked about in the same confirm
+  const moveReceipts = activitySince.some(p => p.movable) ? await require("./undoReceipts").moveReceipts(query, orgId, imp) : null;
+  res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence, activitySince: activitySince.slice(0, 200), activitySinceCount: activitySince.length, moveReceipts });
 }));
 
 // The Undo itself (POST /imports/:id/reverse, its status, and the job that

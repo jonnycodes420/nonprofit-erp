@@ -116,6 +116,9 @@ const GUARDED_WRITERS = [
   // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
   // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "undo1-reopen-journeys",
+  // SENDS-3: clears one org's pledge reminder stamps the one overdue rule (pledgeSchedule.overdueOf) disagrees
+  // with. Dry run by default; --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
+  "sends3-pledge-stamps",
   // THANKS-1: "Gift removed" timeline notes left from before; --apply moves one org's off the timeline
   // (one audit row keeps them) through writerDbUrl. Never the demo. Nothing sends. And the read-only
   // count of gifts whose only acknowledgment is a receipt (no --apply).

@@ -546,6 +546,9 @@ async function journeyTemplateDraft(orgId, donorId, step) {
      ON CONFLICT DO NOTHING`,   // RACE-1: milestone_drafts_journey_step_once (server/db/race1Indexes.js)
     [id, orgId, donorId, key, words.subject || step.label || t.name, words.body, t.id,
      JOURNEY_ACTOR.id, JOURNEY_ACTOR.name, orgId, key]);
+  // SENDS-3 item 6: a step undone and opened again gets back the draft its undo archived.
+  await run(`UPDATE milestone_drafts SET status='pending_review', archived_at=NULL, archived_by=NULL, archived_by_name=NULL
+              WHERE org_id=? AND milestone_key=? AND status='archived' AND archived_by='system:undo'`, [orgId, key]);
   return id;
 }
 
