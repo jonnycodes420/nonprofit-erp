@@ -24,6 +24,14 @@
 //   §4 hours logged elsewhere move an open profile's volunteer panel
 //      (W-1107-Volunteers-08)
 //
+// FRESH-1 (Jarvis, 24 Nov: "Trashing QA Test Zero Person left … Trash (1) … after Empty trash
+// the message said '1 person was deleted for good' but the row … remained"):
+//   §D the census: each write the fleet clicked (a delete, Restore, Empty trash, a cash gift, an
+//      attendee added) answers X-Steward-Changed with the topic its counts listen for
+//   §5 Settings → Trash: Empty trash takes the row, the sentence and "Trash (n)", no reload
+//   §6 a chunk gone with a deploy reopens the page once ("Steward was just updated.
+//      Reopening…"); gone again at once, the error shows with Reload and nothing loops
+//
 // Planted defects (each turned this suite red, then was taken back out; the
 // STALE-2 report names them):
 //   · "event" dropped from changes.js's event rule → §C and §1 red
@@ -153,6 +161,39 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   await api("POST", `/donors/${P("hal")}/volunteer-hours`, tok, { date: today, hours: 2, role: "Shelving" });
   ok("browser fixtures: two events, a guest, an event gift and a next step due today", !!E1 && !!E2 && th.status < 300, { E1, E2, thread: th.status });
 
+  // ── §D · THE CENSUS: EVERY WRITE THE FLEET CLICKED NAMES WHAT IT CHANGED ──
+  // A write that answers "none" (or no header) re-reads nothing on screen, so its counts wait
+  // for a reload. Each one here must name the topic its counts listen for (lib/changes.js).
+  const BASE = process.env.BASE || "http://localhost:5601";
+  const said = async (method, url, body) => {
+    const r = await fetch(BASE + url, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: body ? JSON.stringify(body) : undefined });
+    await r.text();
+    return { status: r.status, topics: String(r.headers.get("x-steward-changed") || "").split(",") };
+  };
+  await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_by,created_by_name) VALUES ($1,$2,'Ivo Census','prospect','active','["contact"]'::jsonb,'system:test/stale2','FRESH-1 test')`, [P("ivo"), ORG]);
+  const evD = await api("POST", "/events", tok, { name: "Heron Census Supper", date: today, eventType: "community", description: "A supper." });
+  const ED = evD.body && (evD.body.id || (evD.body.event && evD.body.event.id));
+  const census = [
+    ["a person moved to the trash", "DELETE", `/donors/${P("ivo")}`, null, "person"],
+    ["Restore from Settings → Trash", "POST", "/trash/people/restore", { ids: [P("ivo")] }, "person"],
+    ["moved to the trash again", "DELETE", `/donors/${P("ivo")}`, null, "person"],
+    ["Empty trash", "POST", "/donors/purge-trash", { confirm: "empty", olderThanDays: null }, "person"],
+    ["a $100 cash gift saved", "POST", `/donors/${P("ada")}/gifts`, { amount: 100, date: today, type: "cash" }, "gift"],
+    ["an attendee added", "POST", `/events/${ED}/attendees`, { donorIds: [P("bram")] }, "event"],
+  ];
+  for (const [what, m, url, body, topic] of census) {
+    const r = await said(m, url, body);
+    ok(`§D census: ${what} answers ${r.status} and names "${topic}" (FRESH-1 item 1)`, r.status < 300 && r.topics.includes(topic), r);
+  }
+
+  // FRESH-1 item 3: Notes or tags filters, by whole words, and a nonsense word finds nobody.
+  await q(`UPDATE donors SET notes='Met for coffee before the gala' WHERE org_id=$1 AND id=$2`, [ORG, P("cleo")]);
+  const textN = async w => { const r = await api("GET", `/donors?limit=5&roleCounts=1&where=${encodeURIComponent(JSON.stringify({ join: "and", conditions: [{ field: "text", op: "contains", value: w }] }))}`, tok); return r.status === 200 ? r.body.total : `status ${r.status}`; };
+  ok("§D Notes or tags 'zzzzqq' finds nobody (FRESH-1 item 3)", (await textN("zzzzqq")) === 0, await textN("zzzzqq"));
+  ok("§D Notes or tags 'GALA' finds Cleo's note, any case", (await textN("GALA")) === 1, await textN("GALA"));
+  ok("§D …by whole words: 'gal' and 'offee' find nobody", (await textN("gal")) === 0 && (await textN("offee")) === 0, [await textN("gal"), await textN("offee")]);
+  ok("§D …and what she typed is a word, never a pattern: '(' and '.*' find nobody and do not fail", (await textN("(")) === 0 && (await textN(".*")) === 0, [await textN("("), await textN(".*")]);
+
   const why = (() => {
     if (!optional(PW)) return "(playwright is not installed at " + PW + ")";
     if (!fs.existsSync(path.join(DIST, "index.html")) && !fs.existsSync(path.join(DIST, "app.html"))) return "(no client dist at " + DIST + ")";
@@ -260,6 +301,65 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     const moved = await until(([b]) => { const el = document.querySelector('[data-testid="volunteer-total"]'); return el && el.textContent.replace(/\s+/g, " ").trim() !== b; }, [before]);
     ok("§4 the panel's hours move, with no reload (W-1107-Volunteers-08)", moved, { before, after: await text(tot) });
   });
+
+  // ── §5 · EMPTY TRASH TAKES THE ROW, THE SENTENCE AND THE COUNT ────────────
+  await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_by,created_by_name) VALUES ($1,$2,'Juno Trashwell','prospect','active','["contact"]'::jsonb,'system:test/stale2','FRESH-1 test')`, [P("juno"), ORG]);
+  await api("DELETE", `/donors/${P("juno")}`, tok);
+  await open(`/app/settings?section=trash`);
+  await noReload("§5", async () => {
+    await page.locator('[data-testid="trash-list"]').getByText("Juno Trashwell").first().waitFor({ timeout: 20000 });
+    ok("§5 the trash shows Juno and says 1 person", /^1 person is in the trash/.test(await text('[data-testid="trash-list"] > div')), await text('[data-testid="trash-list"] > div'));
+    await page.locator('[data-testid="empty-trash-go"]').click({ timeout: 15000 });
+    await page.locator('[data-testid="empty-trash-confirm"]').click();
+    await page.locator('[data-testid="empty-trash-done"]').waitFor({ timeout: 15000 });
+    const rowGone = await until(() => !/Juno Trashwell/.test((document.querySelector('[data-testid="trash-list"]') || {}).innerText || ""));
+    ok("§5 after Empty trash the row is gone, with no reload (FRESH-1 item 1)", rowGone, await text('[data-testid="trash-list"]').then(t => t.slice(0, 160)));
+    const sentence = await until(() => /^0 people are in the trash/.test(((document.querySelector('[data-testid="trash-list"] > div') || {}).innerText || "").trim()));
+    ok("§5 …and the sentence says 0 people are in the trash", sentence, await text('[data-testid="trash-list"] > div'));
+    const tab = await until(() => /Trash \(0\)/.test(document.body.innerText) && !/Trash \(1\)/.test(document.body.innerText));
+    ok("§5 …and Settings says Trash (0)", tab, (await page.locator("body").innerText()).match(/Trash \(\d+\)/g));
+  });
+
+  // ── §6 · A CHUNK GONE WITH A DEPLOY REOPENS THE PAGE ONCE ─────────────────
+  // After a deploy the open page's own chunks still load (they came with it) and every chunk it has
+  // not asked for yet is gone. The route answers those as the host does once the old file is gone;
+  // a page loaded after the deploy is the new build, and its own files are all there.
+  // Each tab is its own chunk (HARDEN-2), so a tab opened from the rail asks for one.
+  const ctx6 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });   // the worker would fetch the chunks out of the route's sight
+  await ctx6.addInitScript(([tk, u, o]) => {
+    localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+  }, [lg.body.token, JSON.stringify(lg.body.user), JSON.stringify(lg.body.org)]);
+  const page6 = await ctx6.newPage();
+  let booted = new Set(), deployed = false, blocked = 0;
+  await page6.route(/\/assets\/[^/]+\.(js|css)$/, r => {
+    const f = r.request().url().split("/assets/")[1];
+    if (!deployed || booted.has(f)) { booted.add(f); return r.continue(); }
+    blocked++; return r.fulfill({ status: 404, contentType: "text/html", body: "<!doctype html><title>Not found</title>" });
+  });
+  let loads6 = 0;
+  // The reopened page is the new build from its first request on.
+  page6.on("request", r => { if (r.isNavigationRequest() && r.frame() === page6.mainFrame()) { loads6++; deployed = false; booted = new Set(); } });
+  const rail = name => page6.locator(`text="${name}" >> visible=true`).first();
+  await page6.goto(`${APP}/app/donors`, { waitUntil: "networkidle", timeout: 60000 });
+  await page6.locator("input.donors-search").waitFor({ timeout: 30000 });
+  await page6.waitForTimeout(16000);   // past lib/chunkReload.js's settle, as a page open a while is
+  const l0 = loads6; deployed = true;
+  await rail("Grants").click({ timeout: 20000 });
+  let reopened = false;
+  for (let i = 0; i < WAIT / 200 && !reopened; i++) { await page6.waitForTimeout(200); reopened = loads6 > l0; }
+  await page6.waitForLoadState("networkidle").catch(() => {});
+  await page6.waitForTimeout(1500);
+  ok("§6 a tab whose chunk is gone reopens the page, once (FRESH-1 item 2)", reopened && blocked >= 1 && loads6 - l0 === 1, { blocked, loads: loads6 - l0 });
+  ok("§6 …at the tab she opened, which draws (no error boundary)", /grants/.test(page6.url()) && (await page6.locator("text=Something went wrong").count()) === 0, page6.url());
+  // A second deploy lands at once, and the next tab's chunk is gone too: the second failure in a
+  // row shows the error with its Reload, and nothing loops.
+  if (process.env.STALE2_SHOTS) await page6.screenshot({ path: path.join(process.env.STALE2_SHOTS, "reopened.png") });
+  const l1 = loads6; deployed = true; const b1 = blocked;
+  await rail("Donors").click({ timeout: 20000 });
+  await page6.waitForTimeout(5000);
+  const reloadBtn = await page6.getByRole("button", { name: "Reload" }).count();
+  ok("§6 gone again within the minute: no second reopen, the error with a Reload button", blocked > b1 && loads6 === l1 && reloadBtn >= 1, { blocked: blocked - b1, loads: loads6 - l1, reloadBtn });
+  await ctx6.close();
 
   await browser.close();
   await closeDb();

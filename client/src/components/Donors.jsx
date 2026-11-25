@@ -51,6 +51,7 @@ import { useNavigate } from "react-router-dom";
 import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
 import { retryImport } from "../lib/lazyRetry";
 import { isAbort } from "../lib/leaving";   // FLAKE-3
+import { reopenAfterUpdate, REOPENING_WORDS } from "../lib/chunkReload";   // FRESH-1 item 2
 
 // PERF-4: the spreadsheet reader (113 KB) and the old-reports wizard are their
 // own chunks, loaded when one of their windows opens, so the Donors list and a
@@ -65,9 +66,10 @@ const parseFileToSheets = (...a) => import("./import/reader").then(m => m.parseF
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(error) { return { error }; }
-  componentDidCatch(error, info) { console.error("DonorProfile error:", error, info); }
+  static getDerivedStateFromError(error) { return { error, reopening: reopenAfterUpdate(error) }; }   // FRESH-1 item 2
+  componentDidCatch(error, info) { if (!this.state.reopening) console.error("DonorProfile error:", error, info); }
   render() {
+    if (this.state.error&&this.state.reopening) return <div role="status" style={{padding:"32px 24px",textAlign:"center",color:T.ink,fontSize:14,fontWeight:600}}>{REOPENING_WORDS}</div>;
     if (this.state.error) {
       return (
         <div style={{padding:"32px 24px",textAlign:"center",color:T.terracotta,fontSize:14}}>

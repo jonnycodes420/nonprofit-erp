@@ -984,9 +984,13 @@ function fundraisingGoalsPortfolio(rows) {
   // and a goal that has ended are not in the roll-up, and not in its count.
   const topActive = goals.filter(g => !g.parentGoalId && g.lifecycle === "active");
   const totalGoal = topActive.reduce((s, g) => s + g.goalAmount, 0);
-  const totalRaised = topActive.reduce((s, g) => s + g.rolledRaised, 0);
+  // FRESH-1 item 6: added in cents, so the float sum is never a cent off; and the headline in whole
+  // dollars is the sum of the cards' own whole dollars (each card rounds its cents once), so the five
+  // cards under it add up to it ("$1,735,613 is $1 less than the sum of its five cards").
+  const totalRaised = topActive.reduce((s, g) => s + Math.round(Number(g.rolledRaised || 0) * 100), 0) / 100;
+  const totalRaisedWhole = topActive.reduce((s, g) => s + Math.round(Number(g.rolledRaised || 0)), 0);
   const rollup = topActive.length ? {
-    totalRaised, totalGoal,
+    totalRaised, totalRaisedWhole, totalGoal,
     percent: totalGoal > 0 ? Math.min(100, Math.round((totalRaised / totalGoal) * 100)) : null,
     rawPercent: totalGoal > 0 ? Math.round((totalRaised / totalGoal) * 100) : null,
     over: totalGoal > 0 && totalRaised > totalGoal ? totalRaised - totalGoal : 0,

@@ -18,6 +18,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch, API } from "./api";
 import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged } from "./lib/orgBinding";
 import { installCommitGuard } from "./lib/commitGuard";
+import { installChunkReload, reopenAfterUpdate, REOPENING_WORDS } from "./lib/chunkReload";   // FRESH-1 item 2
 import { safeNext } from "./lib/appUrls";
 import { SkeletonAppShell, SkeletonPublic } from "./components/Skeleton";
 // The marketing site (LANDING-2) is route-split too since HARDEN-2: main.jsx
@@ -121,6 +122,7 @@ installOrgBinding(API);
 installStagingStrip({ api: API });   // STAGE-2: the strip on staging only
 // HARDEN-1: only a click on a commit button commits (lib/commitGuard.js).
 installCommitGuard();
+installChunkReload();
 function RouteFallback() {
   const path = typeof window !== "undefined" ? window.location.pathname : "/";
   return APP_PATHS.test(path) ? <SkeletonAppShell /> : <SkeletonPublic />;
@@ -241,7 +243,10 @@ function RequireSuperAdmin({ children }) {
 // route). Uses Sentry.ErrorBoundary (already imported) so this stays in the lean
 // eager entry chunk — importing components/shared here would pull that whole
 // module out of route-split. Inline fallback, no external deps.
-function RootErrorFallback() {
+function RootErrorFallback({ error }) {
+  // FRESH-1 item 2: a lazy route's chunk gone with a deploy reopens the page once.
+  const [reopening] = useState(() => reopenAfterUpdate(error));
+  if (reopening) return <div role="status" data-testid="steward-reopening-view" style={{ minHeight: "100vh", background: PAL.cream, display: "flex", alignItems: "center", justifyContent: "center", color: PAL.ink, fontFamily: "'DM Sans',system-ui,sans-serif", fontSize: 16, fontWeight: 600 }}>{REOPENING_WORDS}</div>;
   return (
     <div style={{ minHeight: "100vh", background: PAL.cream, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
       <div style={{ maxWidth: 420, textAlign: "center", background: PAL.white, border: "1px solid "+PAL.cardEdge, borderRadius: 16, padding: "30px 26px" }}>
@@ -277,7 +282,7 @@ function Root() {
     <AuthProvider>
       <OrgChangedBanner />
       <BrowserRouter>
-        <Sentry.ErrorBoundary fallback={<RootErrorFallback />}>
+        <Sentry.ErrorBoundary fallback={({ error }) => <RootErrorFallback error={error} />}>
         <React.Suspense fallback={<RouteFallback />}>
         <Routes>
           {/* LANDING-2 — the marketing site, one route per row of

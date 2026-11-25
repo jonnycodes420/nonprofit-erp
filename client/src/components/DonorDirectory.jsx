@@ -507,8 +507,12 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
-      a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
-      document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+      // FRESH-1 item 5: the file is named by the server (the org's today), and the page says what it did.
+      const fileName=res.headers.get("X-Steward-Export-Filename")||`donors-${new Date().toISOString().split("T")[0]}.csv`;
+      const n=Number(res.headers.get("X-Steward-Export-Count"));
+      a.href=url;a.download=fileName;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);
+      flash(Number.isFinite(n)&&res.headers.get("X-Steward-Export-Count")!=null?`Exported ${n.toLocaleString("en-US")} ${n===1?"person":"people"} in ${fileName}.`:`Exported ${fileName}.`);
     }catch(e){flash("The export did not finish: "+(errorMessage(e, "the file could not be built"))+".");}
     setExporting(false);
   }
@@ -627,8 +631,10 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   // IMPORT-6: the empty list says why. A filter that finds nobody says so; a
   // Donors view with no donors yet points at the contacts instead.
   const contactsN=roleCounts?roleCounts.contacts:0;
+  // FRESH-1 item 3: a Notes or tags filter that finds nobody says whose words it looked in.
+  const textWords=((where&&where.conditions)||[]).filter(c=>c&&c.field==="text"&&String(c.value??"").trim()).map(c=>String(c.value).trim());
   const emptyList=anyFilter
-    ?<EmptyState title={peopleView==="contacts"?"No contacts found":peopleView==="everyone"?"No one found":"No donors found"} message="Try adjusting your filters or search term." action={onClearFilters?"Clear filters":undefined} onAction={onClearFilters||undefined}/>
+    ?<EmptyState title={textWords.length===1&&roleCounts&&roleCounts.everyone===0?`Nobody's notes or tags mention '${textWords[0]}'`:peopleView==="contacts"?"No contacts found":peopleView==="everyone"?"No one found":"No donors found"} message={textWords.length===1&&roleCounts&&roleCounts.everyone===0?"Notes or tags matches whole words in each person's notes, About and tags. Try another word, or clear the filter.":"Try adjusting your filters or search term."} action={onClearFilters?"Clear filters":undefined} onAction={onClearFilters||undefined}/>
     :peopleView==="donors"&&contactsN>0
     ?<div data-testid="dir-empty-contacts" style={{textAlign:"center",padding:"40px 16px"}}>
       <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,color:T.ink,marginBottom:8}}>No donors yet.</div>
