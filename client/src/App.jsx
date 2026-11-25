@@ -377,7 +377,7 @@ function AppShell() {
     setSettingsIntent(opts?.section?{section:opts.section,focus:opts.focus||null}:null);
     setTasksIntent((opts?.scope||opts?.view)&&t==="tasks"?{scope:opts.scope,view:opts.view}:null);
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
-    setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
+    setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode,unit:opts.unit,year:opts.year}:null);   // NUMBERS-8: LYBUNT's unit and year
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
     setMgIntent(t==="majorgifts"?{view:opts?.subtab,scope:opts?.scope}:null);
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
