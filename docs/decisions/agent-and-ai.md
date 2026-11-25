@@ -3,6 +3,20 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **Atlas never denies what Home shows (ATLAS-11, 25 Nov 2026).** "How is the Annual Fund doing" names a campaign,
+  appeal or fund by any part of its name (whole words, a prefix, one letter off, the year left out;
+  `server/atlas/campaignAsk.js`), read before any model. One match answers with Home's own goal card
+  (`goalCard` in `server/reports/helpers.js`, the function `/home/annual-goal` draws); two ask "Did you mean";
+  none lists the closest names, and only when she said a campaign word. A lifetime is one figure in any phrasing
+  ("Margaret's total", "lifetime for Margaret", "how much has Margaret given", the brief). LYBUNT says count,
+  households and dollars, each the report's own. Tell me more adds only what the answer before it didn't say: a
+  person's contact and gift history, a goal's givers (its figure's rows, footing), a list's next ten.
+- **The conversation is kept, per person and org, for 7 days (ATLAS-11).** It is the chain of her own requests
+  (`read.atlas.follows`), read back by `GET /atlas/conversation`; Start over marks the latest as the end
+  (`read.atlas.threadEnd`), deleting nothing. Nothing stored goes to a model: a new ask's read sends only its words.
+- **AI off is said once, in the dialog's header (ATLAS-11).** "Answers use templates while AI is off"
+  (`LIMITED_HEADER`); no answer repeats it, and the refusal says only what still works (`AI_OFF_REFUSAL`).
+  Settings > Atlas keeps the longer `READING_OFF` line.
 - **A person brief always comes (ATLAS-10, 25 Nov 2026).** "Brief me on", "Can you brief me on", "Tell me about",
   "Prep me for", "What's the next step for" and a name are one brief, read in code, so it answers with reading off
   in template sentences: open asks, gifts not yet thanked, the next meeting, the next move, giving with donor
