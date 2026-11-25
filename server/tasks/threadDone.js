@@ -47,7 +47,7 @@ function register(app, { query, run, wrap, requireAuth, checkWriteAccess, actor,
       undo: { path: `/threads/${encodeURIComponent(t.id)}/done`, body: { done: false } } });
     await PE.advanceWithEffects(advanceCultivationPlan, parent, t.id, { actorId: who.id, actorName: who.name })
       .catch(e => console.error("[plan] advance:", e.message));
-    res.json({ ok: true, sentence: `Done: ${t.next_step_label}.` });
+    res.json({ ok: true, sentence: `Done: ${t.next_step_label}.`, listed: true });   // SENDS-3: Recent changes lists it from the server
   }));
 }
 

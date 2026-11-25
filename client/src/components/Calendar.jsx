@@ -545,7 +545,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
       } else if (stepRef.taskId) {
         const path = `/tasks/${encodeURIComponent(stepRef.taskId)}/complete`;
         await apiFetch(path, { method: "POST", body: JSON.stringify({ done: true }) });
-        offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
+        offerUndo({ listed: true, message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
       } else {
         await apiFetch(`/threads/${stepRef.threadId}/dismiss`, { method: "POST", body: JSON.stringify({ reason: "handled_outside" }) });
       }
@@ -560,7 +560,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
   const finished = async () => {
     setFinish(null);
     const path = `/tasks/${encodeURIComponent(stepRef.taskId)}/complete`;
-    offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
+    offerUndo({ listed: true, message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
     onChanged("Marked done.");
   };
   // Reschedule: the meeting moves through its own route (and on Google or

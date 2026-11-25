@@ -630,6 +630,9 @@ app.post("/plan-steps/:id/done", requireAuth, requireCrm, checkWriteAccess, wrap
     });
   }
   const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+  // SENDS-3 item 6: a write with an Undo. What it is about to close is recorded first (planStepUndo.js).
+  const SU = require("./planStepUndo");
+  const parent = await SU.beginDone({ query, run }, orgId, s, actor(req));
 
   // THE INTERACTION IS WRITTEN FIRST, AND THE THREAD CLOSES ONTO IT.
   //
@@ -647,11 +650,11 @@ app.post("/plan-steps/:id/done", requireAuth, requireCrm, checkWriteAccess, wrap
   // the record saying nobody had spoken to them.
   const intId = newId("int");
   await run(
-    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
-     VALUES (?,?,?,?,?,?,?,?)`,
+    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name,metadata)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
     [intId, orgId, s.donor_id,
      s.step_type === "thank" ? "call" : s.step_type === "send" ? "email" : "note",
-     today, `${s.label}: ${note}`, actor(req).id, actor(req).name]);
+     today, `${s.label}: ${note}`, actor(req).id, actor(req).name, JSON.stringify({ via: SU.KIND, step_id: s.id })]);
   if (s.thread_id) {
     await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
                 WHERE id=? AND org_id=? AND closed_at IS NULL`, [intId, s.thread_id, orgId]);
@@ -659,9 +662,23 @@ app.post("/plan-steps/:id/done", requireAuth, requireCrm, checkWriteAccess, wrap
   await run(`UPDATE cultivation_plan_steps SET status='done', closed_at=NOW(), closed_by=?, closed_by_name=?, done_note=?
               WHERE id=? AND org_id=?`, [actor(req).id, actor(req).name, note, req.params.id, orgId]);
 
-  // AND SCHEDULES THE NEXT. Same call the rest of the plan machinery makes.
-  await advanceCultivationPlan(orgId, s.donor_id, { actorId: actor(req).id, actorName: actor(req).name, today });
-  res.json({ plan: await readPlan(orgId, s.plan_id), done: req.params.id, note, interactionId: intId });
+  // AND SCHEDULES THE NEXT. Same call the rest of the plan machinery makes, every change recorded.
+  await SU.advance(advanceCultivationPlan, parent, s, { actorId: actor(req).id, actorName: actor(req).name, today });
+  // `listed`: Recent changes lists this from the server, so the toast keeps no second copy.
+  res.json({ plan: await readPlan(orgId, s.plan_id), done: req.params.id, note, interactionId: intId, listed: true });
+}));
+
+// SENDS-3 item 6 · MARK DONE, UNDONE: everything it changed goes back (planStepUndo.js).
+app.post("/plan-steps/:id/reopen", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query(
+    `SELECT st.*, p.donor_id FROM cultivation_plan_steps st JOIN cultivation_plans p ON p.id = st.plan_id AND p.org_id = st.org_id
+      WHERE st.id=? AND st.org_id=?`, [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "Step not found" });
+  const out = await require("./planStepUndo").reopen({ query, run }, orgId, s, actor(req));
+  if (out.status !== 200) { req.audit && req.audit.skip && req.audit.skip("a refused undo changes nothing"); return res.status(out.status).json(out.body); }
+  if (req.audit && req.audit.summary) req.audit.summary(`Undid Mark done: ${s.label}`);
+  res.json({ ...out.body, plan: await readPlan(orgId, s.plan_id) });
 }));
 
 app.post("/plan-steps/:id/skip", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {

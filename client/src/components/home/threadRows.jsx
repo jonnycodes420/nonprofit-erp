@@ -216,14 +216,14 @@ export function finishRow({ loadThreads, setConvoFor }) {
       try{
         await apiFetch(`/threads/${encodeURIComponent(t.id)}/done`,{method:"POST",body:JSON.stringify({})});
         loadThreads();
-        offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(`/threads/${encodeURIComponent(t.id)}/done`,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
+        offerUndo({listed:true,message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(`/threads/${encodeURIComponent(t.id)}/done`,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
       }catch(e){ console.warn("[thread done]",(e&&e.sentence)||(e&&e.message)); loadThreads(); }
       return;
     }
     try{
       await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:true})});
       loadThreads();
-      offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
+      offerUndo({listed:true,message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
     }catch(e){ if(e&&e.error==="needs_outcome") convo(); }
   };
   finishRow.logCall=t=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t});
