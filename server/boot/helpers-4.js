@@ -167,6 +167,8 @@ async function resolveSegmentSpec(segment, orgId) {
     const DS = require("../../donorStatus");
     return { ...r, lapsedIds: [...await DS.quietIds(orgId, await DS.todayFor(orgId))] };
   }
+  // CAMPAIGN-2 item 2: a tier is the giving level, the one rule (server/outreach/campaignTiers.js).
+  if (r && r.mode === "byTier") return { ...r, tierIds: await require("../outreach/campaignTiers").tierIds(orgId, r.tiers) };
   return r;
 }
 // SPLIT-2 end
@@ -213,7 +215,10 @@ function filterBySegment(allDonors, segment) {
   } else if (mode === "byStage") {
     donors = (segment.stages || []).length ? donors.filter(d => segment.stages.includes(d.stage)) : [];
   } else if (mode === "byTier") {
-    donors = (segment.tiers || []).length ? donors.filter(d => segment.tiers.includes(d.capacity_tier)) : [];
+    // CAMPAIGN-2 item 2: the giving level's people, resolved by resolveSegmentSpec (never
+    // donors.capacity_tier, a wealth-score column that left every tier empty). Unresolved is nobody.
+    const ids = new Set(segment.tierIds || []);
+    donors = donors.filter(d => ids.has(d.id));
   } else if (mode === "manual") {
     donors = (segment.donorIds || []).length ? donors.filter(d => segment.donorIds.includes(d.id)) : [];
   } else if (mode === "group") {
@@ -240,8 +245,10 @@ function filterBySegment(allDonors, segment) {
     // two were the same set; now they are not, and leaving it unfiltered would
     // quietly send an appeal to the volunteer coordinator's whole roster.
     donors = donors.filter(d => require("../../shared/numbers/isDonor").isDonorRow(d));   // FLOWS-18: a giver is a donor
-    if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
-    if (segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
+    // CAMPAIGN-2 item 1: only a LEGACY segment (no mode) narrows by stage or status. "All donors"
+    // is all donors: a stage left on the segment by "By stage" (Lapsed, 281) kept the count at 281.
+    if (!segment.mode && segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
+    if (!segment.mode && segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
   }
   return donors;
 }

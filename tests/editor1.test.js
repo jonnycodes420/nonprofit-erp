@@ -306,10 +306,13 @@ async function fixture(org, slug, name, mission) {
     await row2.locator('[data-testid="edit-in-editor"], [data-testid="camp-view"]').first().click().catch(() => {});
     await page.locator('[data-testid="audience-line"]').waitFor({ timeout: 20000 }).catch(() => {});
     const c = await page.evaluate(() => ({ send: (document.querySelector('[data-testid="campaign-send"]') || {}).disabled, label: (document.querySelector('[data-testid="campaign-send"]') || {}).innerText,
-      reason: (document.querySelector('[data-testid="editor-primary-reason"]') || {}).innerText, line: (document.querySelector('[data-testid="audience-line"]') || {}).innerText,
+      reason: (document.querySelector('[data-testid="editor-primary-reason"]') || {}).innerText, line: (document.querySelector('[data-testid="audience-count"]') || {}).innerText,
+      head: (document.querySelector('[data-testid="can-receive"]') || {}).innerText,
       when: (document.querySelector('[data-testid="campaign-schedule-at"]') || {}).value }));
     ok("§4 in the editor, Send to 3 is disabled with the Donor mail sentence", c.send === true && /Send to 3/.test(c.label || "") && /Donor mail is off/.test(c.reason || ""), c);
     ok("§4 the line on screen adds up", /^6 donors · 0 can get this email: 2 have no email address · 1 set to Never · 3 can't get email while Donor mail is off for Editor One Riders\.$/.test((c.line || "").trim()), c.line);
+    // CAMPAIGN-2 item 3: the line is led by who can't receive it yet and why (the count sentence above is its own element).
+    ok("§4 the line is led by who can't receive it yet", /^3 of 6 can't receive this yet: Donor mail is off for Editor One Riders\./.test((c.head || "").trim()), c.head);
     ok("§5 Send it later starts empty", c.when === "", c.when);
     ok("§3 nothing threw", errors.length === 0, errors.slice(0, 3));
     await browser.close();

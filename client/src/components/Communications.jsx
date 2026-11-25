@@ -11,7 +11,7 @@ import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam, safeBack } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal, stageName } from "./shared";
+import { T, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
 import { offerUndo } from "./EditHistory";
@@ -38,7 +38,7 @@ import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
 import { countLabel } from "../../../shared/countWords.js";
 import PrintedLetters from "./letters/PrintedLetters";   // LETTERS-1
-import { ManualAudience } from "./communications/ManualAudience";   // COMMS-SPEED-1: searched on the server
+import { SegmentPicker, segLabel } from "./communications/SegmentPicker";   // CAMPAIGN-2: moved out whole
 import { displayOrgDate } from "../lib/orgDay";
 import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import { sequencesEmptyLine, sequenceStatusWord, sequencesMailOff } from "../lib/sequencesEmpty";   // ATLAS-4, SENDS-1
@@ -226,139 +226,6 @@ function NotReviewedPill() {
   );
 }
 
-// ── Segment helpers ───────────────────────────────────────────────────────────
-const STAGE_OPTS = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
-const TIER_OPTS  = ["transformational", "major", "mid", "small", "micro"];
-// BUILD-94 Part 2 — the four that let Mailchimp go, alongside the stage, tier
-// and manual segments that were already here. "Everyone with an email" is the
-// one segment that deliberately crosses every type: it IS the Mailchimp
-// audience, and it is what she is paying them $100 a month for.
-const SEG_MODES  = [
-  { id: "all",         label: "All donors" },
-  { id: "everyone",    label: "Everyone with an email" },
-  { id: "volunteers",  label: "Volunteers" },
-  { id: "staff_board", label: "Staff and board" },
-  { id: "donors",      label: "Donors" },
-  { id: "major",       label: "Major" },
-  { id: "lapsed",      label: "Lapsing or lapsed" },
-  { id: "byStage",     label: "By stage" },
-  { id: "byTier",      label: "By tier" },
-  { id: "manual",      label: "Manual" },
-  // WIRE-1: any Group, kept by hand or by a rule. The server resolves it to
-  // its members at send time (resolveSegmentSpec, mode "audience").
-  { id: "audience",    label: "A group" },
-];
-
-
-function segLabel(raw) {
-  const mode = raw?.mode || "all";
-  return {
-    all:         "All donors with email",
-    everyone:    "Everyone with an email address",
-    volunteers:  "Volunteers with an email",
-    staff_board: "Staff and board with an email",
-    donors:      "Donors with an email",
-    // SWEEP-3: Major is the giving level in Settings, never a fixed $10k; Lapsed
-    // is the lapse rule Audience uses; a stage is its name, not its key.
-    major:   "Major donors",
-    lapsed:  "Lapsing or lapsed donors",
-    byStage: `Stages: ${(raw?.stages || []).map(stageName).join(", ") || "none"}`,
-    byTier:  `Tiers: ${(raw?.tiers || []).join(", ") || "none"}`,
-    manual:  `${(raw?.donorIds || []).length} manually selected`,
-    audience: raw?.audienceName ? `The group ${raw.audienceName}` : "One group",
-  }[mode] || "All donors with email";
-}
-
-// FIX-26 / EDITOR-1: who the segment holds and this send will not reach is
-// the server's one answer (segment-preview `audience`), shown by CampaignEditor's
-// AudienceLine as one line whose counts add up to the segment.
-// ── SegmentPicker (module-level) ──────────────────────────────────────────────
-function SegmentPicker({ seg, onChange }) {
-  const mode = seg.mode || "all";
-  const upd  = p => onChange({ ...seg, ...p });
-  // WIRE-1: the org's Groups, read once the group mode is chosen.
-  const [groups, setGroups] = useState(null);
-  useEffect(() => {
-    if (mode !== "audience" || groups) return;
-    apiFetch("/groups").then(r => setGroups((r && r.groups) || [])).catch(() => setGroups([]));
-  }, [mode, groups]);
-  useEffect(() => {
-    // A group chosen before the list arrived (a link from the Group page)
-    // gets its name, so the label says which group it is.
-    if (mode !== "audience" || !groups || !seg.audienceId || seg.audienceName) return;
-    const g = groups.find(x => x.id === seg.audienceId);
-    if (g) onChange({ ...seg, audienceName: g.name });
-  }, [mode, groups, seg.audienceId]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const tog  = (key, val) => {
-    const arr = seg[key] || [];
-    upd({ [key]: arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val] });
-  };
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {/* A CHOSEN SEGMENT IS A STATE, NOT AN ACTION. Filled emerald used to
-            say "All Donors" louder than the send button said "Send to 3", and
-            one thing on a screen may mean "this is the button". */}
-        {/* SWEEP-3: "Donors" is the same people as "All donors" (the server
-            resolves both to every donor), so it is offered only to a campaign
-            that already uses it. */}
-        {SEG_MODES.filter(m => m.id !== "donors" || mode === "donors").map(m => (
-          <button key={m.id} onClick={() => upd({ mode: m.id })}
-            aria-pressed={mode === m.id}
-            style={{
-              background: T.white,
-              border: "1px solid " + T.bg3,
-              borderRadius: 7, padding: "5px 12px", fontSize: 11,
-              color: T.ink3, cursor: "pointer",
-              fontWeight: 400,
-              ...activeMark(mode === m.id, "bottom"),
-            }}>{m.label}</button>
-        ))}
-      </div>
-      {mode === "byStage" && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {STAGE_OPTS.map(s => (
-            <button key={s} onClick={() => tog("stages", s)}
-              style={{ background: (seg.stages || []).includes(s) ? T.green100 : T.bg2, border: "1px solid " + ((seg.stages || []).includes(s) ? T.greenDk : T.bg3), borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.stages || []).includes(s) ? T.greenDk : T.ink3, cursor: "pointer" }}>
-              {stageName(s)}
-            </button>
-          ))}
-        </div>
-      )}
-      {mode === "byTier" && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {TIER_OPTS.map(t => (
-            <button key={t} onClick={() => tog("tiers", t)}
-              style={{ background: (seg.tiers || []).includes(t) ? T.gold600 : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.tiers || []).includes(t) ? T.white : T.ink3, cursor: "pointer" }}>
-              {t}
-            </button>
-          ))}
-        </div>
-      )}
-      {mode === "audience" && (
-        <select aria-label="Which group" data-testid="segment-group" value={seg.audienceId || ""}
-          onChange={e => {
-            const v = e.target.value;
-            if (v.startsWith("mode:")) { onChange({ mode: v.slice(5) }); return; }
-            const g = (groups || []).find(x => x.id === v); upd({ audienceId: v || undefined, audienceName: g ? g.name : undefined }); }}
-          style={{ border: "1px solid " + T.bg3, borderRadius: 7, padding: "6px 10px", fontSize: 12.5, color: T.ink, background: T.white, maxWidth: 320 }}>
-          <option value="">{groups === null ? "Loading your groups…" : groups.length ? "Choose a group" : "No groups yet"}</option>
-          {/* TRUST-1: the picker offers the org's donors, not only its groups
-              (a walk org whose one group was Volunteers saw nothing else). */}
-          <optgroup label="Your donors">
-            {SEG_MODES.filter(m => ["all", "everyone", "lapsed", "major"].includes(m.id)).map(m =>
-              <option key={"mode:" + m.id} value={"mode:" + m.id}>{m.label}</option>)}
-          </optgroup>
-          {(groups || []).length > 0 && <optgroup label="Your groups">
-            {(groups || []).map(g => <option key={g.id} value={g.id}>{g.name}{g.kind === "dynamic" ? " (by rule)" : ""}{typeof g.count === "number" ? ` · ${g.count.toLocaleString()}` : ""}</option>)}
-          </optgroup>}
-        </select>
-      )}
-      {mode === "manual" && <ManualAudience ids={seg.donorIds} onToggle={id => tog("donorIds", id)} />}
-    </div>
-  );
-}
-
 // ── Mini bar chart (Analytics) ────────────────────────────────────────────────
 // ── Campaign donation link copy button ────────────────────────────────────────
 function CampaignLinkBtn({ campaignId, campaignName }) {
@@ -402,7 +269,7 @@ const SEQ_TRIGGERS = [
 ];
 
 // ── Single step row in the sequence builder ───────────────────────────────────
-function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
+function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading, aiNote, onUseStarting }) {
   const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 11px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box" };
   const preview = step.body ? step.body.replace(/{{donor_name}}/g, "Alexandra").replace(/{{org_name}}/g, "your org").slice(0, 80) + (step.body.length > 80 ? "…" : "") : "";
   return (
@@ -410,13 +277,20 @@ function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Step {index + 1}</div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button onClick={onAI} disabled={aiLoading}
+          <button type="button" data-testid={"seq-step-ai-" + index} onClick={onAI} disabled={aiLoading}
             style={{ background: aiLoading ? T.bg3 : T.gold100, border: "1px solid " + T.gold300, borderRadius: 7, padding: "4px 10px", color: aiLoading ? T.ink3 : T.gold700, fontSize: 11, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
             {aiLoading ? <><Spin/> Writing…</> : "✦ Write with AI"}
           </button>
           {total > 1 && <button onClick={onRemove} style={{ background: "transparent", border: "1px solid " + T.terracotta + "66", borderRadius: 7, padding: "4px 9px", color: T.terracotta, fontSize: 11, cursor: "pointer" }}>Remove</button>}
         </div>
       </div>
+      {/* CAMPAIGN-2 item 5: the button drafted, or this says why not and what to do. */}
+      {aiNote && <div role="status" data-testid={"seq-step-ai-note-" + index} data-why={aiNote.why || ""} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "8px 10px" }}>
+        {aiNote.tries > 1 ? `Tried again (${aiNote.tries} times). ` : ""}{aiNote.sentence}{aiNote.what ? " " + aiNote.what : ""}
+        {aiNote.link && <> <a href={aiNote.link.href} style={{ color: T.greenDk, fontWeight: 700 }}>{aiNote.link.label}</a></>}
+        {aiNote.starting && <div style={{ marginTop: 6 }}><button type="button" data-testid={"seq-step-use-starting-" + index} onClick={onUseStarting}
+          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 7, padding: "4px 10px", color: T.ink, fontSize: 11.5, cursor: "pointer" }}>Use Steward&rsquo;s starting words</button></div>}
+      </div>}
       <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10 }}>
         <div>
           <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Delay (days)</div>
@@ -823,6 +697,11 @@ function SequencesPanel({ data }) {
   const removeStep = i => setForm(f => ({ ...f, steps: f.steps.filter((_, idx) => idx !== i) }));
   const updateStep = (i, patch) => setForm(f => ({ ...f, steps: f.steps.map((s, idx) => idx === i ? { ...s, ...patch } : s) }));
 
+  // CAMPAIGN-2 item 5: "Write with AI" "produced no visible change at all": with AI unavailable the
+  // route answered Steward's starting words (often the words already there) and the reason was
+  // dropped. Now a draft fills the step; anything else leaves her words alone and says why not, what
+  // to do, and offers the starting words as her choice.
+  const [stepAiNote, setStepAiNote] = useState({});
   const writeWithAI = async (i) => {
     const step = form.steps[i];
     const trig = SEQ_TRIGGERS.find(t => t.id === form.trigger) || SEQ_TRIGGERS[3];
@@ -830,8 +709,19 @@ function SequencesPanel({ data }) {
     try {
       const r = await apiFetch("/ai/draft-email", { method: "POST",
         body: JSON.stringify({ purpose: "sequence", context: trig.ctx, step: i + 1, steps: form.steps.length, subjectHint: step.subject || "" }) });
-      updateStep(i, step.subject ? { body: r.body } : { subject: r.subject, body: r.body });
-    } catch (e) { alert(errorMessage(e, "The draft could not be written just now.")); }
+      const patch = step.subject ? { body: r.body } : { subject: r.subject, body: r.body };
+      if (r.source === "ai") {
+        updateStep(i, patch);
+        setStepAiNote(prev => ({ ...prev, [i]: { sentence: "Steward wrote this step. Read every word before you turn the sequence on." } }));
+      } else {
+        const wn = r.whyNot || { sentence: "Steward set the written draft aside, so nothing was drafted.", what: (r.reasons || []).join(" ") || "Write the words yourself." };
+        // Pressed again for the same reason: the note says it was tried again, so the press is answered.
+        setStepAiNote(prev => ({ ...prev, [i]: { ...wn, why: wn.reason || "set_aside", starting: patch,
+          tries: prev[i] && prev[i].why === (wn.reason || "set_aside") ? (prev[i].tries || 1) + 1 : 1 } }));
+      }
+    } catch (e) {
+      setStepAiNote(prev => ({ ...prev, [i]: { sentence: errorMessage(e, "The draft could not be written just now."), what: "Try again in a minute, or write the words yourself.", why: "error" } }));
+    }
     setStepAiLoading(prev => ({ ...prev, [i]: false }));
   };
 
@@ -840,7 +730,7 @@ function SequencesPanel({ data }) {
 
   // Builder view
   if (view === "builder") return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 680 }}>
+    <div data-testid="seq-builder" style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 680 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => { setView("list"); setEditing(null); }} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.ink }}>{editing ? "Edit sequence" : "New sequence"}</h2>
@@ -876,6 +766,8 @@ function SequencesPanel({ data }) {
             onRemove={() => removeStep(i)}
             onAI={() => writeWithAI(i)}
             aiLoading={!!stepAiLoading[i]}
+            aiNote={stepAiNote[i] || null}
+            onUseStarting={() => { const n = stepAiNote[i]; if (n && n.starting) updateStep(i, n.starting); setStepAiNote(prev => ({ ...prev, [i]: null })); }}
           />
         ))}
         <button onClick={addStep} style={{ ...S.btn("ghost"), alignSelf: "flex-start", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>+ Add Step</button>
@@ -1547,7 +1439,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const mode = raw.mode || "all";
     const body = normalizeMergeFields(campaign.body || "");
     setForm({ name: campaign.name || "", subject: campaign.subject || "", preheader: campaign.preheader || "", bodyHtml: body,
-      seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [],
+      // CAMPAIGN-2 item 1: only the chosen kind's own choices come along (a stale stage under
+      // "All donors" is dropped here, and the server ignores one anyway).
+      seg: { mode, ...(mode === "byStage" ? { stages: raw.stages || [] } : {}), ...(mode === "byTier" ? { tiers: raw.tiers || [] } : {}),
+             ...(mode === "manual" ? { donorIds: raw.donorIds || [] } : {}),
              ...(raw.audienceId ? { audienceId: raw.audienceId, audienceName: raw.audienceName || undefined } : {}),
              ...(raw.includeNeverGiven === true ? { includeNeverGiven: true } : {}) },   // FLOWS-15 item 1: her tick, kept
       // EDITOR-1: an empty time stays empty; a scheduled one shows in this browser's own clock.
@@ -1816,7 +1711,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         approvalNote={approvalNote}
         notReviewed={!!(form.starterKey && !form.starterReviewed)}
         audiencePicker={<>
-          <SegmentPicker seg={form.seg} onChange={seg => setForm(f => ({ ...f, seg }))} />
+          <SegmentPicker seg={form.seg} onChange={seg => setForm(f => ({ ...f, seg }))} tierSentence={segPreview && segPreview.tierSentence} />
           {/* THE SEGMENT, AS PEOPLE. Nobody notices that 17 is too many;
               everybody notices a name that should not be on the list. */}
           {/* EDITOR-1: with nobody in reach the audience line says why; the
@@ -2375,7 +2270,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           <EmailTemplates isReadOnly={isReadOnly} key={tplOpen ? "open-" + tplOpen.id : "library"}
             openTemplateId={tplOpen ? tplOpen.id : null} openTitle={tplOpen ? tplOpen.title : null} openBackLabel={tplOpen ? tplOpen.backLabel : null} onBackFromOpen={tplOpen ? () => { const b = tplOpen.back; setTplOpen(null); b(); } : null}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
-            onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")} />
+            onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")}
+            onOpenCampaign={c => { setTplOpen(null); setNav("campaigns"); loadCampaigns(); openBuilder(c); }} />
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}
