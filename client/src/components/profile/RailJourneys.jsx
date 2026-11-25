@@ -124,9 +124,12 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                       onClick={async()=>{
                         setJourneyBusy(true);
                         try{
-                          const r=await apiFetch(`/plan-steps/${doneFor}/done`,{method:"POST",body:JSON.stringify({note:doneNote.trim()})});
+                          const stepId=doneFor, label=((journey&&journey.steps)||[]).find(x=>x.id===stepId)?.label||"the step";
+                          const r=await apiFetch(`/plan-steps/${stepId}/done`,{method:"POST",body:JSON.stringify({note:doneNote.trim()})});
                           setJourney(r.plan||null); setDoneFor(null); setDoneNote("");
                           if(onInteractionAdded)onInteractionAdded();
+                          // SENDS-3 item 6: Mark done has an Undo, and Recent changes lists it from the server (listed)
+                          offerUndo({listed:!!r.listed,message:`Marked done: ${label}.`,undoAction:async()=>{const u=await apiFetch(`/plan-steps/${stepId}/reopen`,{method:"POST",body:"{}"});setJourney(u.plan||null);if(onInteractionAdded)onInteractionAdded();return u;}},"journey step");
                         }catch(e){ window.alert(e?.message||"Could not save that."); }
                         setJourneyBusy(false);
                       }}

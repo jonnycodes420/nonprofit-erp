@@ -321,15 +321,18 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   }
 
   // TRASH-1 item 2: live receipts are voided only on her yes (voidReceipts:
-  // true, sent by the confirm that named them). Undo import's "remove them
-  // too" names its own people and is unchanged.
+  // true, sent by the confirm that named them). SENDS-3 item 5: Undo import's
+  // "remove them too" asks the same question, once for the batch, naming how
+  // many people and how many receipts.
   const voidReceipts = req.body.voidReceipts === true;
-  if (!voidReceipts && !req.body.importId) {
-    const { receipts } = await require("./personLinks").whatGoesWith(query, req.user.orgId, trashIds);
-    if (receipts > 0) {
+  if (!voidReceipts) {
+    const PL = require("./personLinks");
+    const held = await PL.receiptHolders(query, req.user.orgId, trashIds);
+    if (held.receipts > 0) {
       req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
-      return res.status(409).json({ error: "receipts_live", receipts,
-        sentence: `${receipts.toLocaleString("en-US")} ${receipts === 1 ? "receipt was" : "receipts were"} issued to these people. Say whether to void them, then move them to trash. Nobody was moved.` });
+      return res.status(409).json({ error: "receipts_live", receipts: held.receipts, people: held.people,
+        receiptQuestion: PL.batchReceiptQuestion(held.people, held.receipts, trashIds.length),
+        sentence: `${held.receipts.toLocaleString("en-US")} ${held.receipts === 1 ? "receipt was" : "receipts were"} issued to ${held.people === 1 ? "1 of these people" : `${held.people.toLocaleString("en-US")} of these people`}. Say whether to void them, then move them to trash. Nobody was moved.` });
     }
   }
   // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,

@@ -92,6 +92,27 @@ function receiptQuestion(count, name) {
     yes: `Void ${count === 1 ? "the receipt" : `${count} receipts`} and move to trash`,
   };
 }
+// SENDS-3 item 5 · THE SAME QUESTION, ONCE FOR A BATCH (import undo's "remove
+// them too"): how many of these people hold live receipts, and how many.
+async function receiptHolders(query, orgId, ids) {
+  const list = [...new Set((ids || []).map(String))];
+  if (!list.length) return { people: 0, receipts: 0 };
+  const [r] = await query(`SELECT COUNT(DISTINCT rc.donor_id)::int AS people, COUNT(*)::int AS receipts FROM receipts rc
+                            WHERE rc.org_id = ? AND rc.donor_id = ANY(?) AND rc.voided_at IS NULL`, [orgId, list]);
+  return { people: r.people, receipts: r.receipts };
+}
+function batchReceiptQuestion(people, receipts, total) {
+  if (!(receipts > 0)) return null;
+  const who = total > people ? `${people.toLocaleString("en-US")} of these ${total.toLocaleString("en-US")} people`
+    : people === 1 ? "this person" : `these ${people.toLocaleString("en-US")} people`;
+  const them = receipts === 1 ? "it" : "them";
+  return {
+    question: `${receipts.toLocaleString("en-US")} ${receipts === 1 ? "receipt was" : "receipts were"} issued to ${who}. Void ${them} and move them to the trash?`,
+    note: `Bringing them back from the trash does not un-void ${them}: a voided receipt stays void, and you can issue a new one from their record.`,
+    yes: `Void ${receipts === 1 ? "the receipt" : `${receipts.toLocaleString("en-US")} receipts`} and move them`,
+  };
+}
+
 // The name the question uses: an individual's first name, else the whole name.
 function shortName(row) {
   const name = String((row && row.name) || "").trim();
@@ -99,4 +120,4 @@ function shortName(row) {
   return row.kind && row.kind !== "individual" ? name : name.split(/\s+/)[0];
 }
 
-module.exports = { takeLinks, giveLinks, hasLinks, whatGoesWith, receiptQuestion, shortName };
+module.exports = { takeLinks, giveLinks, hasLinks, whatGoesWith, receiptQuestion, shortName, receiptHolders, batchReceiptQuestion };

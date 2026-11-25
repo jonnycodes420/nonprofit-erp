@@ -493,6 +493,11 @@ async function seed() {
                ('d_hf1_none',$1,'Orrin Pellbrook',NULL,NULL,NULL,NULL,'system:test','Test')
              ON CONFLICT (id) DO NOTHING`, [ORG]);
     await q(`UPDATE donors SET mobile='(207) 555-0142', email2='ysolde@hf1.test' WHERE id='d_hf1_mob' AND org_id=$1`, [ORG]);
+    // §10d SENDS-3 item 8: a phone marked wrong. adaptDonor dropped phone_unreachable, so the rail's
+    // "Marked wrong. Never dialed or texted from Steward." line under the number never drew.
+    // HOW IT GOES RED ON MAIN: main's api.js adaptDonor (no phone_unreachable) in a rebuilt dist.
+    await q(`INSERT INTO donors (id,org_id,name,phone,phone_unreachable,phone_unreachable_reason,created_by,created_by_name)
+             VALUES ('d_hf1_badph',$1,'Wendeline Strake','(207) 555-0177',true,'Marked wrong in the donor file','system:test','Test') ON CONFLICT (id) DO NOTHING`, [ORG]);
     const ctx10 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
     await ctx10.addInitScript(([t, u, o]) => {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
@@ -518,6 +523,8 @@ async function seed() {
     ok("§10a an address and nothing else, with the rail read failed: Contact shows the address", !!addr && /14 Tern Lane, Bath, ME 04530/.test(addr) && railRefused > 0, { addr, railRefused });
     const mob = await contactOf("d_hf1_mob");
     ok("§10b only a mobile and a second email from an import: Contact shows both", !!mob && /\(207\) 555-0142/.test(mob) && /ysolde@hf1\.test/.test(mob), mob);
+    const badPh = await contactOf("d_hf1_badph");
+    ok("§10d a phone marked wrong says so under the number on the rail", !!badPh && /\(207\) 555-0177/.test(badPh) && /Marked wrong\. Never dialed or texted from Steward\./.test(badPh), badPh);
     const none = await contactOf("d_hf1_none");
     ok("§10c nothing to reach them by: Contact says \"No contact details yet\" with Add", !!none && /No contact details yet/.test(none) && await p10.locator('[data-testid="dp-contact-add"]:visible').count() >= 1, none);
     const dlg = p10.getByRole("dialog", { name: "Edit donor profile" });

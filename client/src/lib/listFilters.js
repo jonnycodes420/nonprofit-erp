@@ -16,7 +16,7 @@ import { donorsListHref, donorsListState } from "./appUrls";
 
 // The filter's keys, as donorsListState names them. `where` is the chips' JSON; `savedView` the view
 // they were picked from (FLOWS-2's chips plus LIST-6's view id).
-export const FILTER_KEYS = ["search", "stage", "owner", "designation", "household", "status", "people", "fromImport", "where", "savedView"];
+export const FILTER_KEYS = ["search", "stage", "owner", "designation", "household", "status", "people", "fromImport", "fromAtlas", "where", "savedView"];
 export const EMPTY_FILTERS = Object.freeze(Object.fromEntries(FILTER_KEYS.map(k => [k, ""])));
 
 export function filtersOf(search) {

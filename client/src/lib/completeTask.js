@@ -32,6 +32,7 @@ export async function completeTask(t, { after = null, undo = true } = {}) {
   }
   if (after) await after();
   if (undo) offerUndo({
+    listed: !!(row && row.listed),   // SENDS-3: the server lists the tick in Recent changes; the toast keeps no second copy
     message: row && row.next ? `${doneWords(t.title)} The next one is on ${fmtDayShort(row.next.due)}.` : doneWords(t.title),
     undoAction: async () => { const r = await completeCall(t.id, false); if (after) await after(); return r; },
   }, t.title);
