@@ -158,6 +158,14 @@ the morning email unless the person turned on its own reminder, so no step goes 
   `email_saved_blocks` rows (org-scoped, actor-stamped, removed through the one Remove with Undo); using one, or one
   of Steward's ready-made sections (`shared/emailReadyBlocks.js`), hands back a copy with fresh ids, never a link.
   `POST /email-export` is the email as HTML with a sample unsubscribe line; it reads, never sends.
+- **The builder moves blocks three ways, each one undo step (BUILDER-2B).** A tile or a saved block dragged from the
+  left pane (the browser's own drag, `DRAG_TYPE`), the ⠿ grip on a selected block (pointer events: press, move,
+  release; the browser's drag is unreliable when it starts inside the frame), and Alt+Up/Down (not inside paragraphs
+  of text, where Option+arrow moves the caret). All land through `client/src/components/email-builder/frameDnD.js`'s
+  drop line and `useEmailBuilder` (`insert`/`insertBlocks`/`moveTo`); the footer stays last, a leading header first.
+  The floating "+" between blocks opens the same tiles and blocks. Saved and ready-made blocks come back from the
+  server as copies with fresh ids. Copy and paste carries `STEWARD-EMAIL-BLOCKS:` + the blocks and the org on the
+  clipboard; a paste from another org is refused, and every paste is validated with the email it joins.
 - **A campaign follows its type, not the automatic-email switch (TRUST-1, Jonathan 27 Oct).** A campaign is a send
   someone clicks. `donorMailDecision("campaign")` asks `mailTypes.holdReason` like `sendGate.decide`: Campaign emails
   on; Everyone and not Never, or Only donors I choose and Always include; plus the marketing refusals. `auto_email`

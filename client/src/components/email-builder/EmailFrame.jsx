@@ -15,6 +15,15 @@
 // editor's undo and redo, not the browser's.
 import { useEffect, useRef } from "react";
 import { T } from "../shared";
+import { attachDnD } from "./frameDnD";   // BUILDER-2B: drag, drop and the "+"
+
+// BUILDER-2B: a row inside a Box is marked "3.children.0"; a click on it
+// selects its Box (block 3), the block the editor holds.
+const topIndex = tr => { const v = tr && tr.getAttribute("data-st-block"); return v == null ? null : Number(String(v).split(".")[0]); };
+const typingIn = doc => { const a = doc.activeElement; return !!(a && a.closest && a.closest("[data-st-edit]")); };
+// In text of several paragraphs, Alt (Option) with an arrow moves the caret a
+// paragraph; anywhere else it moves the selected block.
+const inParagraphs = doc => { const a = doc.activeElement; return !!(a && a.closest && a.closest("[data-st-rich]")); };
 
 // The frame's own look while editing, in Steward's tokens; the email inside
 // stays the org's.
@@ -88,7 +97,8 @@ const HIDDEN_NAME = { phone: "hidden on phones", desktop: "hidden on desktop" };
 
 // html: the server's editable render. selected: the selected block's index or
 // null. on (read live): commit(path, value), select(i | null), action(act, i),
-// focusChange(bool), caret(c), undo(), redo().
+// focusChange(bool), caret(c), undo(), redo(); BUILDER-2B: drop(payload, at),
+// plus(at, rect), copy(event), paste(event).
 export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, testid = "email-preview-frame", readOnly = false }) {
   const scrollY = useRef(0);
   const live = useRef(on);
@@ -138,6 +148,11 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
     // Undo and redo are the editor's, everywhere in the frame.
     doc.addEventListener("keydown", e => {
       const mod = e.metaKey || e.ctrlKey;
+      // BUILDER-2B: Alt+Up / Alt+Down moves the selected block (not inside paragraphs of text).
+      if (e.altKey && !mod && (e.key === "ArrowUp" || e.key === "ArrowDown") && sel.current != null && !inParagraphs(doc) && !readOnly) {
+        e.preventDefault(); const a = doc.activeElement; if (a && a.blur && typingIn(doc)) a.blur();
+        live.current.action(e.key === "ArrowUp" ? "up" : "down", sel.current); return;
+      }
       if (mod && (e.key === "z" || e.key === "Z")) { e.preventDefault(); if (e.shiftKey) live.current.redo(); else live.current.undo(); return; }
       if (mod && (e.key === "y" || e.key === "Y")) { e.preventDefault(); live.current.redo(); return; }
       if (e.key === "Escape") { const a = doc.activeElement; if (a && a.blur) a.blur(); live.current.select(null); }
@@ -151,9 +166,20 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
     selBox.setAttribute("data-testid", "email-block-selected");
     const tag = doc.createElement("span"); tag.className = "st-name"; selBox.appendChild(tag);
     const bar = doc.createElement("div"); bar.className = "st-bar"; bar.setAttribute("data-testid", "email-block-handles"); selBox.appendChild(bar);
-    const acts = readOnly ? [] : [["up", "↑", "Move up"], ["down", "↓", "Move down"], ["duplicate", "⧉", "Duplicate block"], ["remove", "✕", "Remove block"]].map(([act, text, aria]) => {
-      const b = doc.createElement("button"); b.type = "button"; b.textContent = text; b.title = aria; b.setAttribute("data-act", act); b.setAttribute("aria-label", aria); bar.appendChild(b); return b;
+    const acts = readOnly ? [] : [["drag", "⠿", "Hold and move to place it (or Alt + Up and Down)"], ["up", "↑", "Move up"], ["down", "↓", "Move down"], ["duplicate", "⧉", "Duplicate block"], ["remove", "✕", "Remove block"]].map(([act, text, aria]) => {
+      // The ⠿ grip is a span: a button can't be dragged in every browser.
+      const b = doc.createElement(act === "drag" ? "span" : "button");
+      if (act === "drag") { b.setAttribute("role", "button"); b.className = "st-grip"; } else b.type = "button";
+      b.textContent = text; b.title = aria; b.setAttribute("data-act", act); b.setAttribute("aria-label", aria); bar.appendChild(b); return b;
     });
+    // BUILDER-2B: drag a tile or a block in, the drop line, the "+", copy and paste.
+    const dnd = attachDnD(doc, live, { readOnly });
+    const grip = acts.find(b => b.getAttribute("data-act") === "drag");
+    if (grip) { grip.style.touchAction = "none"; dnd.gripMove(grip, () => sel.current); }
+    if (!readOnly) {
+      doc.addEventListener("copy", e => { if (!typingIn(doc) && sel.current != null) live.current.copy(e); });
+      doc.addEventListener("paste", e => { if (!typingIn(doc)) live.current.paste(e); });
+    }
     const rectOf = i => {
       const rows = [...doc.querySelectorAll(`tr[data-st-block="${i}"]`)];
       if (!rows.length) return null;
@@ -178,19 +204,19 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
         const hid = first.getAttribute("data-st-hide");
         tag.textContent = (locked ? "Tax lines · required" : (labels[type] || type)) + (hid ? ` · ${HIDDEN_NAME[hid] || ""}` : "");
         selBox.setAttribute("data-st-for", String(i));
-        acts.forEach(b => { b.style.display = locked && (b.getAttribute("data-act") === "remove" || b.getAttribute("data-act") === "duplicate") ? "none" : ""; });
+        acts.forEach(b => { const a = b.getAttribute("data-act"); b.style.display = (locked && (a === "remove" || a === "duplicate")) || (type === "footer" && a === "drag") ? "none" : ""; });
       }
       put(hover, hovered != null && hovered !== i ? rectOf(hovered) : null);
     };
     doc.addEventListener("mouseover", e => {
       const tr = e.target && e.target.closest && e.target.closest("tr[data-st-block]");
-      const n = tr ? Number(tr.getAttribute("data-st-block")) : null;
+      const n = tr ? topIndex(tr) : null;
       if (n !== hovered) { hovered = n; draw.current(); }
     });
     doc.addEventListener("mouseleave", () => { hovered = null; draw.current(); });
     bar.addEventListener("click", e => {
       const b = e.target.closest && e.target.closest("button[data-act]");
-      if (!b || sel.current == null) return;
+      if (!b || sel.current == null || b.getAttribute("data-act") === "drag") return;
       e.preventDefault(); e.stopPropagation();
       live.current.action(b.getAttribute("data-act"), sel.current);
     });
@@ -199,7 +225,7 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
       if (a) e.preventDefault();
       if (e.target.closest && e.target.closest(".st-bar")) return;
       const tr = e.target.closest && e.target.closest("tr[data-st-block]");
-      live.current.select(tr ? Number(tr.getAttribute("data-st-block")) : null);
+      live.current.select(tr ? topIndex(tr) : null);
     });
     if (doc.defaultView) {
       doc.defaultView.addEventListener("resize", () => draw.current());
