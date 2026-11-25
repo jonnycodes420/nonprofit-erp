@@ -38,8 +38,11 @@ async function run(st, { log, save, get, query, orgId, parse }) {
       const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
       const OT = require("../../orgTime");
       const pa = await require("./answers").personAnswer({ query, orgId, donorId: prior.donorId, today: OT.orgToday(o || {}), more: true });   // ORG_TZ_SEAM_OK
-      const shownBefore = new Set(((prior.facts || [])).map(f => f.line));
-      const added = pa ? pa.facts.filter(f => !shownBefore.has(f.line)).length : 0;
+      // ATLAS-10 follow-up (staging re-check, Rufus Tallgrass): two gifts of $25 on one day are two
+      // lines with the same words, so what the brief showed is counted line by line, never as a set.
+      const shownBefore = new Map();
+      for (const f of prior.facts || []) shownBefore.set(f.line, (shownBefore.get(f.line) || 0) + 1);
+      const added = pa ? pa.facts.filter(f => { const n = shownBefore.get(f.line) || 0; if (n) { shownBefore.set(f.line, n - 1); return false; } return true; }).length : 0;
       if (pa && added) out = { line: pa.spoke, answer: { type: "person", ...pa }, link: { tab: "donor", donorId: prior.donorId } };
       else if (pa) out = { line: `That brief was everything Steward holds on ${pa.name}: nothing in it was held back. Their record has the full timeline.`, link: { tab: "donor", donorId: prior.donorId, section: "timeline" } };
     }
