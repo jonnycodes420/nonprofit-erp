@@ -5,6 +5,7 @@
 module.exports = {
   fiscalYear: require("./fiscalYear"),
   wholeDollars: require("./wholeDollars"),   // PIPE-1
+  orderFigures: require("./orderFigures"),   // ORDER-1
   money: require("./money"),
   lifetime: require("./lifetime"),
   portfolioValue: require("./portfolioValue"),   // FLOWS-13

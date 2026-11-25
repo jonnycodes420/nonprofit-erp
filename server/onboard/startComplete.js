@@ -75,8 +75,33 @@ async function onCheckoutCompleted(session) {
   }
   await run(`UPDATE start_links SET status='completed', completed_at=COALESCE(completed_at, NOW()) WHERE id=?`, [linkId]);
   await stampPaperDone(orgId);
+  // ORDER-1: once. A redelivered event (or one after Stripe's 24-hour idempotency window) finds the link completed.
+  if (link.order_json && link.status !== "completed") await afterOrderCard(link, session, card);
   console.log(`[start-link] ${linkId} completed for org ${orgId} (${session.mode || "subscription"}${card ? ", card " + card.last4 : ""})`);
   return orgId;
+}
+
+// ORDER-1 · the card went in on an order. The setup fee (when there is one) is an invoice
+// item tied to the subscription, so it rides the first real invoice on the first charge
+// date and never the $0 one Stripe makes today (the SALES-3 rule). Idempotent by key.
+// Then the deal moves to Card on file.
+async function afterOrderCard(link, session, card) {
+  const { billingStripe } = deps;
+  const fee = Number(link.order_json.setupFeeCents) || 0;
+  const subId = typeof session.subscription === "string" ? session.subscription : session.subscription && session.subscription.id;
+  const customer = typeof session.customer === "string" ? session.customer : session.customer && session.customer.id;
+  if (fee > 0 && subId && customer && billingStripe) {
+    try {
+      await billingStripe.invoiceItems.create({ customer, subscription: subId, currency: "usd", amount: fee, description: `Steward setup fee (order ${link.order_number})`,
+        metadata: { startLinkId: link.id, orgId: link.org_id, orderNumber: link.order_number } }, { idempotencyKey: `order-setup-${link.id}` });
+    } catch (e) { console.error(`[order] CRITICAL: ${link.order_number}: the setup fee was not added to the first invoice:`, e.message); }
+  }
+  try {
+    const DEAL = require("../admin/sales/orderDeal");
+    const who = { id: "system:onboard/order", name: "Order link (Stripe)" };
+    await DEAL.moveTo(deps, link.deal_id, "card", who);
+    await DEAL.note(deps, link.deal_id, `Order ${link.order_number}: card on file${card && card.last4 ? ` (${card.brand || "card"} ending ${card.last4})` : ""}. Nothing charged today.`, who);
+  } catch (e) { console.error(`[order] ${link.order_number}: the deal did not move to Card on file:`, e.message); }
 }
 
 module.exports = { configure, onCheckoutCompleted, stampPaperDone };

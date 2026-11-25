@@ -23,6 +23,7 @@ const express = require("express");
 const { newId } = require("../shared/newId");
 const SL = require("./startLink");
 const PRICING = require("../../pricing");
+const ORDER = require("./orderRoutes");   // ORDER-1
 
 const routers = { r1: express.Router() };
 const SIGNER_ACTOR = "system:onboard/start-link";
@@ -54,10 +55,14 @@ function mount(ctx) {
   app.post("/admin/orgs/:id/start-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
     const org = await orgFor(req.params.id);
     if (!org) return res.status(404).json({ error: "no_such_org", message: "That organization does not exist." });
-    if (org.stripe_subscription_id && !["canceled", "cancelled"].includes(org.subscription_status || "")) {
+    const subscribed = org.stripe_subscription_id && !["canceled", "cancelled"].includes(org.subscription_status || "");
+    // ORDER-1 item 5: an org already paying signs its order too; signing it makes no second subscription.
+    if (subscribed && (req.body || {}).order) return ORDER.create(req, res, org, await whoName(req), { subscribed: true });
+    if (subscribed) {
       return res.status(409).json({ error: "already_subscribed",
         message: `${org.name} already has a Stripe subscription. Cancel it in Settings → Billing before raising a start link.` });
     }
+    if ((req.body || {}).order) return ORDER.create(req, res, org, await whoName(req));   // ORDER-1: the order she signs
     const v = SL.validateStartLink(req.body || {}, org);
     if (!v.ok) return res.status(400).json(v);
     // One open link per org: two signed links would be two subscriptions.
@@ -88,12 +93,16 @@ function mount(ctx) {
     const org = await orgFor(req.params.id);
     if (!org) return res.status(404).json({ error: "no_such_org" });
     const links = await query(`SELECT id, contact_name, contact_email, price_cents, price_basis, charge_mode, first_charge_on,
-        status, expires_at, signed_at, completed_at, created_at, created_by_name FROM start_links WHERE org_id=? ORDER BY created_at DESC`, [org.id]);
+        status, expires_at, signed_at, completed_at, created_at, created_by_name,
+        order_number, order_json, order_version, order_updated_at, deal_id, sent_at FROM start_links WHERE org_id=? ORDER BY created_at DESC`, [org.id]);
+    const [admin] = await query(`SELECT name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at LIMIT 1`, [org.id]);
+    const deal = await require("../admin/sales/orderDeal").dealForOrg(query, org.id);   // ORDER-1: the deal that moves
     res.json({
       orgName: org.name, paperDoneAt: org.paper_done_at, dataInAt: org.data_in_at,
       customPriceUsd: org.custom_price_cents != null ? org.custom_price_cents / 100 : null,
       bands: PRICING.TIERS.map(t => ({ id: t.id, band: t.band, monthlyUsd: t.monthlyUsd })),
       links: links.map(l => ({ ...l, state: SL.linkState(l) })),
+      admin: admin || null, deal: deal || null, orderDefaults: require("./order").DEFAULTS,
     });
   }));
 
@@ -122,6 +131,12 @@ function mount(ctx) {
         ? "This start link has expired. Links last 14 days; ask Jonathan for a new one."
         : "This start link was replaced by a newer one. Use the latest link Jonathan sent." });
     }
+    if (link.order_json) {   // ORDER-1: the order page
+      const [org] = await query(`SELECT name, logo_data FROM orgs WHERE id=?`, [link.org_id]);
+      const sig = await ORDER.signatureOf(link.id);
+      return res.json({ state, orgName: org.name, logo: org.logo_data || null, contactName: link.contact_name, contactEmail: link.contact_email,
+        expiresAt: link.expires_at, confirmation: sig ? ORDER.confirmation(sig) : null, ...(await ORDER.page(link, state)) });
+    }
     const { org, tz, doc } = await pageFor(link);
     let confirmation = null;
     if (link.signed_at) {
@@ -148,6 +163,26 @@ function mount(ctx) {
         : "This start link can no longer be used. Ask Jonathan for a new one." });
     }
     const b = req.body || {};
+    if (link.order_json) {   // ORDER-1: the order is signed by ORDER.sign; the card step below is shared
+      if (state === "open") {
+        const r = await ORDER.sign(req, link, b);
+        if (!r.ok) return res.status(r.status).json(r.body);
+      }
+      const [fresh] = await query(`SELECT * FROM start_links WHERE id=?`, [link.id]);
+      if (fresh.order_json.subscribed) {   // already paying: the card on file stays; no Checkout, no second subscription
+        await run(`UPDATE start_links SET status='completed', completed_at=COALESCE(completed_at, NOW()) WHERE id=? AND status='signed'`, [link.id]);
+        await require("./startComplete").stampPaperDone(link.org_id);
+        const sig = await ORDER.signatureOf(link.id);
+        return res.json({ ok: true, checkoutUrl: null, completed: true, confirmation: ORDER.confirmation(sig), signed: (await ORDER.page(fresh, "completed")).order.signed });
+      }
+      if (!billingStripe) return res.status(503).json({ error: "billing_unavailable", message: "Signed. The card step is not available right now; Jonathan will send you a link." });
+      const [org] = await query(`SELECT id, name, ${billingCustomerColumn()} AS billing_customer_id FROM orgs WHERE id=?`, [link.org_id]);
+      const tz = await orgTzName(link.org_id);
+      const session = await billingStripe.checkout.sessions.create(await checkoutParams({ link: fresh, org, token: req.params.token, tz }));
+      await run(`UPDATE start_links SET stripe_session_id=? WHERE id=?`, [session.id, link.id]);
+      const sig = await ORDER.signatureOf(link.id);
+      return res.json({ ok: true, checkoutUrl: session.url, confirmation: ORDER.confirmation(sig), signed: (await ORDER.page(fresh, "signed")).order.signed });
+    }
     const { org, tz, doc } = await pageFor(link);
     if (state === "open") {
       const name = String(b.name || "").trim().slice(0, 200);
@@ -207,6 +242,17 @@ function mount(ctx) {
     const priceId = tier && process.env[tier.envMonthly];
     if (!priceId) throw Object.assign(new Error(`No Stripe price is configured for ${link.tier_id} (${tier && tier.envMonthly}).`), { status: 400 });
     let lineItem;
+    if (link.order_json) {   // ORDER-1: the typed price, per month or per year, on the band's own product
+      const p = await billingStripe.prices.retrieve(priceId);
+      const pieces = ORDER.checkoutPieces(link, typeof p.product === "string" ? p.product : p.product.id);
+      const sig = await ORDER.signatureOf(link.id);
+      const meta = { ...metadata, plan: pieces.plan };
+      return {
+        ...base, metadata: meta, mode: "subscription", line_items: [pieces.lineItem], payment_method_collection: "always",
+        subscription_data: ORDER.PLANT === "chargeearly" ? { metadata: meta } : { trial_end: Math.floor(firstCharge.getTime() / 1000), metadata: meta },
+        custom_text: { submit: { message: ORDER.confirmation(sig).replace(/^Signed\. /, "") } },
+      };
+    }
     if (link.price_basis === "band") {
       lineItem = { price: priceId, quantity: 1 };
     } else {
