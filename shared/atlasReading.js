@@ -9,3 +9,8 @@
 // ATLAS-10 item 7 (W-1125-Atlas-T6): said in the present, so it reads true on Settings > Atlas
 // (where nothing was asked) as well as over an answer; the dialog's refusal opens with it too.
 export const READING_OFF = "My reading is off for this organization, so I answer from Steward's own counts only. A question they don't cover, I'll say I can't answer.";
+
+// ATLAS-11 item 5 (Jarvis, 25 Nov: "the limited-mode disclosure appears intermittently in answers and
+// is absent from the dialog header"): with AI off or unavailable, the Atlas dialog's header says this,
+// one steady line, and no answer repeats it. Settings > Atlas keeps READING_OFF, the longer line.
+export const LIMITED_HEADER = "Answers use templates while AI is off";

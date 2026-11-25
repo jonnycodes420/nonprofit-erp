@@ -932,6 +932,13 @@ async function fundraisingCampaignRows(orgId) {
 const GOAL_CATEGORIES = ["annual", "project", "capital"];
 // NUMBERS-1: the checker reads the overview's roll-up through this.
 require("../../numbers").screens.fundraisingPortfolio = orgId => fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio);
+// ATLAS-11 item 1: ONE GOAL'S CARD, the figures Home's goal bar draws (raised, the goal, the share,
+// pace and days left). /home/annual-goal and Atlas's "how is the Annual Fund doing?" both read this.
+async function goalCard(orgId, g) {
+  const card = await goalFigureRow(g, async source => ({ ...(await figureSources.figureValue(orgId, source, {})), source }));
+  return { ...card, daysLeft: g.daysLeft, endsWords: g.endsWords || null, lifecycle: g.lifecycle || null };
+}
+require("../../numbers").screens.goalCard = goalCard;
 function fundraisingGoalsPortfolio(rows) {
   // rows = fundraisingCampaignRows output.
   // Child raised/goal rolled up onto each parent.
@@ -1009,7 +1016,7 @@ reportHooks.yearWindows = async orgId => {
   return { cur: reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior: reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth), year: p.year };
 };
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
-return { GOAL_CATEGORIES, composeBoardPack, computeDashboard, computeFundraisingPace, paceWithCommitment, fundraisingCampaignRows, fundraisingGoalsPortfolio, goalFigureRow, savedDashboardFor };
+return { GOAL_CATEGORIES, composeBoardPack, computeDashboard, computeFundraisingPace, paceWithCommitment, fundraisingCampaignRows, fundraisingGoalsPortfolio, goalFigureRow, goalCard, savedDashboardFor };
 }
 
 module.exports = { mount };

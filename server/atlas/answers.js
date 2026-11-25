@@ -173,9 +173,33 @@ async function personAnswer({ query, orgId, donorId, today, more = false }) {   
     // ATLAS-5 (W-1108-Atlas-02X): each note once, by its id.
     ...aboutLines.map(l => ({ kind: "about", line: `${l}.`, link: { tab: "donor", donorId } })),
   ];
+  if (more) facts.push(...await moreFacts(query, orgId, donorId, first));   // ATLAS-11 item 3: what the brief doesn't say
   if (d.deceased) facts.unshift({ kind: "care", line: `${d.name} is marked as deceased.`, link: { tab: "donor", donorId } });
   else if (d.do_not_contact) facts.unshift({ kind: "care", line: `${d.name} is marked do not contact.`, link: { tab: "donor", donorId } });
   return { donorId, name: d.name, about, spoke: more ? `Here's everything Steward holds on ${d.name}.` : `Here's what Steward knows about ${d.name}.`, facts, today, more };
+}
+
+// ATLAS-11 item 3 (Jarvis: "Tell me more adds nothing"): Tell me more on a person adds what the
+// brief never says: how to reach them (contactDetails.js, the profile's Contact section) and their
+// gift history, newest first, each gift by the one rule (money.js GIFT) with where it went.
+const HISTORY = 12;
+async function moreFacts(query, orgId, donorId, first) {
+  const [[c], gifts, [n]] = await Promise.all([
+    query(`SELECT email, email2, phone, mobile, address, address2, city, state, zip, country FROM donors WHERE id=? AND org_id=?`, [donorId, orgId]).catch(() => [null]),
+    query(`SELECT g.id, LEFT(g.date, 10) AS date, ROUND(g.amount * 100)::bigint AS cents, COALESCE(c.name, f.name) AS place
+             FROM gifts g LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+            WHERE g.org_id=? AND g.donor_id=? AND ${require("../../shared/numbers/money").GIFT("g")} AND g.date IS NOT NULL
+            ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER} LIMIT ${HISTORY}`, [orgId, donorId]).catch(() => []),
+    query(`SELECT COUNT(*)::int AS n FROM gifts g WHERE g.org_id=? AND g.donor_id=? AND ${require("../../shared/numbers/money").GIFT("g")} AND g.date IS NOT NULL`, [orgId, donorId]).catch(() => [{ n: 0 }]),
+  ]);
+  const CD = await import("../../shared/contactDetails.js");
+  const ways = CD.contactLines(c || null);
+  const reach = [ways.email && `email ${ways.email}`, ways.email2 && `also ${ways.email2}`, ways.phone && `phone ${ways.phone}`, ways.mobile && `mobile ${ways.mobile}`, ways.address && `address ${ways.address}`].filter(Boolean);
+  const out = [{ kind: "contact", line: reach.length ? `To reach ${first}: ${reach.join("; ")}.` : `Steward has no email, phone or address for ${first}.`, link: { tab: "donor", donorId, section: "contact" } }];
+  gifts.forEach((g, i) => out.push({ kind: "gift", id: g.id, line: `${i === 0 ? "Gift history: " : ""}${usd(Number(g.cents))} on ${day(g.date)}${g.place ? `, ${g.place}` : ""}.`, link: { tab: "donor", donorId, section: "giving" } }));
+  const total = Number(n && n.n) || 0;
+  if (total > gifts.length) out.push({ kind: "gift", line: `And ${total - gifts.length} earlier ${total - gifts.length === 1 ? "gift" : "gifts"} on their Giving tab.`, link: { tab: "donor", donorId, section: "giving" } });
+  return out;
 }
 
 // ── 3. A GIFT SHE NAMED THAT IS NOT ON RECORD ──────────────────────────────
@@ -221,6 +245,8 @@ function publicAnswer(a) {
   if (a.type === "why") return { type: "why", count: a.count, more: a.more, total: a.total, totalCents: a.totalCents, definition: a.definition, stakeWord: a.stakeWord || null,   // ATLAS-9: "lifetime" on a population's call list
     people: (a.people || []).map(p => ({ donorId: p.donorId, name: p.name, reason: p.reason, atStake: p.atStake, cents: p.cents })) };
   if (a.type === "figure") return { type: "figure", parts: a.parts };   // ATLAS-8: a Home figure, each part named
+  // ATLAS-11 item 1: "Did you mean Annual Fund 2026 or Annual Fund 2025?", each a question she can send with one press.
+  if (a.type === "choices") return { type: "choices", options: (a.options || []).map(o => ({ label: o.label, ask: o.ask })) };
   return null;
 }
 

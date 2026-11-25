@@ -356,7 +356,10 @@ export function previewLines(text) {
 // ── WHAT ATLAS SAYS ────────────────────────────────────────────────────────
 // Brief, first person, one line per thing. Each line carries where it lives.
 // ATLAS-10 item 7: the refusal opens with the one reading-off line Settings > Atlas shows (shared/atlasReading.js).
-export const AI_OFF_LINE = `${READING_OFF} I can still log a conversation, find someone, brief you on a person ("Brief me on" and their name), and add someone to a journey by its exact name. Say it plainly and I'll do that.`;
+export const AI_OFF_CAN = `I can still log a conversation, find someone, brief you on a person ("Brief me on" and their name), and add someone to a journey by its exact name. Say it plainly and I'll do that.`;
+export const AI_OFF_LINE = `${READING_OFF} ${AI_OFF_CAN}`;   // Settings > Atlas, where nothing was asked
+// ATLAS-11 item 5: the dialog's refusal with AI off. The header already says AI is off (LIMITED_HEADER), so the answer doesn't.
+export const AI_OFF_REFUSAL = `I can't read that one while AI is off. ${AI_OFF_CAN}`;
 // POLISH-6 (W-1107-Atlas-07): a refusal is one plain sentence, never a quoted
 // fragment cut mid-word. A question about something Steward does not keep
 // ("what is Renee's favorite color") says so by name; anything else says the
@@ -419,4 +422,4 @@ export function spokeFor(lines, waiting = 0) {
 }
 
 export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, DRAFT_TOOL, DRAFT_SYSTEM, buildDraftPrompt, buildAtlasPrompt, normalizeRead, tidySteps,
-  amountFromWords, usd, whenFromWords, dayWords, monthWord, addDays, tidyTalk, readClause, readInCode, previewLines, AI_OFF_LINE, CANT_LINE, cantKnow, plainCant, REFUSE, SPOKE, ANSWER_KINDS, spokeFor };
+  amountFromWords, usd, whenFromWords, dayWords, monthWord, addDays, tidyTalk, readClause, readInCode, previewLines, AI_OFF_LINE, AI_OFF_CAN, AI_OFF_REFUSAL, CANT_LINE, cantKnow, plainCant, REFUSE, SPOKE, ANSWER_KINDS, spokeFor };

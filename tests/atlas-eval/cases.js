@@ -111,5 +111,12 @@ module.exports.AI_OFF = [
   { id: "off-1", text: "Had lunch with Margaret Chen", expect: [{ kind: "logged", state: "done", who: MC }] },
   { id: "off-2", text: "Find Tobias Fairweather", expect: [{ kind: "found", state: "done", who: TF }] },
   { id: "off-3", text: "Add Rosa Delgado to the New donor, first year journey", expect: [{ kind: "journey_added", state: "done", who: RD }] },
-  { id: "off-4", text: "Peggy said the kids loved it and wants a sweater", expect: [{ kind: "cant", state: "refused", line: /log a conversation, find someone, and add someone to a journey/ }] },
+  // ATLAS-11 item 5: the refusal no longer repeats the header's "AI is off" line; it says what still works.
+  { id: "off-4", text: "Peggy said the kids loved it and wants a sweater", expect: [{ kind: "cant", state: "refused", line: /^I can't read that one while AI is off\. I can still log a conversation, find someone, brief you on a person/ }] },
+  // ATLAS-11 item 2 (Jarvis, 25 Nov): a lifetime in any phrasing, one figure, the brief's own.
+  { id: "off-5", text: "How much has Margaret Chen given?", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen has (?:given \$[\d,]+|no gifts on record yet)/ }] },
+  { id: "off-6", text: "Margaret Chen's total", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen has (?:given \$[\d,]+|no gifts on record yet)/ }] },
+  { id: "off-7", text: "lifetime for Margaret Chen", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen has (?:given \$[\d,]+|no gifts on record yet)/ }] },
+  { id: "off-8", text: "Brief me on Margaret Chen", expect: [{ kind: "answer", state: "done", who: MC, line: /^Here's what Steward knows about Margaret Chen\.$/ }] },
+  { id: "off-9", text: "LYBUNT dollars", expect: [{ kind: "answer", state: "done", line: /(?:LYBUNT, in [\d,]+ households?\. Together they gave \$|^Nobody is LYBUNT right now)/ }] },
 ];
