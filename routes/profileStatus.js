@@ -240,13 +240,13 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
     const [m] = await query(`SELECT kept_id, kept_name FROM donor_merges WHERE org_id=? AND merged_id=? AND undone_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId, req.params.id]).catch(() => []);
     return res.status(404).json({ error: "Donor not found", gone: m ? "merged" : "deleted", keptId: m ? m.kept_id : null, keptName: m ? m.kept_name : null });
   }
-  // TEST_MODE only: `?asOf=YYYY-MM-DD` reads the person's status as of that day,
-  // as /insights does, so a suite whose fixture is fixed in time stays true as
-  // the calendar moves (main-fix: insights §4 turned red on 25 Nov 2026, when
-  // Ashham's yearly time came near on the real clock). Everywhere else it is
-  // the org's own today.
-  const asOf = typeof testMode === "function" && testMode() && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.asOf || "")) ? String(req.query.asOf) : null;
-  const today = asOf || await DS.todayFor(orgId);
+  const today = await DS.todayFor(orgId);
+  // TEST_MODE only: `?asOf=YYYY-MM-DD` reads the person's status TAGS as of that
+  // day, as /insights does, so a suite whose fixture is fixed in time stays true
+  // as the calendar moves (main-fix: insights §4 turned red on 25 Nov 2026, when
+  // Ashham's yearly time came near on the real clock). It reaches only the tags
+  // (DS.statusFor); every query here keeps the org's own today. Elsewhere, never.
+  const statusDay = typeof testMode === "function" && testMode() && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.asOf || "")) ? String(req.query.asOf) : today;
   // PROFILE-2 Part 4: the org's fiscal year, the year the header's "This
   // fiscal year" number counts. Without the cuts windowsFor fell back to the
   // calendar year, and a May gift read "gave once this year" beside a fiscal
@@ -271,7 +271,7 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
       cents: f.totalRows ? f.cents : null, date: f.rows[0] ? f.rows[0].date : null, count: f.totalRows };
   }));
   const [status, g3, [lifetime, latest], vhRows, meRows, tagRows, meetingMap, canSee] = await Promise.all([
-    DS.statusFor(orgId, d.id, { today }), pGlance, pPair, pVh, pMe, pTags, pMeeting, pCanSee]);
+    DS.statusFor(orgId, d.id, { today: statusDay }), pGlance, pPair, pVh, pMe, pTags, pMeeting, pCanSee]);
   const glance = { lifetime, first: g3.first, latest, largest: g3.largest, average: g3.average };
   const [hl, close, next, updating] = await Promise.all([
     highlights(orgId, d, today, w),
