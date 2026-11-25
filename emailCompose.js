@@ -285,11 +285,24 @@ async function campaignFromTemplate(req, res, { run, uuid, actor }) {
   if (!t) return res.status(404).json({ error: "template_not_found", message: "That template is not one of yours." });
   const name = String(req.body.name || t.name || "").replace(/\s+/g, " ").trim().slice(0, 200);
   if (!name) return res.status(400).json({ error: "Name required" });
+  const who0 = actor(req);
+  // CAMPAIGN-2 item 4: "Start a campaign from this" pressed again (a second click, or Back and
+  // press) opens the draft it already made, never a second one. Only a draft this person made
+  // from this template in the last 30 minutes, still exactly as it was made, is the same draft.
+  if (req.body.reuse === true) {
+    const [same] = await query(
+      `SELECT * FROM campaigns WHERE org_id=? AND template_id=? AND status='draft' AND created_by=? AND name=?
+          AND created_at > NOW() - INTERVAL '30 minutes' AND subject IS NOT DISTINCT FROM ? AND segment = ?
+          AND email_blocks = ?::jsonb ORDER BY created_at DESC LIMIT 1`,
+      [orgId, t.id, who0.id, name, t.subject || "", JSON.stringify({ mode: "all" }), JSON.stringify(toArray(t.blocks))]).catch(() => []);
+    if (same && req.audit) { req.audit.entity("campaign", same.id, name); req.audit.action(`opened the draft already started from the template ${t.name}`); }
+    if (same) return res.status(200).json({ ...same, reused: true, sentence: `${name} is already a draft from this template, so Steward opened it. Nothing has been sent.` });
+  }
   let body = "";
   try { body = await templatePreviewHtml(orgId, t, name); }
   catch (e) { console.error("[campaigns] template preview:", e.message); }
   const id = newId("cmp");
-  const who = actor(req);
+  const who = who0;
   await run(
     `INSERT INTO campaigns (id,org_id,name,type,subject,preheader,body,email_blocks,template_id,status,segment,
                             recipient_count,open_count,created_by,created_by_name)
