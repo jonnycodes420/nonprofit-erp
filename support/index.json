@@ -3317,7 +3317,7 @@
    "link": "/faq",
    "route": null,
    "screen": null,
-   "text": "Yes, once, when you sign up. It covers moving your data in and setting Steward up with you, and signup shows it before you pay."
+   "text": "Yes, once, because setup is hands-on: we move your data in and set Steward up with you. We go through it on the call, and you see it in writing before you sign."
   },
   {
    "id": "faq:6",
@@ -3347,7 +3347,7 @@
    "link": "/faq",
    "route": null,
    "screen": null,
-   "text": "The one-time setup fee is charged when you sign up. Your plan's first charge is thirty days later."
+   "text": "The one-time setup fee is charged when you sign. Your plan's first charge is thirty days later, and you can cancel before then in two clicks."
   },
   {
    "id": "faq:9",
@@ -3427,7 +3427,7 @@
    "link": "/faq",
    "route": null,
    "screen": null,
-   "text": "Everything is included, with your whole team and no platform fee. The pricing page says where the price starts."
+   "text": "Pricing depends on the size of your donor file and comes with hands-on setup. Everything is included, with your whole team and no platform fee. We'll walk you through it on a call."
   },
   {
    "id": "feature:drift:0",

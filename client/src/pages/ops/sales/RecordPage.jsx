@@ -16,6 +16,7 @@ import NewRecord from "./NewRecord";
 import DealPartners from "./DealPartners";
 import QuotePanel from "./QuotePanel";
 import DealHeader from "./DealHeader";
+import DealBooking from "./DealBooking";   // ONBOARD-4
 
 const PLURAL = { org: "Organizations", contact: "Contacts", deal: "Deals" };
 const SIDES = { org: ["contact", "deal"], contact: ["org", "deal"], deal: ["org", "contact"] };
@@ -236,6 +237,7 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
         {type === "deal" ? <RailSection id="quote" title="Quote" testid="rail-quote" defaultOpen={(() => { const st = pipe.stages.find(s => s.id === r.stage_id); const vy = pipe.stages.find(s => s.name === "Verbal yes");
           return !!st && (st.kind === "won" || (vy ? st.kind === "open" && st.position >= vy.position : false)); })()}><QuotePanel dealId={id} onChanged={changed} /></RailSection> : null}
         {d.onboarding ? <RailSection id="gates" title="Onboarding gates" testid="rail-gates"><Gates o={d.onboarding} /></RailSection> : null}
+        {type === "deal" ? <RailSection id="booking" title="Booking" testid="rail-booking" defaultOpen={r.source === "Website booking"}><DealBooking dealId={id} /></RailSection> : null}
         {type === "deal" ? <RailSection id="partners" title="Partners" testid="rail-partners" defaultOpen={(d.partners || []).length > 0}>
           <DealPartners dealId={id} lines={d.partners || []} reload={changed} /></RailSection> : null}
       </aside>

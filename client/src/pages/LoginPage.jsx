@@ -39,7 +39,7 @@ function popAuthNotice() {
 
 // Brand tokens (BUILD-12 palette). Public auth pages follow the PUBLIC brand
 // convention — gold primary action + gold title underline (matching the
-// landing's "Start free" and the onboarding CTA), forest-green links/accents.
+// landing's old first button and the onboarding CTA), forest-green links/accents.
 // The off-brand Tailwind emerald-500 was retired here (FIX 2026-07-30);
 // it's grep-guarded by tests/brand-glyph.test.js so it can't return.
 const T = {
@@ -175,8 +175,8 @@ export default function LoginPage() {
             a form that waits for a reply was the last invitation-only door left
             in the product. /invitation stays, for somebody who wants to talk
             first, and its own page offers this door too. */}
-        <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
-          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Get started</span>
+        <Link to="/book" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
+          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Book a call</span>
         </Link>
       </nav>
 

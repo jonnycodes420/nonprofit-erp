@@ -18,7 +18,9 @@
 //
 //   §1  the count is people with at least one gift
 //   §2  every band edge picks the right price and setup fee
-//   §3  signup charges the setup fee once and the monthly starts on the first charge date
+//   §3  the close link charges the setup fee once and the monthly starts on the first charge date
+//       (ONBOARD-4: public signup is closed, so §2 and §3 go through Jonathan's close link, the
+//       one way in, which builds the same Checkout from the same plans)
 //   §4  one month over changes nothing; two months sends a note; the price moves only with a yes
 //   §5  a custom-price org is never moved
 //
@@ -35,6 +37,7 @@ const { testNow } = require("./clock");
 
 const SECRET = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const ORG = "org_p1bands", CUSTOM = "org_p1custom";
+const SUPER = "p1-super@t.local";
 const ADMIN = "p1-admin@t.local", CUST_ADMIN = "p1-custom@t.local", PW = "loadtest1234";
 const SIGNUP = n => `p1-signup-${n}@pricing1.test`;
 const DAY = 86400000;
@@ -132,6 +135,10 @@ const orgRow = async id => (await q(`SELECT plan, subscription_status, trial_end
            VALUES ($1,'Bands Test','p1-bands',1,'active','r500_monthly','sub_p1_bands',$2)`, [ORG, new Date(testNow() + 20 * DAY).toISOString()]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_p1_admin',$1,$2,$3,'Admin','admin')`, [ORG, ADMIN, hash]);
   const admin = await login(ADMIN);
+  await q(`DELETE FROM users WHERE id='u_p1_super'`);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_p1_super',$1,$2,$3,'Super','admin',true)`, [ORG, SUPER, hash]);
+  const sup = await login(SUPER);
+  const close = (email, orgName, plan) => api("POST", "/admin/close-links", sup, { orgName, contactEmail: email, plan });
 
   console.log("— §1 · the count is people with at least one gift —");
   await addPerson(ORG, "d_gave", { gifts: 1 });
@@ -149,35 +156,32 @@ const orgRow = async id => (await q(`SELECT plan, subscription_status, trial_end
     && st.body.band && st.body.band.label === "Up to 500 records" && st.body.priceUsd === 199, st.body);
 
   console.log("\n— §2 · every band edge picks the right price and setup fee —");
-  const agr = (await api("GET", "/public/agreement")).body;
   const EDGES = [[500, "r500", 199, 250], [501, "r2500", 299, 500], [2500, "r2500", 299, 500], [2501, "r10000", 449, 1000],
                  [10000, "r10000", 449, 1000], [10001, "r25000", 649, 1500], [25000, "r25000", 649, 1500]];
   for (const [n, band, monthly, setup] of EDGES) {
     const before = sessions.length;
-    const su = await api("POST", "/public/signup", null, { orgName: "Edge " + n, contactName: "Ed Edge", contactEmail: SIGNUP(n),
-      estimatedRecords: n, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
+    const t = PRICING.tierForRecordCount(n);
+    const su = await close(SIGNUP(n), "Edge " + n, `${t ? t.id : "none"}_monthly`);
     const s = sessions[before];
     ok(`${n.toLocaleString("en-US")} records: ${band}, $${monthly}/month, $${setup} setup`,
-      su.status === 202 && su.body.tier === band && su.body.amountUsd === monthly && su.body.setupUsd === setup
+      t && t.id === band && t.monthlyUsd === monthly && t.setupUsd === setup && su.status === 201 && su.body.monthlyUsd === monthly
       && s && s.form.get("line_items[0][price]") === `price_test_${band}m` && s.form.get("line_items[1][price]") === `price_test_${band}s`,
       { status: su.status, body: su.body, items: s && [s.form.get("line_items[0][price]"), s.form.get("line_items[1][price]")] });
   }
-  const over = await api("POST", "/public/signup", null, { orgName: "Edge 25001", contactName: "Ed Edge", contactEmail: SIGNUP(25001),
-    estimatedRecords: 25001, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
-  ok("25,001 records: talk to us, no checkout and no price", over.status === 409 && over.body.error === "talk_to_us", over.body);
-  const yr = await api("POST", "/public/signup", null, { orgName: "Edge yearly", contactName: "Ed Edge", contactEmail: SIGNUP("y"),
-    estimatedRecords: 2500, interval: "yearly", acceptTerms: true, termsVersion: agr.version });
-  ok("yearly is ten times monthly ($2,990) with the same setup fee", yr.status === 202 && yr.body.amountUsd === 2990 && yr.body.setupUsd === 500, yr.body);
+  ok("25,001 records: talk to us, no band and no price", PRICING.tierForRecordCount(25001) === null);
+  const yb = sessions.length;
+  const yr = await close(SIGNUP("y"), "Edge yearly", "r2500_yearly");
+  ok("yearly is ten times monthly ($2,990) with the same setup fee", yr.status === 201 && PRICING.tierById("r2500").yearlyUsd === 2990
+    && sessions[yb] && sessions[yb].form.get("line_items[0][price]") === "price_test_r2500y" && sessions[yb].form.get("line_items[1][price]") === "price_test_r2500s", yr.body);
 
-  console.log("\n— §3 · signup charges the setup fee once and the monthly starts on the first charge date —");
+  console.log("\n— §3 · the close link charges the setup fee once and the monthly starts on the first charge date —");
   const signedAt = testNow();
   const before = sessions.length;
-  const su = await api("POST", "/public/signup", null, { orgName: "Lantern House", contactName: "Lena Lantern", contactEmail: SIGNUP("lantern"),
-    estimatedRecords: 300, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
+  const su = await close(SIGNUP("lantern"), "Lantern House", "r500_monthly");
   const sess = sessions[before];
   const items = [...sess.form.keys()].filter(k => /^line_items\[\d+\]\[price\]$/.test(k)).map(k => sess.form.get(k));
   ok("Checkout carries the monthly price and the setup fee, the setup fee exactly once",
-    su.status === 202 && items.length === 2 && items.filter(p => p === "price_test_r500s").length === 1 && items.includes("price_test_r500m"), items);
+    su.status === 201 && items.length === 2 && items.filter(p => p === "price_test_r500s").length === 1 && items.includes("price_test_r500m"), items);
   ok("the monthly waits thirty days: the subscription starts in a 30-day trial", sess.form.get("subscription_data[trial_period_days]") === "30",
     sess.form.get("subscription_data[trial_period_days]"));
   const firstCharge = computeTrialEnd(signedAt);

@@ -103,6 +103,15 @@ function loadHeaders() {
 const HEADERS = loadHeaders();
 if (!PROXY.length) console.error("[local-preview] WARNING: no backend rewrites loaded — same-origin API paths will 404.");
 
+// ONBOARD-4 · vercel.json's plain path redirects (/signup, /demo, /invitation → /book), read the
+// same way: production answers them at the edge, so the local build must too, or a walk of
+// /signup here sees a page production never serves. The query string comes along, as on Vercel.
+const REDIRECTS = (() => {
+  try { return (JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "vercel.json"), "utf8")).redirects || [])
+    .filter(r => /^\/[^:*(]*$/.test(String(r.source || ""))); }
+  catch { return []; }
+})();
+
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json",
@@ -115,6 +124,10 @@ const MIME = {
 const srv = http.createServer(async (req, res) => {
   const [rawPath, search = ""] = req.url.split("?");
   const url = decodeURIComponent(rawPath);
+
+  // 0) The edge redirects.
+  const red = REDIRECTS.find(r => r.source === url);
+  if (red) { res.writeHead(red.permanent ? 308 : 307, { Location: red.destination + (search ? "?" + search : "") }); return res.end(); }
 
   // 1) Proxy the same-origin API rewrites.
   for (const [re, to] of PROXY) {

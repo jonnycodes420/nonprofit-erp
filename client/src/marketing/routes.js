@@ -10,7 +10,7 @@
 //   /developers     named in the brief but it does not exist; Open API links
 //                   point at /connections#api instead
 //   /lost-and-found the free audit itself; /tools/lost-and-found links in
-//   /login, /signup the app's own pages
+//   /login          the app's own page (/signup redirects to /book since ONBOARD-4)
 //   /privacy, /terms the live legal pages; /legal/* are the attorney drafts
 import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
@@ -48,7 +48,7 @@ export const ROUTES = [
   // LANDING-3 part 1: /pricing moved here from the app router. The page
   // still carries the signed-in Stripe checkout, so the upgrade path from
   // UpgradeModal and Settings is unchanged.
-  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Everything is included and nothing is sold separately. No platform fee on gifts, your whole team, month to month." },
+  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Pricing depends on the size of your donor file and comes with hands-on setup. Everything is included, no platform fee on gifts, month to month. We walk you through it on a call." },
 
   { path: "/why", page: "why", title: T("Imagine never losing track of a single person who believes in what you do."), description: VISION },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
@@ -67,7 +67,8 @@ export const ROUTES = [
   { path: "/about", page: "about", title: P("About Steward", 6), description: PILLAR[6].short + " Questions reach the founder, by email or on a call." },
   { path: "/partners", page: "partners", title: T("Bring Steward to the nonprofits you advise."), description: "Fundraising consultants, coaches and agencies refer and set up Steward for their clients. Partners earn a share of revenue and get a direct line to the founder." },
   { path: "/contact", page: "contact", title: T("Talk to a person."), description: "Questions about Steward, a move, pricing or a partnership. Email goes straight to the founder." },
-  { path: "/demo", page: "demo", title: "Steward · Book a call · Bring one question about your donors", description: "Bring one question you can't answer about your donors. We'll answer it with your own file, in a 20-minute call with the person who built Steward." },
+  // ONBOARD-4 item 3: the website's one action. /demo (the old form) redirects here (vercel.json, and main.jsx for a click inside the app).
+  { path: "/book", page: "book", title: "Steward · Book a call · Bring one question about your donors", description: "Book a 20-minute call with the person who built Steward. Bring your donor file and one question about it; pricing and setup come on the call." },
 
   { path: "/resources", page: "resources", title: T("Learn from people who've done the work."), description: "Guides, templates, free tools and the research behind them, for development teams of one to five." },
   { path: "/guides", page: "guides", title: T("Practical guides for small teams."), description: "Plans you can run this month, written for a development office of one to five people." },
@@ -101,7 +102,7 @@ export const ROUTES = [
 
 // App routes the marketing pages link to. They are real pages, just not
 // marketing ones; the link guard accepts them alongside ROUTES.
-export const APP_LINK_TARGETS = ["/login", "/signup", "/lost-and-found", "/app/settings"];
+export const APP_LINK_TARGETS = ["/login", "/lost-and-found", "/app/settings"];   // ONBOARD-4: no /signup
 // CONTENT-1 · files the pages link to: the articles feed (written by the
 // prerender) and the move page's starter template (client/public).
 export const FILE_LINK_TARGETS = ["/rss.xml", "/marketing/steward-starter-template.csv"];

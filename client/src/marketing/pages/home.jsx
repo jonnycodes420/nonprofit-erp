@@ -110,8 +110,7 @@ export default function Home() {
             <h1 className="mix h-xl">{rich(HEADLINE)}</h1>
             <p className="lede">{UNDER}</p>
             <div className="ctas">
-              <Pill href="/signup">Start now</Pill>
-              <Pill kind="soft" href="/demo">Book a call</Pill>
+              <Pill href="/book">Book a call</Pill>
             </div>
             <ul className="hero-chips">{HERO_CHIPS.map(c => <li key={c}>{c}</li>)}</ul>
           </div>
@@ -155,7 +154,7 @@ export default function Home() {
           <div className="eyebrow">For the careful ones</div>
           <h2 className="mix h-l" style={{ marginTop: 22, maxWidth: 980, marginInline: "auto" }}>{rich(CAREFUL_H)}</h2>
           <p>{CAREFUL_P}</p>
-          <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a call</Pill></div>
+          <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/book">Book a call</Pill></div>
         </div></div>
       </section>
     </div>
