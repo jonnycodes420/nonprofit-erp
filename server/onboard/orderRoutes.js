@@ -262,7 +262,7 @@ function mount(ctx) {
                 FROM start_links s WHERE s.org_id = o.id AND s.order_json IS NOT NULL AND s.status IN ('open','signed') AND s.expires_at > NOW()
                ORDER BY s.created_at DESC LIMIT 1) AS open_order
         FROM orgs o
-       WHERE o.id <> 'org_b72demo'
+       WHERE ${require("../../mailPolicy").orgSendsSql("o")}
          AND (o.stripe_subscription_id IS NOT NULL OR o.subscription_status IN ('active','past_due')
               OR EXISTS (SELECT 1 FROM close_links c WHERE c.org_id = o.id OR c.target_org_id = o.id)
               OR EXISTS (SELECT 1 FROM start_links s WHERE s.org_id = o.id))

@@ -171,8 +171,9 @@ const ORDER_A = { signerName: "Marigold Petrakis", signerTitle: "Development Dir
     && amounts.plan[0] === "$149 / month" && amounts.plan[1] === 14900 && amounts.setup[0] === "Waived" && amounts.setup[1] === 0
     && amounts.free[0] === "$0" && sA.lines[2].label === "First 30 days" && amounts.first[0] === "$149" && amounts.first[1] === 14900, amounts);
   const firstAt = sA && Date.parse(sA.figures.firstChargeAt);
+  const [{ created_at: madeAt }] = await q(`SELECT created_at FROM start_links WHERE id=$1`, [made.body.id]);   // the server's own clock
   ok("§1 the first charge is 30 days from now, and the cancel-by date and the total name that same day",
-    sA && Math.abs(firstAt - (Date.now() + 30 * DAY)) < 5 * 60000 && sA.lines[2].detail.includes(`Cancel any time before ${sA.figures.firstChargeOn}`)
+    sA && Math.abs(firstAt - (new Date(madeAt).getTime() + 30 * DAY)) < 5 * 60000 && sA.lines[2].detail.includes(`Cancel any time before ${sA.figures.firstChargeOn}`)
     && sA.total.label === `First charge, ${sA.figures.firstChargeOn}`, sA && sA.figures);
   const dom = Number(new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: "America/New_York" }).format(new Date(firstAt)));
   ok("§1 then \"$149 on the Nth of each month\", the note line, who signs, the billing email and the order number", sA
