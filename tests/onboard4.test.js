@@ -107,6 +107,11 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
     const links = ROUTES.filter(r => !["article", "glossaryTerm", "helpArticle", "guide", "feature", "audience"].includes(r.page)).flatMap(r => [...render(r.path).matchAll(/href="(\/signup|\/demo|\/invitation)[^"]*"/g)].map(m => r.path + " → " + m[1]));
     ok("§2 no page links to /signup, /demo or /invitation", links.length === 0, links.slice(0, 6));
     ok("§2 /book is a prerendered page with the form and no price", /data-book-form/.test(book) && findPrices(book, rules).length === 0);
+    // The slots come from one value (booking/config.js): the intro-call event, named nowhere else.
+    const cfg = fs.readFileSync(path.join(CLIENT, "src", "marketing", "booking", "config.js"), "utf8");
+    const mk = ["src/marketing/pages/book.jsx", "src/marketing/booking/slots.jsx", "src/main.jsx"].map(f => fs.readFileSync(path.join(CLIENT, f), "utf8")).join("\n");
+    ok("§2 the booking link is one config value: the intro-call event, and no page names a calendar link",
+      /BOOKING_URL = "https:\/\/calendly\.com\/jonathan-stewardapp\/steward-intro-call"/.test(cfg) && !/calendly\.com\//.test(mk) && /<iframe[^>]*src=\{src\}/.test(mk));
     ok("§2 GET /public/pricing stays for close links and Billing", (await api("GET", "/public/pricing", null)).status === 200);
   }
 

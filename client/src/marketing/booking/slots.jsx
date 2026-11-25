@@ -2,23 +2,23 @@
 //
 // The booking page knows nothing about Calendly: it renders <SlotPicker> with the name and email
 // she just typed. Which tool and which link live here, and only here, so moving to another
-// calendar is one provider below and one env var, not a page rewrite.
+// calendar is one provider below and one value in config.js, not a page rewrite.
 //
-// Today the provider is Calendly, the tool the site already used (the "Talk to the founder"
-// modal and the old signup page's "Book a 20-minute call"). The booking tool sends her its own
-// confirmation and puts the event on Jonathan's calendar; Steward sends a prospect nothing, and
-// SALES-4's calendar read moves her deal to Meeting booked when the event appears. Which calendar
-// the link's slots come from is Jonathan's to confirm (docs/needs-jonathan/ONBOARD-4.md).
+// Today the provider is Calendly: the "Steward intro call" event (20 minutes, Google Meet), whose
+// link is the one value in booking/config.js. The booking tool sends her its own confirmation and
+// puts the event on Jonathan's calendar; Steward sends a prospect nothing, and SALES-4's calendar
+// read moves her deal to Meeting booked when the event appears.
 //
 // No script is loaded from the provider (the site's CSP allows only hashed inline scripts): the
 // slots are its plain inline iframe, allowed by vercel.json's frame-src.
 import { useEffect } from "react";
 
-const URL_FROM_ENV = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_BOOKING_URL : "";
+import { BOOKING_URL } from "./config";
+
 export const BOOKING = Object.freeze({
   provider: "calendly",
-  url: URL_FROM_ENV || "https://calendly.com/xjca2006/new-meeting",
-  origin: "https://calendly.com",
+  url: BOOKING_URL,
+  origin: new URL(BOOKING_URL).origin,
 });
 
 // The address the iframe opens, with what she typed filled in so she types it once.

@@ -25,9 +25,9 @@ Increase's referred nonprofits arrive at from January.
   Jonathan. Partner codes: `partners` (code, name, market, no commission), managed in Sales settings.
 
 **Decisions made in the build.**
-- The calendar is Calendly because that is the tool the site already used (the founder modal and the
-  old signup page's call link); SALES-1/2 name no booking tool. Which calendar it reads is
-  Jonathan's to confirm (needs-jonathan).
+- The calendar is Calendly: SALES-1/2 name no booking tool, and the site already used it. The build
+  first pointed at the old "New Meeting, 30 min" link; Jonathan then gave the "Steward intro call"
+  event (20 minutes, Google Meet), kept as one value in `marketing/booking/config.js`.
 - "Free" means an offer of Steward for free (Start free, free trial, months free). The free tools are
   free and still say so.
 - The file limit is 3 MB, sent as a data: URL: SECURE-1 reads an anonymous body with the 5 MB parser
