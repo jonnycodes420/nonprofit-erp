@@ -1,0 +1,2 @@
+- "Book 30 minutes" links to the ONBOARD-4 booking event, which is the 20-minute intro call. A 30-minute setup event in Calendly would make the words true; change `BOOKING_URL` (client/src/marketing/booking/config.js) or give a second link.
+- QuickBooks connects only for an org whose `qbo_sync_enabled` you have switched on (/ops); otherwise the QuickBooks page says you turn it on with her.

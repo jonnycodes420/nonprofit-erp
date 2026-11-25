@@ -105,11 +105,30 @@ async function byYear(query, orgId, householdId, org, today) {
 
 // "Debbie and Jeff Vogel": the addressee line a mailing prints for a household's
 // people (first names joined, one shared last name when they share it).
-function addresseeOf(names) {
+// ONBOARD-5: an org may choose how a couple is addressed (orgs.addressee_pattern):
+// a pattern of {first1}, {first2} and {last}, used only for exactly two people who
+// share a last name; anything else keeps the plain rule.
+const ADDRESSEE_PATTERNS = Object.freeze([
+  { key: "names", label: "Debbie and Jeff Vogel", pattern: null },
+  { key: "formal", label: "Mr. and Mrs. Vogel", pattern: "Mr. and Mrs. {last}" },
+  { key: "family", label: "The Vogels", pattern: "The {last}s" },
+]);
+function validAddresseePattern(p) {
+  const s = String(p == null ? "" : p).trim();
+  if (!s) return { ok: true, value: null };
+  if (s.length > 80) return { ok: false, message: "Keep it under 80 characters." };
+  const bad = (s.match(/\{[^}]*\}/g) || []).find(t => !["{first1}", "{first2}", "{last}"].includes(t));
+  if (bad) return { ok: false, message: `${bad} is not a name Steward knows. Use {first1}, {first2} or {last}.` };
+  if (!/\{(first1|first2|last)\}/.test(s)) return { ok: false, message: "Use at least one of {first1}, {first2} or {last}, so each couple gets their own names." };
+  return { ok: true, value: s };
+}
+function addresseeOf(names, pattern = null) {
   const list = (names || []).map(n => String(n || "").trim()).filter(Boolean);
   if (list.length <= 1) return list[0] || "";
   const parts = list.map(n => { const w = n.split(/\s+/); return { first: w.length > 1 ? w.slice(0, -1).join(" ") : w[0], last: w.length > 1 ? w[w.length - 1] : "" }; });
   const sameLast = parts.every(p => p.last && p.last.toLowerCase() === parts[0].last.toLowerCase());
+  if (pattern && sameLast && parts.length === 2 && validAddresseePattern(pattern).ok)
+    return String(pattern).replace(/\{first1\}/g, parts[0].first).replace(/\{first2\}/g, parts[1].first).replace(/\{last\}/g, parts[0].last).replace(/\s+/g, " ").trim();
   const join = xs => xs.length === 2 ? `${xs[0]} and ${xs[1]}` : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
   return sameLast ? `${join(parts.map(p => p.first))} ${parts[0].last}` : join(list);
 }
@@ -128,4 +147,4 @@ const WORDS = Object.freeze({
   capacity: "The higher Wealth Score of the people in this household.",
 });
 
-module.exports = { UNIT_LIFETIME, byYear, peopleOf, spanCentsByPerson, householdMoney, spanRowsSql, addresseeOf, WORDS };
+module.exports = { UNIT_LIFETIME, byYear, peopleOf, spanCentsByPerson, householdMoney, spanRowsSql, addresseeOf, validAddresseePattern, ADDRESSEE_PATTERNS, WORDS };

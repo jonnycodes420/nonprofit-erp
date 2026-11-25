@@ -147,7 +147,8 @@ export function parseAppUrl(pathname, search, hash) {
   }
   if (path === "/donors") {
     const st = donorsListState(search);
-    return { tab: "donors", opts: { view: st.view, stageFilter: st.stage } };
+    // ONBOARD-5: the setup page's "Upload a file" opens the guided import here.
+    return { tab: "donors", opts: { view: st.view, stageFilter: st.stage, ...(qs.get("import") === "1" ? { openImport: true } : {}) } };
   }
   // EVENTS-4 item 5: /app/events/<id>, the address people type and paste, is
   // the event (it fell through to Home). It canonicalises to /app/events?event=<id>.
