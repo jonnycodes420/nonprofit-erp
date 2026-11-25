@@ -95,6 +95,16 @@ export const NO_SCREEN_READS = [
   // itself after a save, a rename or a delete; no other screen lists or counts them.
   { method: "POST", re: /^\/email-blocks$/, why: "a saved email block is shown only in the editor's Blocks tab, which re-reads itself" },
   { method: "PUT", re: /^\/email-blocks\/[^/]+$/, why: "renaming a saved email block shows only in the Blocks tab, which re-reads itself" },
+  // BUILDER-3: who has an email open is a heartbeat the editor reads back in its own answer; a
+  // comment and its Resolve show only in the editor's Comments panel (and the review page), which
+  // re-read themselves, and in a mentioned person's bell, which reads them every minute.
+  { method: "POST", re: /^\/email-templates\/[^/]+\/presence(\/leave)?$/, why: "a heartbeat: the editor shows who is here from its own answer; no other screen shows it" },
+  { method: "POST", re: /^\/email-templates\/[^/]+\/comments$/, why: "a comment shows only in the editor's Comments panel and the review page, which re-read themselves, and in the bell" },
+  { method: "POST", re: /^\/email-comments\/[^/]+\/resolve$/, why: "a resolved comment hides from the Comments panel, which re-reads itself, and from the bell" },
+  { method: "POST", re: /^\/email-templates\/[^/]+\/share$/, why: "a review link shows only in the editor's Share panel, which re-reads its list" },
+  { method: "POST", re: /^\/email-review-links\/[^/]+\/revoke$/, why: "turning a review link off shows only in the Share panel, which re-reads its list" },
+  { method: "POST", re: /^\/email-export$/, why: "an export renders the email and writes nothing" },
+  { method: "PUT", re: /^\/email-style$/, why: "the house style shows in an email's preview, which the editor redraws; no figure reads it" },
   // SENDS-2: building a send plan writes only the list she is shown (send_plans); nothing is sent.
   { method: "POST", re: /^\/send-plans$/, why: "a send plan is the list shown before a bulk send; no screen counts plans" },
   // LETTERS-1: reading a Word file and previewing letters write nothing; a letter template and a
