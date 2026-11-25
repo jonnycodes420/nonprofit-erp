@@ -14,6 +14,7 @@
 const OUTBOX = require("../../shared/outbox");
 
 OUTBOX.on("gift.recorded", "thankYouDraft", async (p, deps) => {
+  if (await require("../giftDay").held(p, deps, "thankYouDraft")) return;   // INPUT-1: a future gift is thanked on its day
   const [g] = await deps.query(`SELECT type FROM gifts WHERE id = ? AND org_id = ?`, [p.giftId, p.orgId]);
   if (!g) return;
   const installment = p.ready ? p.appliedInstallment : g.type === "pledge payment";

@@ -32,6 +32,8 @@ async function addPerson(ctx, req, b) {
   // the morning email as a blank or as "null". Refused here, at the source.
   if (!(await ItemRefs.links()).realName(b.name)) return { status: 400, body: { error: "Name required" } };
   const name = String(b.name).replace(/\s+/g, " ").trim();
+  // INPUT-1: a name past the limit is refused with its reason, never cut.
+  if (name.length > 100) return { status: 400, body: { error: `That name is ${name.length} characters. Keep it to 100 or fewer; nothing was cut.`, code: "name_too_long", field: "name", max: 100 } };
   // BUILD-94 Part 2 — a person added by hand can be a volunteer from the
   // start. Unknown keys are dropped by normalizeTypes, never stored.
   const types = personTypes === undefined ? ["donor"] : PT.normalizeTypes(personTypes);

@@ -31,6 +31,7 @@ import { Sec, paneInput, paneBtn, paneNote } from "./email-builder/controls";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: Preview as yourself re-draws the preview
 import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1: where Campaign emails are turned on
 import { pastGivingFlag, audienceNeverGivenSentence, openClaims, leftOutSentence, includedSentence, INCLUDE_LABEL } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1, FLOWS-15 item 1
+import { subjectWarning } from "../lib/lengthWords";   // INPUT-1
 
 const NOTE_BOX = { background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: T.ink, lineHeight: 1.5 };
 // The local wall-clock "now" for a datetime-local's min, in the browser's zone.
@@ -164,6 +165,7 @@ export default function CampaignEditor({
       <Sec title="Subject" right={<span data-testid="subject-count" style={{ fontSize: 11.5, color: form.subject.length > 60 ? T.gold700 : T.ink3 }}>{form.subject.length}/60</span>}>
         <input aria-label="Subject" data-testid="email-subject" style={paneInput} value={form.subject} placeholder="A message from {{org_name}}" onFocus={() => { ws.lastInput.current = "subject"; }}
           onChange={e => setMeta("subject", e.target.value)} onBlur={redraw} />
+        {subjectWarning(form.subject) && <div role="status" data-testid="subject-long" style={{ ...paneNote, color: T.ink, marginTop: 6 }}>{subjectWarning(form.subject)}</div>}
         <label style={{ ...paneNote, display: "block", marginTop: 10 }} htmlFor="cb-pre">Preview line</label>
         <input id="cb-pre" style={{ ...paneInput, marginTop: 4 }} value={form.preheader || ""} placeholder="Shown after the subject in the inbox" onFocus={() => { ws.lastInput.current = "preheader"; }}
           onChange={e => setMeta("preheader", e.target.value)} onBlur={redraw} />

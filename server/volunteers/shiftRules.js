@@ -24,7 +24,7 @@ const VS_READY = import("../../shared/volunteerShifts.js");
 
 // Every place that counts toward a conflict on these days: confirmed or done,
 // on a shift not cancelled, held by a person who is not deleted.
-const CONFLICT_PLACES_SQL = `SELECT su.person_id AS "personId", su.slot_id AS "slotId", s.date, s.start_time AS "startTime", s.end_time AS "endTime"
+const CONFLICT_PLACES_SQL = `SELECT su.person_id AS "personId", su.slot_id AS "slotId", s.date, s.end_date AS "endDate", s.start_time AS "startTime", s.end_time AS "endTime"
        FROM volunteer_signups su
        JOIN volunteer_slots s ON s.id = su.slot_id AND s.org_id = su.org_id
        JOIN donors d ON d.id = su.person_id AND d.org_id = su.org_id AND d.deleted_at IS NULL
@@ -38,17 +38,18 @@ const dayWords = iso => {
 // The shifts this person already holds that overlap `slotId`. [] when none.
 async function clashesFor(query, orgId, personId, slotId) {
   const VS = await VS_READY;
-  const [slot] = await query("SELECT id, date, start_time, end_time FROM volunteer_slots WHERE id = ? AND org_id = ? AND cancelled_at IS NULL", [slotId, orgId]);
+  const [slot] = await query("SELECT id, date, end_date, start_time, end_time FROM volunteer_slots WHERE id = ? AND org_id = ? AND cancelled_at IS NULL", [slotId, orgId]);
   if (!slot) return [];
-  const mine = { date: slot.date, startTime: slot.start_time, endTime: slot.end_time };
+  const mine = { date: slot.date, endDate: slot.end_date, startTime: slot.start_time, endTime: slot.end_time };   // INPUT-1: real spans
   const rows = await query(
-    `SELECT s.id, s.date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS name
+    `SELECT s.id, s.date, s.end_date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS name
        FROM volunteer_signups su
        JOIN volunteer_slots s ON s.id = su.slot_id AND s.org_id = su.org_id
        JOIN volunteer_opportunities o ON o.id = s.opportunity_id AND o.org_id = s.org_id
       WHERE su.org_id = ? AND su.person_id = ? AND su.status IN ('confirmed','completed')
-        AND s.cancelled_at IS NULL AND s.date = ? AND s.id <> ?`, [orgId, personId, slot.date, slot.id]);
-  return rows.filter(r => VS.overlaps(mine, { date: r.date, startTime: r.start_time, endTime: r.end_time }))
+        AND s.cancelled_at IS NULL AND s.date BETWEEN to_char(?::date - 1, 'YYYY-MM-DD') AND to_char(?::date + 1, 'YYYY-MM-DD') AND s.id <> ?`,
+      [orgId, personId, slot.date, slot.date, slot.id]);   // INPUT-1: an overnight shift reaches into the next day
+  return rows.filter(r => VS.overlaps(mine, { date: r.date, endDate: r.end_date, startTime: r.start_time, endTime: r.end_time }))
     .map(r => ({ slotId: r.id, name: r.name, when: `${dayWords(r.date)}, ${VS.timeRangeWords(r.start_time, r.end_time)}` }));
 }
 

@@ -5,10 +5,10 @@
 // the same door the profile's hours log uses); the audit trail records the
 // before and after, as for every write.
 import { useState } from "react";
-import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
+import { saveHours } from "../../lib/hoursEntry";   // INPUT-1: over 16 hours asks first
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 8px", fontSize: 13, color: T.ink, fontFamily: "inherit" };
 const btnLink = { background: "transparent", border: "none", padding: 0, color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
@@ -25,7 +25,7 @@ export default function ShiftRowActions({ s, onRemove, onSaved }) {
   const save = async () => {
     setMsg("");
     try {
-      await apiFetch(`/volunteer-shifts/${s.id}`, { method: "PATCH", body: JSON.stringify({ date: edit.date, hours: edit.hours, role: edit.role }) });
+      if (!(await saveHours(`/volunteer-shifts/${s.id}`, "PATCH", { date: edit.date, hours: edit.hours, role: edit.role }))) return;
       setEdit(null); onSaved();
     } catch (e) { setMsg(errorMessage(e, "That change did not save.")); }
   };

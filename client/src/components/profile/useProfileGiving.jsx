@@ -15,7 +15,9 @@ import { fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift spli
 import { rememberGift } from "../../lib/stickyGift";   // QUICKADD-1: "Same as last" for the next gift
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
-import { giftDeleteDialog } from "../../lib/giftDeleteWords";   // THANKS-1 item 5: one delete dialog
+import { giftDeleteDialog } from "../../lib/giftDeleteWords";
+import { giftAmountProblem } from "../../lib/amountCheck";   // INPUT-1
+import { confirmGiftDate } from "../../lib/giftDateCheck";   // INPUT-1: Jan 1, 1900 asks first   // THANKS-1 item 5: one delete dialog
 
 export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
   // The list: a person can be in several journeys, so it is always offered.
@@ -88,6 +90,7 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     if(unpicked){setErr(unpicked);return;}
     const fundProblem=fundLinesProblem(giftEditForm.amount,giftEditForm.fund);
     if(fundProblem){setErr(fundProblem);return;}
+    if(giftEditForm.date!==undefined&&!(await confirmGiftDate(askConfirm,giftEditForm.date)))return;   // INPUT-1
     // FIX-14 Part 2 — a receipt is a document the donor already holds. Editing
     // the amount does not change it, so the person editing is told first.
     const rcpt=receiptForGift(giftId);
@@ -148,11 +151,13 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
   // Save; text typed and not picked stops the save with a sentence.
   const addGift=async()=>{
     const f=addGiftForm;
+    if(giftAmountProblem(f.amount)){setGiftErr(giftAmountProblem(f.amount));return;}   // INPUT-1: said, never flipped
     if(!String(f.amount||"").trim()||isNaN(Number(String(f.amount).replace(/[$,]/g,"")))){setGiftErr("Type the amount.");return;}
     const unpicked=unpickedProblem(f);
     if(unpicked){setGiftErr(unpicked);return;}
     const fundProblem=fundLinesProblem(f.amount,f.fund);
     if(fundProblem){setGiftErr(fundProblem);return;}
+    if(!(await confirmGiftDate(askConfirm,f.date)))return;   // INPUT-1: "Change it" leaves the form as it is
     setGiftErr("");
     setGiftSaving(true);
     if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();

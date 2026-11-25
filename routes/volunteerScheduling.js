@@ -228,10 +228,11 @@ app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req,
   await withTransaction(async tx => {
     for (let i = 0; i < dates.length; i++) {
       await runTx(tx,
-        `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name,event_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name,event_id,end_date)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [ids[i], req.user.orgId, opp.id, dates[i], v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes,
-         v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name, eventId]);
+         v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name, eventId,
+         v.slot.endDate ? orgTime.addDays(dates[i], 1) : null]);   // INPUT-1: an overnight shift ends the next day
       if (v.slot.roles && v.slot.roles.length) await saveRolesTx(tx, req.user.orgId, ids[i], v.slot.roles.map(r => ({ ...r, id: null })), who);
     }
   });
@@ -1183,13 +1184,16 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
   // noon for that to be true. The hours are a normal logged row, editable
   // after on the person's record (a late arrival, an early finish). A
   // thank-you DRAFT is written at the same moment; staff send it.
+  // INPUT-1 item 6: before the shift's day, check-in asks (Check in then, or
+  // record hours for that date). The hours always carry the SHIFT's date: the
+  // early case now asks instead of writing today, so the shift's date is the
+  // day the work was given.
+  const shiftToday = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+  if (!su.checked_in_at) { const early = require("../server/volunteers/shiftDay").tooEarly("shift", su.date, shiftToday, req.body); if (early) return res.status(409).json(early); }
   if (!su.checked_in_at) {
     const hundredths = VS.slotHundredths({ startTime: su.start_time, endTime: su.end_time }) || 25;
     const before = await volunteerSummary(orgId, su.person_id);
-    // Dated the day they are HERE (the org's today), the rule check-out
-    // always kept: a shift moved, or checked in early, must not write hours
-    // on a planned date that has not happened.
-    const hereOn = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+    const hereOn = String(su.date).slice(0, 10) || shiftToday;
     const shiftId = su.hours_shift_id || await insertShift(orgId, su.person_id,
       { date: hereOn, hundredths, role: su.role_name || su.slot_name || su.opp_name, note: null,
         opportunityId: su.opportunity_id, slotId: su.slot_id, startTime: su.start_time, endTime: su.end_time },
@@ -1220,12 +1224,10 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
   const quarters = Math.max(1, Math.round(mins / 15));             // never zero: they were here
   const hundredths = Math.min(24 * 100, quarters * 25);
   const before = await volunteerSummary(orgId, su.person_id);
-  // THE DATE IS THE DAY THEY WERE HERE, not the day the slot was planned for.
-  // Those are the same date almost always and different in the one case that
-  // matters: a shift moved, or somebody checked out of next week's slot by
-  // mistake. Hours belong to the day they were given, and a grant report
-  // built on planned dates is a report about a calendar, not about work.
-  const workedOn = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+  // INPUT-1: THE DATE IS THE SHIFT'S. It used to be the day of check-out, for
+  // a shift moved or next week's slot checked out by mistake; check-in before
+  // the day now asks first, so the shift's date is the day the work was given.
+  const workedOn = String(su.date).slice(0, 10) || shiftToday;   // INPUT-1: the shift's date
   const shiftId = await insertShift(orgId, su.person_id,
     { date: workedOn, hundredths, role: su.opp_name, note: null },
     { via: "staff", who });
@@ -1592,7 +1594,7 @@ async function scheduleRows(orgId, { from = null, to = null, slotIds = null, opp
       id: s.id, opportunityId: s.opportunity_id, opportunityName: s.opp_name, opportunitySlug: s.opp_slug,
       name: s.name || s.opp_name, ownName: s.name || null, color: s.color || null,
       venue: s.venue || s.opp_location || null, ownVenue: s.venue || null, locationDetail: s.location_detail || null,
-      published: s.published !== false, date: s.date, startTime: s.start_time, endTime: s.end_time,
+      published: s.published !== false, date: s.date, endDate: s.end_date || null, startTime: s.start_time, endTime: s.end_time,
       when: `${dayWords(s.date)}, ${VS.timeRangeWords(s.start_time, s.end_time)}`,
       hours: hundredths / 100, capacity: s.capacity, notes: s.notes || null,
       roles: rs,
@@ -1743,6 +1745,8 @@ app.patch("/volunteer-hub/slots/:id", requireAuth, checkWriteAccess, wrap(async 
   const b = req.body || {};
   const v = VS.validateSlot({
     date: b.date !== undefined ? b.date : cur.date, startTime: b.startTime !== undefined ? b.startTime : cur.start_time,
+    // INPUT-1: the end date moves with the date unless she set it; an edit that keeps an overnight shift keeps it overnight.
+    endDate: b.endDate !== undefined ? b.endDate : (cur.end_date && b.date !== undefined && b.date !== cur.date ? orgTime.addDays(b.date, 1) : cur.end_date),
     endTime: b.endTime !== undefined ? b.endTime : cur.end_time, capacity: b.capacity !== undefined ? b.capacity : cur.capacity,
     notes: b.notes !== undefined ? b.notes : cur.notes, name: b.name !== undefined ? b.name : cur.name,
     color: b.color !== undefined ? b.color : cur.color, venue: b.venue !== undefined ? b.venue : cur.venue,
@@ -1754,9 +1758,9 @@ app.patch("/volunteer-hub/slots/:id", requireAuth, checkWriteAccess, wrap(async 
   const out = await withTransaction(async tx => {
     await queryTx(tx, "SELECT id FROM volunteer_slots WHERE id=? FOR UPDATE", [cur.id]);
     await runTx(tx, `UPDATE volunteer_slots SET date=?, start_time=?, end_time=?, capacity=?, notes=?, name=?, color=?, venue=?,
-                       location_detail=?, published=? WHERE id=? AND org_id=?`,
+                       location_detail=?, published=?, end_date=? WHERE id=? AND org_id=?`,
       [v.slot.date, v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes, v.slot.name, v.slot.color, v.slot.venue,
-       v.slot.locationDetail, v.slot.published, cur.id, orgId]);
+       v.slot.locationDetail, v.slot.published, v.slot.endDate, cur.id, orgId]);
     let promoted = [];
     if (v.slot.roles) {
       const r = await saveRolesTx(tx, orgId, cur.id, v.slot.roles, who);
@@ -1796,10 +1800,10 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
       const roles = await query("SELECT name, needed, sort FROM volunteer_slot_roles WHERE slot_id=? ORDER BY sort", [s.id]);
       for (const d of dates) {
         const id = newId("vsl");
-        await run(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        await run(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name,end_date)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [id, orgId, s.opportunity_id, d, s.start_time, s.end_time, s.capacity, s.notes, s.name, s.color, s.venue, s.location_detail,
-           b.published === undefined ? s.published : b.published === true, who.id, who.name]);
+           b.published === undefined ? s.published : b.published === true, who.id, who.name, s.end_date ? VS.addDaysCivil(d, 1) : null]);
         for (const r of roles) await run(`INSERT INTO volunteer_slot_roles (id,org_id,slot_id,name,needed,sort,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
           [newId("vsr"), orgId, id, r.name, r.needed, r.sort, who.id, who.name]);
         made++;
@@ -1812,7 +1816,8 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
     const days = Number(b.days);
     const toDate = VS.DATE_RE.test(String(b.date || "")) ? String(b.date) : null;
     if (!toDate && (!Number.isInteger(days) || days === 0 || Math.abs(days) > 366)) return res.status(400).json({ error: "Move by a number of days, or to a date." });
-    for (const s of slots) await run("UPDATE volunteer_slots SET date=? WHERE id=? AND org_id=?", [toDate || civilAdd(s.date, days), s.id, orgId]);
+    for (const s of slots) { const nd = toDate || civilAdd(s.date, days);   // INPUT-1: an overnight shift's end date moves with it
+      await run("UPDATE volunteer_slots SET date=?, end_date=? WHERE id=? AND org_id=?", [nd, s.end_date ? VS.addDaysCivil(nd, 1) : null, s.id, orgId]); }
     const people = await query(`SELECT COUNT(DISTINCT person_id)::int AS n FROM volunteer_signups WHERE slot_id = ANY(?) AND status IN ('confirmed','waitlisted')`, [slots.map(s => s.id)]);
     return res.json({ ok: true, moved: slots.length, message: `${slots.length} ${slots.length === 1 ? "shift" : "shifts"} moved. ${people[0].n ? `${people[0].n} ${people[0].n === 1 ? "person is" : "people are"} on them and kept their places; Steward has not told them, so draft a message if they need to know.` : "Nobody was on them."}` });
   }

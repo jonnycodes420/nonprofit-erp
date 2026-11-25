@@ -37,6 +37,8 @@ import ShiftRowActions from "./volunteers/ShiftRowActions";   // STALE-2: Edit a
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { PersonShiftLists } from "./volunteers/PersonShiftLists"; import { entryKey } from "../lib/entryKey";   // FLOWS-3: Coming up and Past, from the Schedule's rows
 import TimeInput from "./inputs/TimeInput";   // FLOWS-5: a time as she types it
+import { saveHours } from "../lib/hoursEntry";   // INPUT-1: over 16 hours asks first
+import { checkInOnTheDay } from "../lib/checkInDay";   // INPUT-1: check-in happens on the day
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -365,7 +367,7 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
   const log = async () => {
     setMsg("");
     try {
-      await apiFetch(`/donors/${form.personId}/volunteer-hours`, { method: "POST", body: JSON.stringify({ date: form.date, hours: form.hours, role: form.role, entryKey: form.key }) });
+      if (!(await saveHours(`/donors/${form.personId}/volunteer-hours`, "POST", { date: form.date, hours: form.hours, role: form.role, entryKey: form.key }))) return;
       setForm({ personId: form.personId, date: "", hours: "", role: "", key: entryKey() }); setMsg("Shift logged."); load(); onChanged();
     } catch (e) {
       if (e && e.authHandled) setMsg("Your session has ended, so the shift was not saved. Sign in again and log it.");
@@ -1198,8 +1200,8 @@ function KioskView({ isReadOnly, initialSlot = "" }) {
   async function tap(p) {
     setBusy(p.signupId);
     try {
-      const r = await apiFetch("/volunteer-hub/checkin", { method: "POST", body: JSON.stringify({ signupId: p.signupId, kiosk: true }) });
-      setNote(r.message); load();
+      const r = await checkInOnTheDay("/volunteer-hub/checkin", { signupId: p.signupId, kiosk: true });
+      if (r) { setNote(r.message); load(); } else setNote("Nothing was recorded. Check them in on the day.");
     } catch (e) { setNote(errorMessage(e, "That did not work.")); }
     setBusy(null);
   }

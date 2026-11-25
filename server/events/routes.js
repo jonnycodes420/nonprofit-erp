@@ -713,6 +713,8 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
   const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const undo = req.body?.undo === true;
+  // INPUT-1 item 6: before the event's day, check-in asks; attendance carries the event's date (logEventAttendance).
+  if (!undo) { const early = require("../volunteers/shiftDay").tooEarly("event", orgTime.civilOf(event.date), orgToday(await orgTz(orgId)), req.body); if (early) return res.status(409).json(early); }   // ORG_TZ_SEAM_OK
   // PARITY-4: A SECOND CHECK-IN IS A WARNING, not a quiet success: two
   // people through the door on one name is the thing the door is there for.
   if (!undo) {
@@ -756,6 +758,9 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
   const orgId = req.user.orgId;
   const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
+  // INPUT-1 item 6: a scan before the event's day writes nothing and says when.
+  { const early = require("../volunteers/shiftDay").tooEarly("event", orgTime.civilOf(event.date), orgToday(await orgTz(orgId)), req.body);   // ORG_TZ_SEAM_OK
+    if (early) return res.json({ ok: false, reason: "not_the_day", sentence: early.sentence.replace(", or record attendance for that date", "") }); }
   const PASS = await import("../../shared/passCode.js");
   const read = PASS.readPassCode(String(req.body?.code || ""), { secret: process.env.JWT_SECRET || "", orgId });
   if (!read.ok) {

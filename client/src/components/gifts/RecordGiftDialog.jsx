@@ -38,6 +38,9 @@ const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, p
 const lbl = { fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4, display: "block" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
 import { methodChoices, methodValue, NOT_SET } from "../../../../shared/giftMethods.js";   // GIFTS-3: one list of methods
+import { giftAmountProblem } from "../../lib/amountCheck";   // INPUT-1
+import { confirmGiftDate } from "../../lib/giftDateCheck";   // INPUT-1: Jan 1, 1900 asks first
+import { askConfirm } from "../ConfirmDialog";
 
 // The form's starting values: today, Check, the org's default fund, nothing
 // attributed; or, when `carry`, what the last gift said (and which fields those were).
@@ -89,6 +92,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
 
   const save = async (another = false, answer = null) => {
     setErr(""); setSaved("");
+    if (giftAmountProblem(f.amount)) { setErr(giftAmountProblem(f.amount)); return; }   // INPUT-1: said, keeping what she typed
     if (!(Number(f.amount) > 0)) { setErr("Type the amount."); return; }
     // GIFTS-3 item 2: text typed into a picker and never picked is not saved, and not dropped either.
     const unpicked = Object.entries(f.typed || {}).find(([k, t]) => t && !f[k]);
@@ -97,6 +101,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
     if (fundProblem) { setErr(fundProblem); return; }
     if (f.tribType && !f.trib) { setErr("Pick who the tribute honors, or choose Not a tribute gift."); return; }
     if (np && !personName(np)) { setErr("Type the new person's first or last name."); return; }
+    if (!answer && !(await confirmGiftDate(askConfirm, f.date))) return;   // INPUT-1: "Change it" leaves the form as it is
     let p = null;
     if (!np) {
       p = picked && who === picked.name ? picked : await personNamed(who.trim()).catch(() => null);

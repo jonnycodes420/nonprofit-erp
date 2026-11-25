@@ -52,6 +52,7 @@ import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
 import { retryImport } from "../lib/lazyRetry";
 import { isAbort } from "../lib/leaving";   // FLAKE-3
 import { reopenAfterUpdate, REOPENING_WORDS } from "../lib/chunkReload";   // FRESH-1 item 2
+import { NAME_MAX, nameCounter, nameProblem } from "../lib/lengthWords";   // INPUT-1
 
 // PERF-4: the spreadsheet reader (113 KB) and the old-reports wizard are their
 // own chunks, loaded when one of their windows opens, so the Donors list and a
@@ -722,7 +723,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   const[newDonorAssignee,setNewDonorAssignee]=useState("");
   const[addErr,setAddErr]=useState("");   // SECURE-2: the server's sentence when it refuses a new person
-  const[addWarn,setAddWarn]=useState("");   // INTEGRITY-1: an email already on someone else, said on save
+  const[addWarn,setAddWarn]=useState("");
+  const[addBadField,setAddBadField]=useState("");   // INPUT-1: the field Save could not take   // INTEGRITY-1: an email already on someone else, said on save
   // QUICKADD-1: "Added Maria Lopez. Open" after Save and add another; Record a gift from Donors.
   const[addToast,setAddToast]=useState(null);
   const[recordGiftOpen,setRecordGiftOpen]=useState(false);
@@ -732,7 +734,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // Record a gift open (the profile's own gift form, the person filled in);
   // "another" keeps the form, emptied, with "Added Maria Lopez. Open".
   const addDonor=async(then="open")=>{
-    if(!newDonor.name)return;
+    // INPUT-1: Save with no name, or one past the limit, says so at the field; nothing is cut.
+    const nameIssue=nameProblem(newDonor.name);
+    if(nameIssue){setAddErr(nameIssue);setAddBadField("name");return;}
+    setAddBadField("");
     const assignTo=newDonorAssignee||userId;
     const assignToName=newDonorAssignee?(orgTeam.find(u=>u.id===newDonorAssignee)?.name||""):userName;
     // BUILD-80 Part 10 — a typed last amount NEVER stamps a last-gift date
@@ -946,8 +951,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         {[[["name","Full name"]],[["email","Email"]],[["phone","Phone"]],[["address","Street address"]],[["address2","Apt, suite (optional)"]],[["city","City",2],["state","State",1],["zip","ZIP",1]],...(addMore?[[["lastAmount","Giving before Steward (a total from your old system, not a gift)"]]]:[])].map(row=>(
           <div key={row[0][0]} style={{display:"flex",gap:8,flexWrap:"wrap"}}>{row.map(([k,lb,fl])=>(
             <label key={k} style={{display:"flex",flexDirection:"column",gap:5,flex:fl?`${fl} 1 ${fl*60}px`:"1 1 100%",minWidth:0}}>
-              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>{lb}</span>
-              <input value={newDonor[k]} autoComplete="off" data-testid={"add-"+k} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",minWidth:0}}/>
+              <span style={{fontSize:11,fontWeight:700,color:T.ink3,display:"flex",justifyContent:"space-between"}}>{lb}{k==="name"&&nameCounter(newDonor.name)?<span data-testid="add-name-count" style={{fontWeight:600,color:newDonor.name.length>NAME_MAX?T.gold700:T.ink3}}>{nameCounter(newDonor.name)}</span>:null}</span>
+              <input value={newDonor[k]} autoComplete="off" data-testid={"add-"+k} aria-invalid={addBadField===k?"true":undefined} aria-describedby={addBadField===k?"add-donor-error":undefined}
+                onChange={e=>{const v=e.target.value;if(addBadField===k){setAddBadField("");setAddErr("");}setNewDonor(p=>({...p,[k]:v}));}}
+                style={{background:T.bg,border:"1px solid "+(addBadField===k?T.gold600:T.bg3),borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",minWidth:0,...(addBadField===k?{boxShadow:"0 0 0 2px "+T.gold300}:{})}}/>
             </label>))}</div>
         ))}
         {/* FLOWS-11 (W-1114-Finance-26X): no bare "Gift amount". A gift is recorded on the profile's own gift
@@ -955,7 +962,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         {!addMore?<button type="button" data-testid="add-more" onClick={()=>setAddMore(true)} style={{alignSelf:"flex-start",background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:600,fontSize:12.5,cursor:"pointer",textDecoration:"underline"}}>More</button>
           :<div data-testid="add-before-steward-note" style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>It shows in Lifetime as "includes $… from before Steward" and is never counted as a gift. To record a gift, use Save and record a gift.</div>}
         {emailHint(newDonor.email)&&<div data-testid="add-email-hint" style={{fontSize:12,color:T.gold700}}>{emailHint(newDonor.email)}</div>}
-        {addErr&&<div data-testid="add-donor-error" role="alert" style={{fontSize:12.5,color:T.ink,background:T.gold50,border:"1px solid "+T.gold300,borderRadius:8,padding:"7px 10px"}}>{addErr}</div>}
+        {addErr&&<div id="add-donor-error" data-testid="add-donor-error" role="alert" style={{fontSize:12.5,color:T.ink,background:T.gold50,border:"1px solid "+T.gold300,borderRadius:8,padding:"7px 10px"}}>{addErr}</div>}
         {isAdmin&&orgTeam.length>1&&<select value={newDonorAssignee} onChange={e=>setNewDonorAssignee(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer"}}>
           <option value="">Assign to me ({userName})</option>
           {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}

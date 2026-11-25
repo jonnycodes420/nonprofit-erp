@@ -35,6 +35,7 @@ import { stripKeys } from "./email-builder/useEmailBuilder";
 import { PageBackground } from "./email-builder/Panes";
 import { Sec, paneInput, paneBtn, paneNote } from "./email-builder/controls";
 import { useTogether, Faces, CommentsPanel, SharePanel, ExportPanel, StylesTab } from "./email-builder/together";   // BUILDER-3
+import { subjectWarning } from "../lib/lengthWords";   // INPUT-1
 // The builder's parts, under the names other screens already import.
 export { EmailFrame, insertChip, setAtPath } from "./email-builder/EmailFrame";
 export { withKeys, stripKeys } from "./email-builder/useEmailBuilder";
@@ -380,6 +381,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       <Sec title="Subject" right={<span style={{ fontSize: 11.5, color: subject.length > 60 ? T.gold700 : T.ink3 }} data-testid="subject-count">{subject.length}/60</span>}>
         <input id="et-subject" aria-label="Subject" data-testid="email-subject" style={paneInput} value={subject} onFocus={() => { ws.lastInput.current = "subject"; }}
           onChange={e => { const v = e.target.value; b.changeMeta(() => setSubject(v), "subject"); }} onBlur={redraw} />
+        {subjectWarning(subject) && <div role="status" data-testid="subject-long" style={{ ...paneNote, color: T.ink, marginTop: 6 }}>{subjectWarning(subject)}</div>}
         <label htmlFor="et-pre" style={{ ...paneNote, display: "block", marginTop: 10 }}>Preview line</label>
         <input id="et-pre" style={{ ...paneInput, marginTop: 4 }} value={preheader} placeholder="Shown after the subject in the inbox" onFocus={() => { ws.lastInput.current = "preheader"; }}
           onChange={e => { const v = e.target.value; b.changeMeta(() => setPreheader(v), "preheader"); }} onBlur={redraw} />
