@@ -184,6 +184,11 @@ const LEFT_OUT = { deceased: "deceased", do_not_contact: "do not contact", alrea
 async function propose({ req, query, run, asHer, memoId, step: st, today }) {
   const orgId = req.user.orgId;
   const g = st.group;
+  // POLISH-12: the Top 100 parts of a plan only for an org that has turned it on.
+  const SW = require("../majorGifts/top100Switch");
+  const top100Off = (g.membersOnly || g.top100Add) && !(await SW.top100On(query, orgId));
+  // reading the list, or adding to it with nothing else asked: nothing to plan
+  if (top100Off && (g.membersOnly || !g.journey)) return { kind: "refused", state: "refused", line: SW.OFF_LINE };
   if (g.unsupported) return { kind: "refused", state: "refused", line: `I can't pick out "${String(g.unsupported).slice(0, 80)}" from Steward's filters yet, so I did nothing. Try Donors' filters, then "Add to a journey".` };
   let ids;
   const rules = rulesOf(g, st.window, today);
@@ -201,7 +206,8 @@ async function propose({ req, query, run, asHer, memoId, step: st, today }) {
   const ordered = ids.filter(id => byId.has(id));
   const plan = { id: newId("gp"), said: g.said, whoWords, rules, count: ordered.length,
     people: ordered.map(id => ({ id, name: byId.get(id).name })), list: null, journey: null, doneAt: null };
-  if (g.top100Add) {
+  // POLISH-12: with the Top 100 off, the plan's card has no List line (the journey part stands).
+  if (g.top100Add && !top100Off) {
     if (!(await P.canSee(req.user.userId, orgId))) plan.list = { refused: "The Top 100 is for admins and staff with the major gifts permission." };
     else {
       const [l] = await query("SELECT name FROM portfolio_lists WHERE org_id=?", [orgId]);

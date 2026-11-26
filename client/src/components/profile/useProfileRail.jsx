@@ -16,6 +16,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { ProfileNextMove } from "../Insights";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { endOnName } from "../../../../shared/endOnName.js";   // POLISH-12: "Inc." takes no second period
 
 export function useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit, setStepEdit, stepBusy, dpThread, dpItems, setConvoOpen, setPlanOpen, openProposals, proposalsKnown, loadDpThread, saveStep, deleteStep, snoozing, snoozeErr, snoozeThread, callName, setDpTab, pledges, setAddGiftForm, setAddGiftOpen, tasks, gifts, giftLoading, giftReadErr, giftsFull, tlCounts, getAI, org, setSuggestOpen, isTeam, openForNextMove }) {
 
@@ -139,7 +140,7 @@ export function useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit
                 <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
                     {/* FIX-57: a sentence that needs a name waits for it ("Nothing is open for ." while the record loaded) */}
-                    {String(donor.name||"").trim()?`Nothing is open for ${callName}.`
+                    {String(donor.name||"").trim()?`Nothing is open for ${endOnName(callName)}`
                       :<span data-testid="dp-name-wait" aria-label="Loading" style={{display:"inline-block",width:"min(320px,80%)",height:12,borderRadius:6,background:T.bg2,verticalAlign:"middle"}}/>}
                   </div>
                   {!isReadOnly&&<button type="button" data-testid="dp-next-plan" onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:9,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",minHeight:40}}>Plan a follow-up</button>}

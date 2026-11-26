@@ -1,0 +1,1 @@
+- Run `DATABASE_URL=<prod> node scripts/ops/polish12-top100-keep.js` (dry run, lists org id and count), then the same with `--apply --i-know-this-is-prod`, after Ship moves POLISH-12 to prod, so no org that uses its Top 100 loses sight of it.

@@ -37,6 +37,8 @@ async function seed(q, today) {
   await q(`INSERT INTO orgs (id,name,legal_name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,ai_enabled)
            VALUES ($1,'Bayview Literacy Project','Bayview Literacy Project','bayview-literacy',1,'active','team','America/New_York',NOW(),true)
            ON CONFLICT (id) DO UPDATE SET ai_enabled=true`, [ORG]);
+  // POLISH-12: the Top 100 is off unless an org turns it on; this org uses it.
+  await q(`UPDATE orgs SET top100_enabled=true WHERE id=$1`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_atl7_rowan',$1,$2,$3,'Rowan Ellery','admin')
            ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash, org_id=EXCLUDED.org_id, deactivated_at=NULL`,
     [ORG, ADMIN, bcrypt.hashSync(PASSWORD, 4)]);

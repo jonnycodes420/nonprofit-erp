@@ -23,6 +23,7 @@ const GR = require("../groups");
 const FS = require("../figureSources");
 const lapseRule = require("../lapseRule");   // FIX-51: the one lapse rule
 const NUMBERS = require("../shared/numbers");   // NUMBERS-4: one home for every giving number
+const { endOnName } = require("../shared/endOnName.js");   // POLISH-12: a name ending in "Inc." takes no second period
 
 const routers = { r0: express.Router() };
 // POLISH-1: the conversation answer, for the Agent's read (set by mount).
@@ -729,7 +730,7 @@ async function talkedAnswer(orgId, donor, typed, userId) {
   const stop = r => (/[.!?]$/.test(clipped(r)) ? "" : ".");
   const sentence = !n
     ? `There is nothing on ${d.name}'s record ${period.words}: no conversations, notes or meetings. If they are in your old system, bring your notes in and ask again.`
-    : `${period.words[0].toUpperCase() + period.words.slice(1)}, you had ${spellN(n)} ${n === 1 ? "conversation" : "conversations"} with ${d.name}.`
+    : `${period.words[0].toUpperCase() + period.words.slice(1)}, you had ${spellN(n)} ${n === 1 ? "conversation" : "conversations"} with ${endOnName(d.name)}`
       + (rows.length ? ` The latest was ${quote(rows[0])}${stop(rows[0])}` : "")
       + (rows.length > 1 ? ` Before that, ${rows.slice(1).map(quote).join("; and ")}${stop(rows[rows.length - 1])}` : "");
   // Each quote opens the line it came from: the record, at that line.

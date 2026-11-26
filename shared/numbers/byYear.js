@@ -75,8 +75,20 @@ function changeWords(cents, prevCents, { first = false, partial = false, firstWo
   if (prevCents <= 0) return `up ${fmt(cents)}${tail}`;
   const diff = cents - prevCents;
   if (diff === 0) return `the same${tail}`;
-  const pct = Math.round(Math.abs(diff) / prevCents * 100);
-  return `${diff > 0 ? "up" : "down"} ${fmt(Math.abs(diff))} (${pct}%)${tail}`;
+  return `${diff > 0 ? "up" : "down"} ${fmt(Math.abs(diff))} (${changePct(Math.abs(diff), prevCents)})${tail}`;
+}
+
+// POLISH-12 item 2: "$24,000 to $50" read "down $23,950 (100%)", which reads as
+// no gift at all. A change that is not to or from nothing never says 0% or
+// 100%: under 1% is "less than 1%", 99% to 100% takes one decimal ("99.8%"),
+// and a fall to $0 never reaches here (changeWords says "no gifts" for it).
+// A rise is its whole percent: doubling is "up $100 (100%)", and true.
+function changePct(diffCents, prevCents) {
+  const exact = diffCents / prevCents * 100;
+  if (exact < 1) return "less than 1%";
+  // a fall that leaves something: 99.95% and over would round to 100.0, so it stops at 99.9
+  if (exact > 99 && exact < 100) return `${Math.min(99.9, Math.round(exact * 10) / 10)}%`;
+  return `${Math.round(exact)}%`;
 }
 
 // ── ONE PERSON ─────────────────────────────────────────────────────────────
@@ -402,4 +414,4 @@ function yearLargestSql(orgId, p) {
   };
 }
 
-module.exports = { donorYearSql, donorSoftYearSql, yearLargestSql, yearsSpan, samePoint, changeWords, donorByYear, orgByYear, donorKindsSql, orgYearsSql, KIND_WORDS, fmt };
+module.exports = { changePct, donorYearSql, donorSoftYearSql, yearLargestSql, yearsSpan, samePoint, changeWords, donorByYear, orgByYear, donorKindsSql, orgYearsSql, KIND_WORDS, fmt };
