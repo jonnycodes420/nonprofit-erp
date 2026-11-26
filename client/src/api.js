@@ -340,7 +340,7 @@ export function landed(path) {
   return p ? p.then(() => {}, () => {}) : Promise.resolve();
 }
 
-async function apiFetchNow(path, options = {}, busyTries = 0, meta = null) {
+async function apiFetchNow(path, options = {}, busyTries = 0, meta = null, tokenRetried = false) {
   const token = getToken();
   // ACCESS-2B: someone who sees only their own people asks only their open
   // routes; a closed one is answered here and never sent (lib/portfolioRoutes.js).
@@ -363,6 +363,11 @@ async function apiFetchNow(path, options = {}, busyTries = 0, meta = null) {
     // WE SENT A TOKEN AND GOT A 401. Whatever the server called it, this token
     // cannot be used, and no amount of retrying will change that.
     if (res.status === 401 && token) {
+      // FRESH-3 item 4: another tab replaced the session while this request was out (a sign-in or
+      // an org switch signs the old one out). The old token is dead, not her: ask once more with
+      // the one the browser holds now, and never clear the other tab's fresh session.
+      const held = getToken();
+      if (held && held !== token && !tokenRetried) return apiFetchNow(path, options, busyTries, meta, true);
       handleAuthFailure(err.error);
       // `authHandled` tells a caller's catch that somebody is already being
       // sent to /login, so it must not render this as an outage.
@@ -374,7 +379,7 @@ async function apiFetchNow(path, options = {}, busyTries = 0, meta = null) {
     // Loaded only when a busy answer comes, so Home's first download doesn't carry it (perf-app's budget).
     if (busyTries === 0 && res.status === 503 && err && err.code === "busy") {
       const B = await import("./lib/busyRetry.js");
-      if (B.isBusyAnswer(res.status, err) && B.retriesOnBusy(options.method)) { await B.waitBeforeRetry(); return apiFetchNow(path, options, 1, meta); }
+      if (B.isBusyAnswer(res.status, err) && B.retriesOnBusy(options.method)) { await B.waitBeforeRetry(); return apiFetchNow(path, options, 1, meta, tokenRetried); }
     }
     // FLOWS-16 item 6: the route's sentence, never a bare code ("nothing_to_publish"). The code stays on e.error.
     const said = bodySentence(err);

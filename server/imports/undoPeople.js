@@ -17,6 +17,9 @@
 // Steward wrote by itself (created_by system:…), and the people with activity
 // are listed in Undo's confirm with the choice up front: keep them, or move
 // them to the trash with the rest. One click either way.
+// FRESH-3 item 5 (W-1126-Finance-02): a gift's timeline line is never activity on its own. A gift
+// counts as a gift row (above); the import's own gift line whose gift_id is gone (the gift removed
+// before the undo) said "a line on their timeline" and kept the people the import made.
 "use strict";
 
 // What was added to each person since, by a person. Rows the run itself wrote
@@ -34,7 +37,7 @@ async function activityOf(query, orgId, ids, imp) {
             (SELECT COUNT(*) FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id AND i.import_id IS DISTINCT FROM ?
                 AND COALESCE(i.created_by, '') NOT LIKE 'system:%' AND i.type = 'call')::int AS calls,
             (SELECT COUNT(*) FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id AND i.import_id IS DISTINCT FROM ?
-                AND COALESCE(i.created_by, '') NOT LIKE 'system:%' AND i.type NOT IN ('note', 'call') AND i.gift_id IS NULL)::int AS other,
+                AND COALESCE(i.created_by, '') NOT LIKE 'system:%' AND i.type NOT IN ('note', 'call', 'gift') AND i.gift_id IS NULL)::int AS other,
             (SELECT COUNT(*) FROM tasks t WHERE t.org_id = d.org_id AND t.donor_id = d.id AND t.import_id IS DISTINCT FROM ?
                 AND COALESCE(t.created_by, '') NOT LIKE 'system:%')::int AS tasks
        FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NULL ORDER BY d.name, d.id`,

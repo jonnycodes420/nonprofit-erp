@@ -5,6 +5,7 @@
 // to the same day the profile does (GET /fundraising/pledges).
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
+import { useLive } from "../lib/liveRead";   // FRESH-3
 import { T, fmtFull, EmptyState } from "./shared";
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
@@ -21,7 +22,9 @@ export function PledgesView({ onNavigate }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);
-  useEffect(() => { apiFetch("/fundraising/pledges").then(setD).catch(() => setErr("Pledges did not load. Try again in a moment.")); }, []);
+  const load = () => apiFetch("/fundraising/pledges").then(setD).catch(() => setErr("Pledges did not load. Try again in a moment."));
+  useEffect(() => { load(); }, []);
+  useLive("fundraising.pledges", ["pledge", "gift"], () => load());   // FRESH-3: a payment, a write-off or a delete moves the list
   if (err) return <div style={{ fontSize: 13, color: T.ink3, padding: 24 }}>{err}</div>;
   if (!d) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   const person = id => onNavigate && onNavigate("donors", { selectDonorId: id });

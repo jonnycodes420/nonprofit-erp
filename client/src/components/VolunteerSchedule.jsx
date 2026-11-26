@@ -13,6 +13,7 @@
 import RemoveMenu, { removeMany, removeOne } from "./RemoveMenu";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch, API } from "../api";
+import { useLive } from "../lib/liveRead";   // FRESH-3
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
@@ -34,6 +35,7 @@ const card = { background: T.white, border: "1px solid " + T.bg2, borderRadius: 
 const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 const lbl = { display: "block", fontSize: 12, fontWeight: 700, color: T.ink3, margin: "10px 0 4px" };
 const COLOUR_NAMES = { "#0d5c3a": "Emerald", "#c9a84c": "Brass", "#0f1a12": "Ink" };
+const CONFLICT_DEF = "The same person with a place on two shifts that overlap in time, in the dates on screen. Back to back is not a conflict.";   // FRESH-3
 const VIEWS = [{ id: "day", label: "Day" }, { id: "week", label: "Week" }, { id: "month", label: "Month" }, { id: "list", label: "List" }];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const nextDay = iso => addDaysCivil(iso, 1);   // INPUT-1: an overnight shift ends the next day
@@ -164,6 +166,7 @@ export function ScheduleView({ isReadOnly, narrow, onOpenPerson, initialSlot }) 
     }).catch(e => setErr(errorMessage(e, "The schedule did not load.")));
   }, [anchor, view, opp]);
   useEffect(() => { load(); }, [load]);
+  useLive("volunteers.schedule", ["volunteer", "person"], () => load());   // FRESH-3: a shift deleted, retired or signed up elsewhere
   useEffect(() => {
     if (!initialSlot || !data) return;
     const s = data.shifts.find(x => x.id === initialSlot);
@@ -180,12 +183,17 @@ export function ScheduleView({ isReadOnly, narrow, onOpenPerson, initialSlot }) 
   }, [shifts]);
   const refreshOpen = id => { load(); if (id) apiFetch(`/volunteer-hub/schedule?from=${open ? open.date : ""}&to=${open ? open.date : ""}`).then(d => { const s = d.shifts.find(x => x.id === id); if (s) setOpen(s); }).catch(() => {}); };
 
-  const openProblems = which => apiFetch("/volunteer-hub/schedule/problems").then(p => setProblems({ ...p, which })).catch(e => setNote(errorMessage(e, "That did not load.")));
+  // FRESH-3 item 2: conflicts are the dates on screen (the cards' own tags); short shifts stay this week's.
+  const openProblems = which => which === "conflicts"
+    ? setProblems({ which, conflicts: data.shownConflicts || [], definitions: { conflicts: CONFLICT_DEF } })
+    : apiFetch("/volunteer-hub/schedule/problems").then(p => setProblems({ ...p, which })).catch(e => setNote(errorMessage(e, "That did not load.")));
 
   if (err) return <div style={card}><div role="alert" style={{ fontSize: 13 }}>{err}</div></div>;
   if (!data || !range) return <div style={{ fontSize: 13, color: T.ink3, padding: 20 }}>Loading…</div>;
 
   const title = view === "day" ? displayDate(anchor) : view === "week" ? `${shortDay(range.from)} to ${shortDay(range.to)}` : view === "month" ? monthWords(anchor) : `${shortDay(range.from)} to ${shortDay(range.to)}`;
+  const thisWeek = data.from === data.week.from && data.to === data.week.to;
+  const conflictLabel = thisWeek ? "Schedule conflicts this week" : `Schedule conflicts, ${title}`;
   const chip = (s, compact) => <ShiftChip key={s.id} s={s} compact={compact} onOpen={setOpen} selected={selected.has(s.id)} onSelect={toggle} isReadOnly={isReadOnly} />;
 
   return (
@@ -193,7 +201,7 @@ export function ScheduleView({ isReadOnly, narrow, onOpenPerson, initialSlot }) 
       {/* The two week numbers, each opening its rows. */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {[["short", "Shifts short this week", data.week.short, "Published shifts this week, Monday to Sunday, where at least one role still needs people."],
-          ["conflicts", "Schedule conflicts this week", data.week.conflicts, "The same person with a place on two shifts that overlap in time. Back to back is not a conflict."]].map(([k, label, v, def]) => (
+          ["conflicts", conflictLabel, data.conflicts, CONFLICT_DEF]].map(([k, label, v, def]) => (
           <button key={k} data-testid={`sched-${k}`} onClick={() => openProblems(k)} title={def} aria-label={`${label}: ${v}. ${def}`}
             style={{ ...card, padding: "10px 14px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", minWidth: 170 }}>
             <div style={eyebrow}>{label}</div>
@@ -329,8 +337,8 @@ export function ScheduleView({ isReadOnly, narrow, onOpenPerson, initialSlot }) 
       {creating && <ShiftEditor opportunities={data.opportunities} date={view === "day" ? anchor : data.today} onClose={() => setCreating(false)}
         onSaved={msg => { setCreating(false); setNote(msg); load(); }} />}
       {problems && (
-        <Modal onClose={() => setProblems(null)} width={560} ariaLabel={problems.which === "short" ? "Shifts short this week" : "Schedule conflicts this week"}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{problems.which === "short" ? "Shifts short this week" : "Schedule conflicts this week"}</div>
+        <Modal onClose={() => setProblems(null)} width={560} ariaLabel={problems.which === "short" ? "Shifts short this week" : conflictLabel}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{problems.which === "short" ? "Shifts short this week" : conflictLabel}</div>
           <div style={{ fontSize: 12.5, color: T.ink3, margin: "4px 0 12px" }}>{problems.definitions[problems.which]}</div>
           {problems.which === "short" && (problems.short.length ? problems.short.map(s => (
             <div key={s.id} style={{ padding: "8px 0", borderTop: "1px solid " + T.bg2, fontSize: 13 }}>
@@ -339,7 +347,7 @@ export function ScheduleView({ isReadOnly, narrow, onOpenPerson, initialSlot }) 
           {problems.which === "conflicts" && (problems.conflicts.length ? problems.conflicts.map((c, i) => (
             <div key={i} style={{ padding: "8px 0", borderTop: "1px solid " + T.bg2, fontSize: 13 }}>
               <button style={btnLink} onClick={() => { setProblems(null); onOpenPerson && onOpenPerson({ id: c.personId, name: c.name }); }}>{c.name}</button> is on {c.a.name || "a shift"} ({c.a.when}) and {c.b.name || "another shift"} ({c.b.when}).
-            </div>)) : <div style={{ fontSize: 13, color: T.ink3 }}>Nobody is on two shifts at once this week.</div>)}
+            </div>)) : <div style={{ fontSize: 13, color: T.ink3 }}>Nobody is on two shifts at once {thisWeek ? "this week" : "in these dates"}.</div>)}
         </Modal>
       )}
     </div>

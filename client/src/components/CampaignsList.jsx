@@ -133,7 +133,7 @@ function CampaignFacts({ g }) {
   );
 }
 
-export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId, onOpenCampaign, onBack, onNavigate, templates, planPanel, commitPanel, onRemoved }) {
+export function CampaignsView({ goals, campaigns = [], isReadOnly, roTip, onNew, onEdit, openId, onOpenCampaign, onBack, onNavigate, templates, planPanel, commitPanel, onRemoved }) {
   const [tpl, setTpl] = useState(null);
   const loadTpl = () => apiFetch("/campaign-templates").then(setTpl).catch(() => setTpl({ templates: [] }));
   useEffect(() => { loadTpl(); }, []);
@@ -184,7 +184,17 @@ export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId,
         </div>
       ))}
 
-      {goals.length === 0 && started.length === 0 ? (
+      {/* FRESH-3 item 3 (W-1126-Fundraising-01): "No campaigns yet" while Overview listed five. Empty
+          only when no campaign is on file at all; when the goals' totals did not come back, the
+          campaigns are named, never denied. */}
+      {goals.length === 0 && started.length === 0 && campaigns.length > 0 && (
+        <div data-testid="campaign-list-unread" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px", fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
+          <div style={{ fontWeight: 700, color: T.ink }}>{`Campaigns with a goal · ${campaigns.length}`}</div>
+          {campaigns.map(c => <div key={c.id}><button type="button" onClick={() => onOpenCampaign && onOpenCampaign(c.id)} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{c.name}</button></div>)}
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>Their totals did not load this time. Reload to see each thermometer.</div>
+        </div>
+      )}
+      {goals.length === 0 && started.length === 0 && campaigns.length === 0 ? (
         <>
           <StartHere line="A campaign is a specific ask: Spring Appeal, a capital push, a year-end drive. Give it a goal and a deadline, and Steward tracks every attributed gift toward it automatically." actionLabel="+ Start your first campaign" onAction={onNew} dismissKey="fundraising_campaigns_intro" />
           <div style={{ marginTop: 20 }}>
@@ -192,11 +202,12 @@ export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId,
           </div>
         </>
       ) : (
+        goals.length > 0 && <><div data-testid="campaign-list-filter" style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 8 }}>{`All campaigns with a goal · ${topGoals.length}`}</div>
         <div data-testid="campaign-list" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(340px,100%),1fr))", gap: 16 }}>
           {topGoals.map(g => (
             <CampaignCard key={g.id} g={g} allGoals={goals} editBtn={editBtn} onOpenCampaign={onOpenCampaign} />
           ))}
-        </div>
+        </div></>
       )}
     </div>
     </FigureContext.Provider>

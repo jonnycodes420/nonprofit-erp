@@ -335,7 +335,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
 
       {!loading && subtab === "campaigns" && !openCampaignId && <CampaignTidy isReadOnly={isReadOnly} isAdmin={isAdmin} onFinish={c => setModal({ mode: "edit", campaign: c })} onChanged={load} />}
       {!loading && subtab === "campaigns" && (
-        <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} openId={openCampaignId}
+        <CampaignsView goals={overview?.goals || []} campaigns={Array.isArray(campaigns) ? campaigns : []} isReadOnly={isReadOnly} roTip={roTip} openId={openCampaignId}
           onOpenCampaign={openCampaign} onBack={closeCampaign} onNavigate={onNavigate}
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
           templates={(tpl, reload) => <CampaignTemplates data={tpl} reload={reload} isReadOnly={isReadOnly} onCreated={out => { load(); if (out && out.campaignId) openCampaign(out.campaignId); }} onOpenCampaign={openCampaign} />}
