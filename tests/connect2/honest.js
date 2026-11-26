@@ -106,7 +106,7 @@ async function run({ ok, login, api, q }) {
   ok("§2 the Settings card's state is the card's flow", /const statusOf = c => c\.flow \? c\.flow\.state/.test(conn));
   ok("§2 the detail's badge and sentence are the flow's", /c\.flow \? c\.flow\.label/.test(conn) && /c\.flow \? <FlowSentence flow=\{c\.flow\}/.test(conn));
   ok("§2 Home and Finance draw ConnectionLines, which reads the same GET /connections flows",
-    /<ConnectionLines onNavigate=\{onNavigate\}\/>/.test(src("client/src/components/home/sectionStack.jsx"))
+    /<ConnectionLines onNavigate=\{onNavigate\}\/>/.test(src("client/src/components/home/sectionStack.jsx")) && /import\("\.\.\/connections\/flowParts"\)/.test(src("client/src/components/home/sectionStack.jsx"))
       && /<ConnectionLines[^>]*providers=\{\["quickbooks"\]\}/.test(src("client/src/components/Finance.jsx"))
       && /apiFetch\("\/connections"\)[\s\S]{0,300}c\.flow && states\.includes\(c\.flow\.state\)/.test(parts));
 
