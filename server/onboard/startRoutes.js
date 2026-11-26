@@ -272,7 +272,8 @@ function mount(ctx) {
   // ── Settings → Billing: the signed order form ────────────────────────────
   async function latestSignature(orgId) {
     const [s] = await query(`SELECT id, signer_name, signer_title, signer_email, signed_at, agreement_version, text_sha256,
-        rendered_text, price_cents, first_charge_at FROM start_signatures WHERE org_id=? ORDER BY signed_at DESC LIMIT 1`, [orgId]);
+        rendered_text, price_cents, first_charge_at, (SELECT name FROM orgs WHERE id = start_signatures.org_id) AS org_name
+        FROM start_signatures WHERE org_id=? ORDER BY signed_at DESC LIMIT 1`, [orgId]);
     return s || null;
   }
   app.get("/billing/agreement", requireAuth, requireAdmin, wrap(async (req, res) => {

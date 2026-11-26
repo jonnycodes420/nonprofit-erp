@@ -48,7 +48,7 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
     const [boxes, domains, days] = await Promise.all([MAIL.mailboxes(query), query(`SELECT value FROM sales_settings WHERE key = 'prospect_domains'`), MAIL.noReplyDays(query)]);
     const ready = ["microsoft", "google"].map(k => { const { values } = FLOW.oauthEnv(k, O.ENV_VARS); return { provider: k, configured: !!(values.clientId && values.clientSecret && values.redirectUri) }; });
     const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM sales_emails`);
-    res.json({ ok: true, mailboxes: boxes, providers: ready, prospectDomains: (domains[0] && domains[0].value) || [], noReplyDays: days, captured: n,
+    res.json({ ok: true, mailboxes: boxes, providers: ready, backfillDays: MAIL.BACKFILL_DAYS, prospectDomains: (domains[0] && domains[0].value) || [], noReplyDays: days, captured: n,
       sentence: "Only mail to or from a sales contact's address, or at a prospect domain, is stored. Nothing is sent from here.",
       reads: require("./calendar").WHAT_IT_READS, never: require("./calendar").NEVER_TOUCHES });
   }));

@@ -69,4 +69,14 @@ async function note(ctx, dealId, body, who) {
   await require("./activities").create(ctx, { kind: "note", records: [{ type: "deal", id: dealId }], body }, who);
 }
 
-module.exports = { dealForOrg, dealName, moveTo, note, STAGES };
+// SALES-6: an order made from a quote (Send to sign) is that quote signed. The quote says so
+// ('ordered', with who and when), so Today stops counting it as a quote sent and not signed.
+async function quoteSigned(ctx, link, { signedAt, name, title }) {
+  if (!link || !link.id) return;
+  await ctx.run(`UPDATE sales_quotes SET status = 'ordered', accepted_at = ?, signer_name = ?, signer_title = ?, signer_email = ?,
+                   steward_org_id = COALESCE(steward_org_id, ?), updated_at = NOW(), updated_by = ?, updated_by_name = ?
+                 WHERE start_link_id = ? AND status = 'sent'`,
+    [signedAt, name, title, (link.order_json && link.order_json.signerEmail) || null, link.org_id, "system:onboard/order", `${name} (order link)`, link.id]).catch(quiet(null));
+}
+
+module.exports = { dealForOrg, dealName, moveTo, note, quoteSigned, STAGES };

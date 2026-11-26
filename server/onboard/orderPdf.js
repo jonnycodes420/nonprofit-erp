@@ -9,6 +9,17 @@
 // a text editor) can read every figure straight out of the file.
 "use strict";
 const { signedStamp } = require("./order");
+const { filledLines } = require("./agreementBlock");
+
+// The agreement's markdown as paragraphs: headings bold, "**" dropped, rules skipped.
+function paragraphs(doc, text, W) {
+  for (const para of String(text).split(/\n\s*\n/)) {
+    const line = para.replace(/\*\*/g, "").replace(/`/g, "").replace(/\s*\n\s*/g, " ").trim();
+    if (!line || /^-{3,}$/.test(line)) continue;
+    if (/^#{1,3} /.test(line)) doc.moveDown(0.2).font("Helvetica-Bold").fontSize(10.5).fillColor("#0F1A12").text(line.replace(/^#{1,3} /, ""), 56, doc.y, { width: W }).moveDown(0.15);
+    else doc.font("Helvetica").fontSize(9).fillColor("#0F1A12").text(line, 56, doc.y, { width: W }).moveDown(0.35);
+  }
+}
 
 function render(snapshot, sig = null) {
   const PDFDocument = require("pdfkit");
@@ -49,6 +60,18 @@ function render(snapshot, sig = null) {
     label("The short version of the terms");
     for (const t of snapshot.shortTerms) doc.font("Helvetica").fontSize(10).fillColor(INK).text(`•  ${t}`, 56, doc.y, { width: W });
     doc.moveDown(0.3).fontSize(9.5).fillColor(GREY).text(`This order and the Terms of Service (version ${snapshot.termsVersion}), at stewardapp.dev/terms, are the agreement. Privacy Policy: stewardapp.dev/privacy.`, { width: W });
+
+    // SALES-6: an order made from a quote carries the customer agreement. The web page shows it without
+    // its paper signature block; here, once signed, that block is drawn filled in.
+    if (snapshot.agreement && snapshot.agreement.text) {
+      label(`Customer agreement (version ${snapshot.agreement.version})`);
+      paragraphs(doc, snapshot.agreement.text, W);
+      if (sig) {
+        doc.moveDown(0.4);
+        for (const [k, v] of filledLines({ orgName: snapshot.orgName, name: sig.signer_name, title: sig.signer_title, signedAt: sig.signed_at }))
+          doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(`${k}: `, 56, doc.y, { continued: true, width: W }).font("Helvetica").text(v);
+      }
+    }
 
     label(sig ? "Signed" : "Not signed yet");
     if (sig) {

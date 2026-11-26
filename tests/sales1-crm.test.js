@@ -41,6 +41,20 @@ async function wipeSales() {
 const S = (tok, m, p, b) => api(m, `/ops/sales${p}`, tok, b);
 const view = v => encodeURIComponent(JSON.stringify(v));
 const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel), "utf8"); } catch { return ""; } };
+// SALES-6: "January 1, 2027" (the quote's words) or "Jan 1, 2027" (the order's).
+const MONTHS6 = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const dayWords6 = (d, short) => { const [y, m, dd] = d.split("-").map(Number); return `${short ? MONTHS6[m - 1].slice(0, 3) : MONTHS6[m - 1]} ${dd}, ${y}`; };
+// The words in a pdfkit PDF (hex strings inside TJ arrays), as order1.test.js reads them.
+function pdfText6(buf) {
+  const raw = buf.toString("latin1").replace(/stream\r?\n([\s\S]*?)\r?\nendstream/g, (m, body) => {
+    try { return "stream\n" + require("zlib").inflateSync(Buffer.from(body, "latin1")).toString("latin1") + "\nendstream"; } catch { return m; }
+  });
+  const lines = [];
+  for (const t of raw.match(/BT[\s\S]*?ET/g) || []) {
+    lines.push((t.match(/\[([^\]]*)\]\s*TJ/g) || []).map(arr => (arr.match(/<([0-9a-fA-F]*)>/g) || []).map(h => Buffer.from(h.slice(1, -1), "hex").toString("latin1")).join("")).join(""));
+  }
+  return lines.join("\n").replace(/\u0092/g, "'");
+}
 
 (async () => {
   await wipeSales();
@@ -421,6 +435,114 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   const disagree = await require("../scripts/ops/sales5-price-check").find(qq);
   ok("§15 the price check lists the won deal whose prices disagree, by id (dry run, no names)", disagree.some(x => x.id === pDealR.body.id && x.p.cents === 31000 && x.p.prices.deal === 40000),
     disagree.map(x => ({ id: x.id, cents: x.p.cents, deal: x.p.prices.deal })));
+
+  // ── §16 · SALES-6: ONE LINK TO SEND, THE PAPER BLOCK, THE PRICE TILE, TOUCHES ─────────────
+  // Shaped like the deal Jonathan walked on 25 Nov: a $299 deal, its quote v1 at $149 (list $299)
+  // starting on a fixed day, the quote link made and not signed, no mailbox connected.
+  // HOW IT GOES RED (on main before SALES-6): the quote page has no orderReady and /public/quote/:t/order
+  // is a 404; the agreement on the page ends in the blank "For Steward Software LLC: ____"; the header
+  // has no priceTile and no use-quote-price route; Last touch says nothing about the mailbox.
+  const billingMock = await new Promise(resolve => {
+    const http = require("http");
+    const srv = http.createServer((req, res) => {
+      let b = ""; req.on("data", c => { b += c; });
+      req.on("end", () => {
+        res.setHeader("Content-Type", "application/json");
+        const u = req.url.split("?")[0];
+        if (req.method === "POST" && u === "/v1/checkout/sessions") return res.end(JSON.stringify({ id: "cs_test_sales6", object: "checkout.session", url: "https://checkout.stripe.test/sales6" }));
+        if (req.method === "GET" && /^\/v1\/prices\//.test(u)) return res.end(JSON.stringify({ id: u.split("/")[3], object: "price", product: "prod_test_steward", unit_amount: 29900, currency: "usd", recurring: { interval: "month" } }));
+        if (req.method === "POST" && u === "/v1/customers") return res.end(JSON.stringify({ id: "cus_sales6", object: "customer" }));
+        res.statusCode = 404; res.end(JSON.stringify({ error: { message: "mock: " + req.url } }));
+      });
+    });
+    srv.on("error", () => resolve(null));
+    srv.listen(require("./helpers").BILLING_MOCK_PORT, () => resolve(srv));
+  });
+  const SIX_A = "org_sales6_alder", SIX_B = "org_sales6_birch";
+  for (const [id, name] of [[SIX_A, "Wrenfield Commons (Steward)"], [SIX_B, "Oakhollow Pantry (Steward)"]]) {
+    await wipeOrg(id);
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'trialing','team','America/New_York')`, [id, name, id.replace(/_/g, "-")]);
+  }
+  const start6 = dayOffset(40);
+  const sixDeal = async (orgName, stewardId, first, email) => {
+    const o = await S(sup, "POST", "/rec/org", { name: orgName });
+    await S(sup, "POST", `/orgs/${o.body.id}/steward`, { stewardOrgId: stewardId });
+    const c = await S(sup, "POST", "/rec/contact", { first_name: first, last_name: "Testperson", title: "Executive Director", emails: email });
+    const d = await S(sup, "POST", "/rec/deal", { name: `${orgName} – Core`, stage_id: ST["Demo done"], value_cents: 29900,
+      links: [{ type: "org", id: o.body.id, primary: true }, { type: "contact", id: c.body.id }] });
+    const qv = await S(sup, "POST", `/deals/${d.body.id}/quotes`, { plan: "bundle", price: "149", reason: "beta", start_on: start6, setup_fee: "250" });
+    return { dealId: d.body.id, quoteId: qv.body.id };
+  };
+  const A6 = await sixDeal("Wrenfield Commons", SIX_A, "Ottilie", "ottilie@wrenfield.example.org");
+  const tok6 = (await S(sup, "POST", `/quotes/${A6.quoteId}/link`, {})).body.token;   // the old quote link, made before SALES-6
+  const pub6 = (m, p, b) => api(m, p, null, b);
+
+  // (3) The Price tile names the open quote that differs, and the button puts its price on the deal everywhere.
+  const head6 = (await S(sup, "GET", `/deals/${A6.dealId}/header`)).body.header;
+  const sentOn = new Date(testNow()).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
+  ok("§16 the Price tile reads \"$299/mo deal value · $149/mo quote sent <day>, not signed\", and ARR follows the $299", head6 && head6.priceTile
+    && head6.priceTile.main === "$299/mo deal value" && head6.priceTile.sub === `$149/mo quote sent ${sentOn}, not signed` && head6.arrCents === 358800 && head6.openQuote && head6.openQuote.cents === 14900,
+    head6 && { tile: head6.priceTile, arr: head6.arrCents });
+  const row6 = async () => (await S(sup, "GET", `/list/deal?view=${view({})}`)).body.rows.find(r => r.id === A6.dealId);
+  ok("§16 the pipeline card's subline says the same", (await row6()).price_line === `$149/mo quote sent ${sentOn}, not signed`);
+  const use6 = await S(sup, "POST", `/deals/${A6.dealId}/use-quote-price`, {});
+  const [h6b, r6b, p6b, stamp6] = await Promise.all([S(sup, "GET", `/deals/${A6.dealId}/header`), row6(), PRICE.forDealIds((sql, p) => { let i = 0; return q(sql.replace(/\?/g, () => `$${++i}`), p); }, [A6.dealId]),
+    q(`SELECT value_cents, updated_by FROM sales_deals WHERE id = $1`, [A6.dealId])]);
+  ok("§16 \"Use $149 as the deal value\": one click, and the header, the board, the price function and ARR all read $149, stamped by her",
+    use6.status === 200 && use6.body.undo && h6b.body.header.valueCents === 14900 && h6b.body.header.arrCents === 178800 && !h6b.body.header.openQuote && r6b.price_cents === 14900
+    && p6b.get(A6.dealId).cents === 14900 && Number(stamp6[0].value_cents) === 14900 && stamp6[0].updated_by === "u_sales1_super" && use6.body.undo.value_cents === 29900,
+    { use: use6.body, head: h6b.body.header && h6b.body.header.valueCents, row: r6b.price_cents });
+  const undo6 = await S(sup, "PATCH", `/rec/deal/${A6.dealId}`, use6.body.undo || { value_cents: 29900, valueOnly: true });
+  ok("§16 Undo puts $299 back, and the tile names the quote again", undo6.status === 200 && ((await S(sup, "GET", `/deals/${A6.dealId}/header`)).body.header.priceTile || {}).main === "$299/mo deal value");
+  await S(sup, "POST", `/deals/${A6.dealId}/use-quote-price`, {});
+
+  // (4) No mailbox: Last touch says why email can't count, and where to fix it.
+  const NO_BOX = "Your mailbox isn't connected, so emails don't count as touches. Connect it in Sales settings.";
+  const now6 = (await S(sup, "GET", "/now")).body;
+  ok("§16 with no mailbox, Last touch and Now say email isn't counted, with the Sales settings link", !!head6.mailbox && head6.mailbox.connected === false && head6.sentences.lastTouch === NO_BOX
+    && now6.mailbox && now6.mailbox.connected === false && now6.mailbox.says === NO_BOX && /panel=settings/.test(now6.mailbox.settings), { mb: head6.mailbox, now: now6.mailbox });
+
+  // (2) The web agreement has no blank signature block.
+  const page6 = await pub6("GET", `/public/quote/${tok6}`);
+  ok("§16 the quote page's agreement leaves out the paper block (\"For Steward Software LLC: ____\")", page6.status === 200 && /this document\s+governs/.test(page6.body.agreement.text)
+    && !/For Steward Software LLC|\*\*Organization\*\*|_{6,}/.test(page6.body.agreement.text), page6.body.agreement && page6.body.agreement.text.slice(-200));
+
+  // (1) The unsigned quote link opens the order flow with the quote's terms.
+  ok("§16 her unsigned quote link offers the order: read, sign, card, book", page6.body.orderReady === true
+    && page6.body.orderSays === `She reads the order, signs, adds a card (nothing charged until ${dayWords6(start6, true)}), and books setup.`, { ready: page6.body.orderReady, says: page6.body.orderSays });
+  const open6 = await pub6("POST", `/public/quote/${tok6}/order`, {});
+  const ord6 = await pub6("GET", `/public/start/${tok6}`);
+  const snap6 = ord6.body && ord6.body.order && ord6.body.order.snapshot;
+  ok("§16 \"Open your order\" opens ORDER-1's order under the same link, with the quote's price, list price, start day and setup fee",
+    open6.status === 200 && open6.body.path === `/start/${tok6}` && ord6.status === 200 && snap6 && snap6.figures.priceCents === 14900 && snap6.figures.setupCents === 25000
+    && snap6.figures.firstChargeOn === dayWords6(start6, true) && /List price \$299 \/ month/.test(snap6.lines[0].detail) && snap6.lines[2].label === `Until ${dayWords6(start6, true)}`
+    && snap6.signer.email === "ottilie@wrenfield.example.org", { open: open6.body, figures: snap6 && snap6.figures, plan: snap6 && snap6.lines[0] });
+  ok("§16 the order carries the agreement without its blank block; a second press opens the same order",
+    snap6 && snap6.agreement && /this document\s+governs/.test(snap6.agreement.text) && !/For Steward Software LLC|_{6,}/.test(snap6.agreement.text)
+    && (await pub6("POST", `/public/quote/${tok6}/order`, {})).body.path === `/start/${tok6}` && (await q(`SELECT COUNT(*)::int AS n FROM start_links WHERE org_id = $1`, [SIX_A]))[0].n === 1);
+  const sign6 = await pub6("POST", `/public/start/${tok6}/sign`, { name: "Ottilie Testperson", title: "Executive Director", agree: true, sha256: ord6.body.order && ord6.body.order.sha256 });
+  const [qrow6] = await q(`SELECT status, signer_name FROM sales_quotes WHERE id = $1`, [A6.quoteId]);
+  const [link6] = await q(`SELECT id, first_charge_at FROM start_links WHERE org_id = $1`, [SIX_A]).then(r => (r.length ? r : [{ id: "none", first_charge_at: 0 }]));
+  ok("§16 she signs the order; the quote reads signed as an order, and billing waits for the quote's day", sign6.status === 200 && qrow6.status === "ordered"
+    && qrow6.signer_name === "Ottilie Testperson" && !!link6.first_charge_at && civilDay(new Date(link6.first_charge_at).getTime()) === start6, { sign: sign6.status, body: sign6.body, q: qrow6 });
+  const pdf6 = await fetch(`${require("./helpers").BASE}/admin/start-links/${link6.id}/pdf`, { headers: { Authorization: "Bearer " + sup } });
+  const pdfWords = pdfText6(Buffer.from(await pdf6.arrayBuffer()));
+  ok("§16 the signed PDF fills the block: organization, her name and title, the date and time, and Steward's line",
+    pdf6.status === 200 && /Organization:\s*Wrenfield Commons \(Steward\)/.test(pdfWords) && /Name and title:\s*Ottilie Testperson, Executive Director/.test(pdfWords)
+    && /Date:\s*\w{3} \d{1,2}, \d{4} at \d{1,2}:\d{2} [AP]M ET/.test(pdfWords) && /For Steward Software LLC:\s*Jonathan Atkinson, signed on issue/.test(pdfWords) && !/_{6,}/.test(pdfWords),
+    pdfWords.slice(-600));
+  const head6s = (await S(sup, "GET", `/deals/${A6.dealId}/header`)).body.header;
+  ok("§16 once signed, the tile reads \"$149/mo, signed <day>\" and the button is gone", !!head6s.priceTile && head6s.priceTile.main === `$149/mo, signed ${sentOn}` && !head6s.openQuote && head6s.arrCents === 178800, head6s.priceTile);
+
+  // (1) Send to sign on the deal: the order from the newest quote, its link shown once.
+  const B6 = await sixDeal("Oakhollow Pantry", SIX_B, "Bram", "bram@oakhollow.example.org");
+  const send6 = await S(sup, "POST", `/deals/${B6.dealId}/send-to-sign`, {});
+  const sent6 = send6.body.token ? await pub6("GET", `/public/start/${send6.body.token}`) : { body: {} };
+  ok("§16 Send to sign makes the order from the quote's terms and hands back its link", send6.status === 201 && send6.body.path === `/start/${send6.body.token}`
+    && sent6.body.order && sent6.body.order.snapshot.figures.priceCents === 14900 && sent6.body.order.snapshot.figures.firstChargeOn === dayWords6(start6, true)
+    && (await q(`SELECT status FROM sales_quotes WHERE id = $1`, [B6.quoteId]))[0].status === "sent", send6.body);
+  if (billingMock) billingMock.close();
+  for (const o of [SIX_A, SIX_B]) await wipeOrg(o);
 
   await wipeSales();
   for (const o of [HOME, CUST, PRICED]) await wipeOrg(o);

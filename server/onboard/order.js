@@ -18,6 +18,7 @@ const PRICING = require("../../pricing");
 const TERMS = require("../../shared/terms.json");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_FREE_DAYS = 30;
 // Stripe refuses a trial_end under 48 hours away, so the shortest free period is 3 days.
 const MIN_FREE_DAYS = 3, MAX_FREE_DAYS = 365;
@@ -60,7 +61,7 @@ function validateOrder(b = {}) {
   const setupFeeCents = fee || null;   // 0 and empty are both Waived
   const setupDetail = clean(b.setupDetail, 300) || DEFAULTS.setupDetail;
   const freeDays = b.freeDays === "" || b.freeDays == null ? DEFAULT_FREE_DAYS : Number(b.freeDays);
-  if (!Number.isInteger(freeDays) || freeDays < MIN_FREE_DAYS || freeDays > MAX_FREE_DAYS)
+  if (!DATE_RE.test(String(b.startOn || "")) && (!Number.isInteger(freeDays) || freeDays < MIN_FREE_DAYS || freeDays > MAX_FREE_DAYS))
     return { ok: false, error: "free_days_invalid", field: "freeDays", message: `Free days is a whole number from ${MIN_FREE_DAYS} to ${MAX_FREE_DAYS}.` };
   const note = clean(b.note, 300) || null;
   const signerName = clean(b.signerName, 200);
@@ -70,8 +71,14 @@ function validateOrder(b = {}) {
   if (!EMAIL_RE.test(signerEmail)) return { ok: false, error: "signer_email_invalid", field: "signerEmail", message: "Who signs: a valid email." };
   const tier = PRICING.tierById(String(b.band || "")) || PRICING.TIERS[0];
   if (!PRICING.TIERS.includes(tier)) return { ok: false, error: "invalid_band", field: "band", message: "Pick the size band (it sets the Stripe product)." };
-  return { ok: true, order: { planName, planDetail, interval, priceCents, setupFeeCents, setupDetail, freeDays, note,
-    signerName, signerTitle, signerEmail, tierId: tier.id } };
+  const order = { planName, planDetail, interval, priceCents, setupFeeCents, setupDetail, freeDays, note,
+    signerName, signerTitle, signerEmail, tierId: tier.id };
+  // SALES-6: an order made from a quote keeps the quote's day, list price and agreement through an edit.
+  if (DATE_RE.test(String(b.startOn || ""))) { order.startOn = String(b.startOn); order.freeDays = null; }
+  if (Number.isInteger(b.listCents) && b.listCents > 0) order.listCents = b.listCents;
+  if (b.fromQuote && typeof b.fromQuote === "object") order.fromQuote = { id: clean(b.fromQuote.id, 64), version: Number(b.fromQuote.version) || 1 };
+  if (b.agreementVersion) order.agreementVersion = clean(b.agreementVersion, 40);
+  return { ok: true, order };
 }
 
 // SW-2026-0007. `n` is this year's count so far plus one.
@@ -94,17 +101,21 @@ function monthDay(at, tz) {
 // THE SNAPSHOT: everything the page shows, in order, as words and cents. `at` is the
 // moment it is for: now on the page, the signing instant on the stored row.
 function buildSnapshot({ order, orderNumber: number, version, orgName, preparedBy, preparedAt, tz, at }) {
-  const f = orderFigures(order, at);
+  const f = orderFigures(order, at, tz);
   const per = f.interval === "year" ? "year" : "month";
   const first = dateWords(f.firstChargeAt, tz);
   const dom = dayOfMonth(f.firstChargeAt, tz);
   const then = f.interval === "year"
     ? `Then ${usd(f.priceCents)} every year on ${monthDay(f.firstChargeAt, tz)}.`
     : `Then ${usd(f.priceCents)} on the ${ordinal(dom)} of each month${dom > 28 ? " (the month's last day when it is shorter)" : ""}.`;
+  // SALES-6: below a list price the plan line says so, as the quote did.
+  const list = order.listCents > f.priceCents ? ` List price ${usd(order.listCents)} / ${per}; this is the price agreed with Steward for ${orgName}.` : "";
   const lines = [
-    { key: "plan", label: order.planName, detail: order.planDetail, cents: f.priceCents, amount: `${usd(f.priceCents)} / ${per}` },
+    { key: "plan", label: order.planName, detail: `${order.planDetail}${list}`, cents: f.priceCents, amount: `${usd(f.priceCents)} / ${per}` },
     { key: "setup", label: "Hands-on setup", detail: order.setupDetail, cents: f.setupCents, amount: f.setupWaived ? "Waived" : usd(f.setupCents) },
-    { key: "free", label: `First ${f.freeDays} days`, detail: `Starts the day you sign. Cancel any time before ${first} and you pay nothing.`, cents: 0, amount: "$0" },
+    f.startOn
+      ? { key: "free", label: `Until ${first}`, detail: `Starts the day you sign. Nothing is charged before ${first}; cancel any time before then and you pay nothing.`, cents: 0, amount: "$0" }
+      : { key: "free", label: `First ${f.freeDays} days`, detail: `Starts the day you sign. Cancel any time before ${first} and you pay nothing.`, cents: 0, amount: "$0" },
   ];
   const total = {
     key: "first", label: `First charge, ${first}`, cents: f.firstChargeCents, amount: usd(f.firstChargeCents),
@@ -119,7 +130,14 @@ function buildSnapshot({ order, orderNumber: number, version, orgName, preparedB
     figures: { priceCents: f.priceCents, interval: f.interval, setupCents: f.setupCents, freeDays: f.freeDays,
       firstChargeAt: f.firstChargeAt.toISOString(), firstChargeOn: first, firstChargeCents: f.firstChargeCents, todayCents: 0 },
     shortTerms: SHORT_TERMS,
+    // SALES-6: an order made from a quote carries the customer agreement the quote did, without its
+    // paper signature block (agreementBlock.js): the fields below it are the signature.
+    ...(order.agreementVersion ? { agreement: agreementFor(order.agreementVersion) } : {}),
   };
+}
+function agreementFor(version) {
+  const a = require("../../customerAgreement").agreement();
+  return { version: a.ok ? a.version : version, text: a.ok ? require("./agreementBlock").bodyOf(a.text).body : "" };
 }
 
 // The hash is of the snapshot with its keys in a fixed order, so the same order always
@@ -148,6 +166,7 @@ function snapshotText(s) {
     `## The short version of the terms`,
     ...s.shortTerms.map(t => `- ${t}`),
     `This order and the Terms of Service (version ${s.termsVersion}) at stewardapp.dev/terms.`,
+    ...(s.agreement ? ["---", s.agreement.text.trim()] : []),
   ];
   return rows.join("\n\n");
 }

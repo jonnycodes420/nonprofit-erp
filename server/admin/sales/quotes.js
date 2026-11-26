@@ -118,7 +118,8 @@ function renderText(q, orgName, agreement) {
     `**Term: ${TERMS[q.term] || TERMS.month_to_month}.** Cancel before ${dayWords(q.start_on)} in Settings → Billing and you pay nothing.`,
     `Where this quote and the agreement below differ on the price, the day billing starts or when the setup fee is charged, this quote governs.`,
     `---`,
-    agreement.text,
+    // SALES-6 item 2: the agreement without its paper signature block; the online fields are the signature.
+    require("../../onboard/agreementBlock").bodyOf(agreement.text).body,
   ];
   return lines.join("\n\n");
 }
@@ -128,12 +129,13 @@ function linkState(q, now) {
   if (!q) return "missing";
   if (q.status === "superseded") return "superseded";
   if (q.status === "accepted") return "accepted";
+  if (q.status === "ordered") return "ordered";   // SALES-6: signed as an order (Send to sign)
   if (q.status === "draft") return "draft";
   if (q.status !== "sent" || !q.expires_at || new Date(q.expires_at).getTime() <= now) return "expired";
   return "open";
 }
 
-const COLS = `id, deal_id, version, plan_key, plan_name, tier_id, addons, includes, list_cents, price_cents, below_list_reason, start_on::text AS start_on,
+const COLS = `id, deal_id, start_link_id, version, plan_key, plan_name, tier_id, addons, includes, list_cents, price_cents, below_list_reason, start_on::text AS start_on,
   setup_fee_cents, term, status, link_made_at, expires_at, steward_org_id, org_name, accepted_at, signer_name, signer_title, signer_email,
   agreement_version, text_sha256, card_saved_at, card_brand, card_last4, stripe_subscription_id, billing_scheduled_at, billing_starts_at, billing_error,
   created_at, created_by_name`;
@@ -158,8 +160,8 @@ async function dealContactEmail(query, dealId) {
 async function save(ctx, dealId, b, who, now = Date.now()) {
   const [deal] = await ctx.query(`SELECT id, name FROM sales_deals WHERE id = ? AND deleted_at IS NULL`, [dealId]);
   if (!deal) return { error: "not_found" };
-  const done = await ctx.query(`SELECT version FROM sales_quotes WHERE deal_id = ? AND status = 'accepted' LIMIT 1`, [dealId]);
-  if (done.length) return { error: "invalid", message: `Version ${done[0].version} is accepted and billing is set from it. Change the price in the Steward org's Billing instead.` };
+  const done = await ctx.query(`SELECT version, status FROM sales_quotes WHERE deal_id = ? AND status IN ('accepted', 'ordered') LIMIT 1`, [dealId]);
+  if (done.length) return { error: "invalid", message: `Version ${done[0].version} is ${done[0].status === "ordered" ? "signed as an order" : "accepted"} and billing is set from it. Change the price in the Steward org's Billing instead.` };
   const v = validate(b, await plansOf(ctx.query), civil(now));
   if (v.error) return v;
   const [{ n }] = await ctx.query(`SELECT COALESCE(MAX(version), 0) + 1 AS n FROM sales_quotes WHERE deal_id = ?`, [dealId]);
@@ -179,7 +181,7 @@ async function save(ctx, dealId, b, who, now = Date.now()) {
 async function makeLink(ctx, quoteId, who, now = Date.now()) {
   const [q] = await ctx.query(`SELECT ${COLS} FROM sales_quotes WHERE id = ?`, [quoteId]);
   if (!q) return { error: "not_found" };
-  if (q.status === "accepted") return { error: "invalid", message: "This quote is accepted; its link has done its job." };
+  if (q.status === "accepted" || q.status === "ordered") return { error: "invalid", message: "This quote is signed; its link has done its job." };
   if (q.status === "superseded") return { error: "invalid", message: "A newer version of this quote exists. Copy that one's link." };
   if (daysBetween(civil(now), q.start_on) < MIN_LEAD_DAYS) return { error: "invalid", message: "Billing would start too soon to hold the date. Save a new version with a later start." };
   const org = await dealOrg(ctx.query, q.deal_id);
@@ -205,6 +207,7 @@ async function byToken(query, token) {
 }
 
 const GONE = {
+  ordered: "This quote was signed as an order. The signed copy is in the email sent when it was signed.",
   missing: "This quote link doesn't exist. Ask Jonathan for a new one.",
   expired: "This quote has expired. Quotes last 30 days; ask Jonathan for a new one.",
   superseded: "This quote was replaced by a newer one. Use the latest link Jonathan sent.",
@@ -220,9 +223,16 @@ async function publicRead(query, token, now = Date.now()) {
     return { ...out, confirmation: confirmation(q), cardSaved: !!q.card_saved_at, card: q.card_last4 ? `${q.card_brand || "Card"} ending ${q.card_last4}` : null,
       canAddCard: !!q.steward_org_id && !q.card_saved_at && !!q.stripe_subscription_id };
   }
+  // SALES-6 item 1: a quote whose deal can be ordered opens the order flow (read, sign, card, book) with
+  // these same terms. The page offers that one step; the POST that opens it is hers (a GET writes nothing).
+  const orderReady = await require("./sendToSign").canOrder(query, q);
+  // SALES-6 item 2: the page shows the agreement without its paper signature block. The hash she sends
+  // back is still of the text as kept (for a link made before SALES-6, that text includes the blank block).
+  const shown = require("../../onboard/agreementBlock").bodyOf(q.rendered_text).body;
   return { ...out, plan: q.plan_name, includes: q.includes || [], addons: (q.addons || []).map(a => a.name), priceCents: q.price_cents, listCents: q.list_cents,
     startOn: q.start_on, startWords: dayWords(q.start_on), setupFeeCents: q.setup_fee_cents, term: TERMS[q.term] || TERMS.month_to_month,
-    expiresAt: q.expires_at, agreement: { text: q.rendered_text, sha256: q.text_sha256, version: q.agreement_version } };
+    expiresAt: q.expires_at, orderReady: !!orderReady.ok, orderSays: orderReady.ok ? orderReady.says : null,
+    agreement: { text: shown, sha256: q.text_sha256, version: q.agreement_version } };
 }
 function confirmation(q) {
   return `Signed by ${q.signer_name}${q.signer_title ? `, ${q.signer_title}` : ""}. Nothing is charged today. Billing starts ${dayWords(q.start_on)} at ${usd(q.price_cents)} a month${q.setup_fee_cents > 0 ? `, with the ${usd(q.setup_fee_cents)} setup fee on that first charge` : ""}.`;
@@ -254,7 +264,7 @@ async function accept(ctx, token, b, reqInfo, billing, now = Date.now()) {
   const who = { id: ACTOR.id, name: `${name} (quote link)` };
 
   // The signed agreement as a PDF, kept on the quote (the deal's) and, below, as the org's signature.
-  const pdf = await require("../../onboard/agreementPdf").render({ rendered_text: q.rendered_text, signed_at: signed.accepted_at, signer_name: name, signer_title: title,
+  const pdf = await require("../../onboard/agreementPdf").render({ rendered_text: q.rendered_text, org_name: q.org_name, signed_at: signed.accepted_at, signer_name: name, signer_title: title,
     signer_email: email || "no email on the deal", agreement_version: q.agreement_version, text_sha256: q.text_sha256 });
   await ctx.run(`UPDATE sales_quotes SET pdf = ? WHERE id = ?`, [pdf, q.id]);
 

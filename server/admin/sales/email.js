@@ -20,6 +20,8 @@ const { newId } = require("../../shared/newId");
 
 const PLANT = process.env.TEST_MODE === "1" ? process.env.SALES1_PLANT || "" : "";
 const DEFAULT_NO_REPLY_DAYS = 5;
+// SALES-6 item 4: a mailbox's reads go back 90 days before it was connected, and no further.
+const BACKFILL_DAYS = 90;
 const addr = v => { const m = String(v || "").match(/<([^>]+)>/); return (m ? m[1] : String(v || "")).trim().toLowerCase(); };
 const domainOfAddr = a => (a.includes("@") ? a.split("@").pop() : null);
 
@@ -60,12 +62,14 @@ async function openBody(sealed) {
 // organizations and their open deals (and to orgs at a matching prospect domain).
 async function capture(ctx, mailbox, messages, who = { id: "system:sales-mail", name: "Steward (sales mailbox read)" }) {
   const scope = await scopeOf(ctx.query, mailbox.address);
-  let stored = 0, skipped = 0;
+  const since = await backfillFrom(ctx.query, mailbox);
+  let stored = 0, skipped = 0, older = 0;
   for (const m of messages || []) {
     const k = keeps(m, scope);
     if (!k) { skipped++; continue; }
     const out = m.sent === true || addr(m.from) === scope.own;
     const at = m.at ? new Date(m.at) : new Date(`${String(m.date || "").slice(0, 10)}T12:00:00Z`);
+    if (since && !Number.isNaN(at.getTime()) && at.getTime() < since) { older++; continue; }
     const id = newId("sem");
     const ins = await ctx.query(`INSERT INTO sales_emails (id, mailbox_id, provider_message_id, thread_id, subject, from_addr, to_addrs, cc_addrs, sent_at, direction, body_sealed, created_by, created_by_name)
                                  VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?) ON CONFLICT (mailbox_id, provider_message_id) DO NOTHING RETURNING id`,
@@ -80,7 +84,14 @@ async function capture(ctx, mailbox, messages, who = { id: "system:sales-mail", 
     // SALES-2 item 9: a reply from them ends their cadences and closes the remaining steps.
     if (!out && contactIds.length) await require("./cadences").endFor(ctx, contactIds, "reply", who);
   }
-  return { stored, skipped };
+  return { stored, skipped, older };
+}
+
+// The first instant a mailbox keeps: 90 days before it was connected.
+async function backfillFrom(query, mailbox) {
+  let made = mailbox.created_at;
+  if (!made && mailbox.id) { const [r] = await query(`SELECT created_at FROM sales_mailboxes WHERE id = ?`, [mailbox.id]).catch(() => []); made = r && r.created_at; }
+  return made ? new Date(made).getTime() - BACKFILL_DAYS * 86400000 : null;
 }
 
 // The contacts themselves, their organizations, and their open deals; orgs at a matching domain.
@@ -201,4 +212,4 @@ async function noReplyDays(query) {
   return Number.isFinite(n) && n >= 1 ? n : DEFAULT_NO_REPLY_DAYS;
 }
 
-module.exports = { DEFAULT_NO_REPLY_DAYS, keeps, scopeOf, capture, linkTargets, forRecord, body, replyFacts, tokenFor, readNow, mailboxes, disconnect, deleteCaptured, noReplyDays };
+module.exports = { DEFAULT_NO_REPLY_DAYS, BACKFILL_DAYS, keeps, scopeOf, capture, linkTargets, forRecord, body, replyFacts, tokenFor, readNow, mailboxes, disconnect, deleteCaptured, noReplyDays };
