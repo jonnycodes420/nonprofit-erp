@@ -303,6 +303,22 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["Home's file line", homeLinePeople ? num(homeLinePeople[1]) : undefined],
       ["the CSV export", csvRows ? csvRows.length : undefined],
     ]);
+    // POLISH-13 item 1 (W-1126-Donors-09): the Directory's three tabs, the people /donors/summaries
+    // lists and its total, and Re-engage's badge against its own rows, all from everyone.js's one rule.
+    const [dirTabs, sums] = await Promise.all([get("/donors?roleCounts=1&role=&limit=1"),
+      fetch(H.BASE + "/donors/summaries?limit=500", { headers: { Authorization: "Bearer " + token } }).then(async r => ({ total: Number(r.headers.get("x-total-count")), rows: await r.json() }))]);
+    const rc = (dirTabs && dirTabs.roleCounts) || {};
+    agree("Everyone, on every surface", [
+      ["the Donors count (/donors/counts)", counts && counts.total],
+      ["the Directory's Everyone tab", rc.everyone],
+      ["the Directory's Donors + Contacts tabs", rc.donors == null ? undefined : rc.donors + rc.contacts],
+      ["the people /donors/summaries counts", sums.total],
+      ["the people /donors/summaries lists", Array.isArray(sums.rows) && sums.total <= 500 ? sums.rows.length : undefined],
+    ]);
+    agree("Re-engage", [
+      ["Re-engage's badge (/donors/counts)", counts && counts.reengage],
+      ["Re-engage's rows (/donors/summaries)", Array.isArray(sums.rows) && sums.total <= 500 ? sums.rows.filter(d => d.reengage === true).length : undefined],
+    ]);
     // TRUTH-2: the org's whole-data exports keep an erased record (it is what
     // holds their gifts, as anonymous gifts, so the books foot); no screen
     // counts it as a person.

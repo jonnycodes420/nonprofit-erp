@@ -182,6 +182,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const _sumRe = require("../../shared/numbers/lapse").reengageSql("donors", _sumToday);
   const _sumLost = require("../../shared/numbers/lapse").lostSql("donors", _sumToday);   // COUNTS-1: Re-engage's Lost & Found
   const _vis = require("../auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
+  // POLISH-13 item 1: the rows are Everyone (everyone.js), the very people X-Total-Count counts: never an erased shell or an archived row.
   const donors = await query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, ${require("../../shared/numbers/lastGift").LAST_GIFT_REFUNDED("donors")} AS last_gift_refunded, gift_count,   -- NUMBERS-9 item 3 assigned_to, assigned_to_name,
                   pending_assignee_invite_id, pending_assignee_name,
@@ -196,7 +197,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   -- LIST-6 item 1: Re-engage's Giving strength is the stored score and its parts, as the list and profile.
                   (SELECT s.generosity FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_score,
                   (SELECT s.parts -> 'generosity' FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_parts
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL${_vis.sql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, ..._vis.args, limit, offset]);
+           FROM donors WHERE org_id = ? AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}${_vis.sql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, ..._vis.args, limit, offset]);
   // COMMS-SPEED-1: the touchpoints and the drift badge for THIS page's people
   // only, and nothing stored (a GET writes nothing, LIST-2). Every page used to
   // read the whole org's interactions and drift again and store the drift:

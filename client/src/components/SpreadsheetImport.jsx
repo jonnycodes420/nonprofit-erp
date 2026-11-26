@@ -17,6 +17,7 @@ import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import ImportUndo from "./ImportUndo";
+import { undoUntil, undoWords } from "../../../shared/importUndo.js";   // POLISH-13 item 5: the one window
 import ImportGiftLine from "./ImportGiftLine";   // FIX-58: one accounting
 import { FirstLook } from "./Insights";   // INSIGHTS-1 the first look
 import { errorMessage, isNetworkFailure } from "../lib/domainError";
@@ -151,6 +152,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [msg, setMsg] = useState("");
   const [result, setResult] = useState(null);
   const [undone, setUndone] = useState("");
+  const committedAt = useRef(null);   // POLISH-13 item 5: when this file committed, for its undo window
   // FIX-52: the import is a job on the server. The modal shows its real
   // state (running with progress, done with the receipt, or not imported with
   // the reason) and never goes back to the start on its own.
@@ -219,7 +221,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
       try {
         const j = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(job.id)}`);
         if (!live) return;
-        if (j.status === "done") { setResult(j.result); setBusy(""); told({ import: j.id }); }
+        if (j.status === "done") { committedAt.current = new Date(); setResult(j.result); setBusy(""); told({ import: j.id }); }
         else if (j.status === "failed") { setFailed(j); setBusy(""); }
         setJob(j);
       } catch (e) {
@@ -855,7 +857,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 style={{ ...btn(true), opacity: u.ready && !rereading ? 1 : 0.45, cursor: u.ready && !rereading ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
                 {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
-              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? "Undo removes the whole import, for 30 days, from its receipt here or in Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
+              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${undoWords(undoUntil("sheet", new Date()))}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}
@@ -917,7 +919,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-              {result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} /></div>}
+              {result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} />
+                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{undoWords(undoUntil("sheet", committedAt.current || new Date()))}</div>}</div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}

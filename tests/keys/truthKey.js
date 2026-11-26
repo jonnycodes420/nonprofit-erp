@@ -228,7 +228,7 @@ function computeKey(rows, opts = {}) {
   return {
     asOf: today,
     fiscalYear: { from: fy.from, to: fy.to, label: `${fy.label} (${fy.from} to ${fy.to})` },
-    people: people.length,
+    people: people.filter(p => !p.archived).length,   // POLISH-13: Everyone leaves the archived out (THREAD-3); their money stays
     households: households.size,
     peopleInHouseholds: people.filter(p => p.household).length,
     importedIds: sortIds(people.filter(p => p.imported).map(p => p.id)),

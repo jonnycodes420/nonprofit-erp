@@ -16,7 +16,10 @@ export function MajorGiftsPage({ isReadOnly, onNavigate, initialView, initialSco
   const shown = mgShownViews(views);
   const [view, setViewRaw] = useState(mgViewIn(mgView(initialView), shown));
   const setView = v => setViewRaw(mgViewIn(v, shown));
-  useEffect(() => { if (!shown.some(v => v.id === view)) setViewRaw(shown[0].id); }, [shown.map(v => v.id).join()]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // POLISH-13 item 6: a direct load or refresh renders before navOrg (the org's list) arrives, with all
+  // four shown; when the list lands without the view on screen, the view is mgViewIn's (Pipeline when
+  // the Top 100 is off), never simply the first tab (that was Portfolios).
+  useEffect(() => { if (!shown.some(v => v.id === view)) setViewRaw(mgViewIn(view, shown)); }, [shown.map(v => v.id).join()]);   // eslint-disable-line react-hooks/exhaustive-deps
   const goUrl = useUrlWriter();
   // the tab on screen is in the address bar (replace: a switch is not a step Back undoes)
   useEffect(() => {
@@ -25,7 +28,7 @@ export function MajorGiftsPage({ isReadOnly, onNavigate, initialView, initialSco
     goUrl(tabHref(MG_TAB, { subtab: view }), true);
   }, [view]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="fade-in" data-testid="major-gifts-page">
+    <div className="fade-in" data-testid="major-gifts-page" style={{ minWidth: 0, maxWidth: "100%" }}>
       <PageTitle main="Major" accent="gifts." />
       {shown.length > 1 && <SectionTabs tabs={shown} active={view} onSelect={setView} className="finance-tabbar fr-tabbar" dataKey="mg-view"
         stripProps={{ "aria-label": "Major gifts" }} style={{ marginBottom: 18 }} />}

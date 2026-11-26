@@ -1230,13 +1230,15 @@ app.post("/imports/:id/old-system-totals", requireAuth, checkWriteAccess, wrap(a
 // receipt like the others, for the reader's 30 days.
 const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet", "aggregate", "wide", "workbook", "both"]);
 // FIX-52: the spreadsheet import's screen promises Undo for 30 days, and now keeps it.
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 30,
-                              aggregate: 24 * 30, wide: 24 * 30, workbook: 24 * 30, both: 24 * 30 };
+// POLISH-13 item 5: the hours are the one setting in shared/importUndo.js, which every screen reads.
+const SHAPE_REVERSE_HOURS = require("../../shared/importUndo.js").SHAPE_REVERSE_HOURS;
 // Whether a receipt offers Undo, and until when. The route below is the judge.
 function importUndoWindow(r) {
   if (!WHOLE_IMPORT_SHAPES.has(r.shape) || !r.committed_at) return { canUndo: false, undoUntil: null };
-  const until = new Date(new Date(r.committed_at).getTime() + (SHAPE_REVERSE_HOURS[r.shape] || DEPOSIT_REVERSE_HOURS) * 3600e3);
-  return { canUndo: !r.reversed_at && until > new Date(), undoUntil: until.toISOString() };
+  const until = require("../../shared/importUndo.js").undoUntil(r.shape, r.committed_at);
+  const now = new Date();
+  // POLISH-13 item 5: and the one sentence every screen prints ("You can undo this import until Dec 3, 2026.").
+  return { canUndo: !r.reversed_at && until > now, undoUntil: until.toISOString(), undoSentence: r.reversed_at ? "" : require("../../shared/importUndo.js").undoWords(until, { now }) };
 }
 
 // LIVE-1 — every journey an import's gift started: its open step's thread is

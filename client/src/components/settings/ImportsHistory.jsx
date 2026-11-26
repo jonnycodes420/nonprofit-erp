@@ -70,8 +70,9 @@ export function ImportsHistory(){
                     {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone{r.reversedAt?` ${displayDate(r.reversedAt)}`:""}</div>}
                     {/* POLISH-11 item 5: what Undo can still do, on the row itself */}
                     {r.state==="done"&&<div data-testid="imports-undo-window" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>
-                      {r.canUndo&&r.undoUntil?`Undo available until ${displayDate(r.undoUntil)}`
-                        :r.undoUntil?`Undo window closed on ${displayDate(r.undoUntil)}`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
+                      {r.undoSentence?r.undoSentence
+                        :r.canUndo&&r.undoUntil?`You can undo this import until ${displayDate(r.undoUntil)}.`
+                        :r.undoUntil?`The window to undo this import closed on ${displayDate(r.undoUntil)}.`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
                     {/* BUILD-88a A.7 — a run made before funds and payment
                         methods were written says so, and says what to do. */}
                     {(r.notices||[]).map((n,i)=>(
@@ -167,9 +168,12 @@ export function ImportsHistory(){
                   : open.canUndo
                     ? <>
                         <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null,justUndone:!!(r&&r.stayedCount)}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>
-                        {open.undoUntil&&<div style={{fontSize:11.5,color:T.ink3,marginTop:6}}>Undo is open until {displayDate(open.undoUntil)}.</div>}
+                        {open.undoUntil&&<div data-testid="import-receipt-undo-until" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>{open.undoSentence||`You can undo this import until ${displayDate(open.undoUntil)}.`}</div>}
                       </>
-                    : null}
+                    : open.undoUntil
+                      // POLISH-13 item 5: past its window the receipt says so, instead of no word at all
+                      ? <div data-testid="import-receipt-undo-closed" style={{fontSize:12.5,color:T.ink3}}>{open.undoSentence||`The window to undo this import closed on ${displayDate(open.undoUntil)}.`}</div>
+                      : null}
               </div>
             </div>
           )}

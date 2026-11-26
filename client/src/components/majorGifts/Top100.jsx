@@ -30,6 +30,8 @@ const COLS = [
   { key: "next", label: "Next step", w: "minmax(90px,1fr)" }, { key: "lastContact", label: "Last contact", w: "84px" }, { key: "health", label: "Plan", w: "84px" },
 ];
 const GRID = COLS.map(c => c.w).join(" ") + " 64px";
+// POLISH-13 item 6: the Name column stays in view while the row scrolls sideways.
+const NAME_STICKY = { position: "sticky", left: 0, zIndex: 1 };
 const STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 const sel = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 12, background: T.white, color: T.ink };
 const btn = { background: T.green, border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, color: T.white, cursor: "pointer" };
@@ -139,7 +141,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
   const typeOpts = CARE_TYPES.map(t => ({ value: t.key, label: t.label }));
 
   return (
-    <div data-testid="top100-view">
+    <div data-testid="top100-view" style={{ minWidth: 0, maxWidth: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
         {renaming == null
           ? <h2 style={{ margin: 0, fontSize: 22, fontFamily: "'DM Serif Display',serif", color: T.ink }}>{d.list.name}</h2>
@@ -193,12 +195,13 @@ export function Top100View({ isReadOnly, onNavigate }) {
       {d.count === 0 ? (
         <StartFromTopDonors listName={d.list.name} isReadOnly={isReadOnly} onAdded={async s => { setMsg(s); await load(); }} />
       ) : (
-        <div style={{ overflowX: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 14 }}>
+        <div data-testid="top100-scroll" style={{ overflowX: "auto", maxWidth: "100%", minWidth: 0, background: T.white, border: "1px solid " + T.bg3, borderRadius: 14 }}>
+          {/* POLISH-13 item 6: the table scrolls inside its card (1440 ran it off the page, "No p"), Name held still */}
           <div data-testid="top100-table" style={{ minWidth: 1270 }}>
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "10px 12px", background: T.bg2, fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>
               {COLS.map(c => (
-                <button key={c.key} onClick={() => head(c.key)} title={d.sentences[c.key] || `Sort by ${c.label}`} aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                  style={{ background: "none", border: "none", padding: 0, font: "inherit", color: sort.key === c.key ? T.ink : T.ink3, textAlign: "left", cursor: "pointer" }}>
+                <button key={c.key} onClick={() => head(c.key)} data-sticky={c.key === "name" ? "name" : undefined} title={d.sentences[c.key] || `Sort by ${c.label}`} aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                  style={{ background: c.key === "name" ? "inherit" : "none", border: "none", padding: 0, font: "inherit", color: sort.key === c.key ? T.ink : T.ink3, textAlign: "left", cursor: "pointer", ...(c.key === "name" ? NAME_STICKY : {}) }}>
                   {c.label}{sort.key === c.key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
                 </button>
               ))}<span />
@@ -222,7 +225,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
                       style={{ width: 38, padding: "4px 5px", border: "1px solid " + T.bg3, borderRadius: 7, fontSize: 13, fontWeight: 800, textAlign: "center" }} />
                   )}
                 </div>
-                <div style={{ minWidth: 0 }}>
+                <div data-sticky="name" style={{ minWidth: 0, ...NAME_STICKY, background: "inherit" }}>
                   {r.kind === "household" ? <HouseholdName row={r} onNavigate={onNavigate} sentence={d.sentences.household} /> :
                   <DonorLink id={r.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: r.donorId }) : undefined}
                     style={{ fontWeight: 700, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{r.name}</DonorLink>}
