@@ -57,7 +57,8 @@ function pick(f) {
   const signed = source === "order" || source === "quote";
   // When billing starts, for a customer who is not billing yet: the order's (or quote's) start, the org's first charge, the close date.
   const startsOn = billing ? null : (signed && f[source].startOn) || f.firstChargeOn || (f.closeDate ? String(f.closeDate).slice(0, 10) : null);
-  const says = `${usd(cents)}/mo, ${SOURCE_WORDS[source]}${billing ? "" : startsOn ? `; Stripe starts billing ${dayWords(startsOn)}` : source !== "deal" ? "; no first charge date yet" : ""}`;
+  // A deal with nothing agreed has no billing date to state (its close date is only a guess), so its sentence names none.
+  const says = `${usd(cents)}/mo, ${SOURCE_WORDS[source]}${billing || source === "deal" ? "" : startsOn ? `; Stripe starts billing ${dayWords(startsOn)}` : "; no first charge date yet"}`;
   return { cents, arrCents: arrOf(cents), source, sourceWords: SOURCE_WORDS[source], billing, signed, startsOn, says,
     dealValueCents: prices.deal, dealDiffers: source !== "deal" && prices.deal !== cents, prices,
     stewardOrgId: f.stewardOrgId || null, sentence: SENTENCE };
