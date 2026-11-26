@@ -106,12 +106,13 @@ export default function SettingsPanel({ meta, onChanged, onClose }) {
   const addPipe = async () => { await apiFetch("/ops/sales/pipelines", { method: "POST", body: JSON.stringify({ name: newName }) }); setNewName(""); onChanged(); };
   return <div data-sales-settings="1">
     <button type="button" style={{ ...link, marginBottom: 10 }} onClick={onClose}>← Back to Sales</button>
+    {/* SALES-6 item 4: the mailbox first. Until it is connected, no email counts as a touch. */}
+    <MailboxSettings />
     <Goal goal={meta.settings.goal} onChanged={onChanged} />
     <PlanSettings />
     <HealthSettings />
     <PartnerCodes />
     <ProspectSettings meta={meta} onChanged={onChanged} />
-    <MailboxSettings />
     <section style={card}>
       <h2 style={h2}>Pipelines and stages</h2>
       <p style={says}>Each stage has a probability (the forecast weights a deal's value by it) and a days limit (a deal in it longer shows in Today as stuck). Later and Lost are closed: Later needs a revisit date and is never a loss; Lost needs a reason. Tick Gates where ONBOARD-2's five gates should show on the deal. A stage that still holds a deal can't be removed.</p>

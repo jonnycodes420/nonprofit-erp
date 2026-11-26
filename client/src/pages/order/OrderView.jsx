@@ -79,6 +79,23 @@ function Lines({ s }) {
   );
 }
 
+// SALES-6: an order made from a quote carries the customer agreement, shown as the server kept it,
+// without the paper signature block (the fields below are the signature).
+function AgreementCard({ a }) {
+  const inline = t => t.split(/(\*\*[^*]+\*\*)/g).map((p, i) => (p.startsWith("**") && p.endsWith("**") ? <strong key={i}>{p.slice(2, -2)}</strong> : <span key={i}>{p.replace(/`/g, "")}</span>));
+  return (
+    <div style={{ ...S.card, fontSize: 14 }} data-order-agreement={a.version}>
+      <div style={S.label}>The customer agreement</div>
+      <div style={{ maxHeight: 360, overflowY: "auto", marginTop: 10, paddingRight: 6 }}>{String(a.text).split(/\n\s*\n/).map((para, i) => {
+        const t = para.trim();
+        if (!t || /^-{3,}$/.test(t)) return null;
+        if (/^#{1,3} /.test(t)) return <div key={i} style={{ fontWeight: 700, margin: "12px 0 4px" }}>{t.replace(/^#{1,3} /, "")}</div>;
+        return <p key={i} style={{ margin: "0 0 8px" }}>{inline(t.replace(/\s*\n\s*/g, " "))}</p>;
+      })}</div>
+    </div>
+  );
+}
+
 function Terms({ s, pdfUrl }) {
   return (
     <div style={{ ...S.card, fontSize: 14 }}>
@@ -152,6 +169,7 @@ export default function OrderView({ token, data, setData, done }) {
           <Who s={s} />
           <Lines s={s} />
           <Terms s={s} pdfUrl={pdfUrl} />
+          {s.agreement ? <AgreementCard a={s.agreement} /> : null}
           <div style={S.card}>
             <div style={S.label}>Sign</div>
             <div className="order-two">
@@ -166,7 +184,7 @@ export default function OrderView({ token, data, setData, done }) {
             </div>
             <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 16, fontSize: 14 }}>
               <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} style={{ width: 18, height: 18, marginTop: 2, accentColor: C.em, flex: "none" }} data-order-input="agree" />
-              <span>I'm authorized to sign for {s.orgName}, and I agree to this order and the Terms of Service.</span>
+              <span>I'm authorized to sign for {s.orgName}, and I agree to this order{s.agreement ? ", the customer agreement above" : ""} and the Terms of Service.</span>
             </label>
             <button type="submit" disabled={!ready || busy} style={S.btn(!ready || busy)} data-order-submit="1">{busy ? "Signing…" : "Sign and continue to card"}</button>
             <div style={S.fine}>We'll email you a signed copy. Your card isn't charged today.</div>

@@ -7,14 +7,17 @@
 //   POST   /ops/sales/quotes/:id/schedule           schedule billing again after fixing what stopped it
 //   GET    /ops/sales/quotes/:id/pdf                the signed agreement, as kept
 //   GET    /ops/sales/plans   PUT /ops/sales/plans  the plans and add-ons a quote can name
+//   POST   /ops/sales/deals/:id/send-to-sign        SALES-6: the order made from the newest quote (sendToSign.js)
 // PUBLIC (a quote's page shows only its own quote; nothing here sends anything):
 //   GET    /public/quote/:token                     the quote, or why the link no longer works
 //   POST   /public/quote/:token/accept              { name, title, agree, sha256 }
 //   POST   /public/quote/:token/card                a Stripe Checkout in setup mode (no charge)
 //   POST   /public/quote/:token/card/confirm        { sessionId } back from Checkout (the webhook does the same)
+//   POST   /public/quote/:token/order               SALES-6: "Open your order", the quote's terms as an order under this token
 "use strict";
 const { rateLimit } = require("../../../rateLimitStore");
 const Q = require("./quotes");
+const SEND = require("./sendToSign");   // SALES-6
 
 const quoteLimiter = rateLimit("salesQuoteLimiter", {
   windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false,
@@ -29,7 +32,11 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send, billing
 
   app.get("/ops/sales/deals/:id/quotes", salesLimiter, door, wrap(async (req, res) => {
     const [quotes, plans] = await Promise.all([Q.forDeal(query, req.params.id), Q.plansOf(query)]);
-    res.json({ ok: true, quotes: quotes.map(shape), plans, terms: Q.TERMS, defaultStart: Q.DEFAULT_START,
+    const orders = await SEND.ordersFor(query, quotes);
+    const newest = quotes.find(x => x.status !== "superseded") || null;
+    const can = newest ? await SEND.canOrder(query, newest) : { ok: false, message: "Save a quote first: the order is made from its terms." };
+    res.json({ ok: true, quotes: quotes.map(q => ({ ...shape(q), order: q.start_link_id ? orders.get(q.start_link_id) || null : null })), plans, terms: Q.TERMS, defaultStart: Q.DEFAULT_START,
+      send: { ok: can.ok, says: can.ok ? can.says : can.message },
       sentences: { price: "The monthly price in the quote. Below the list price it needs a reason, kept with the quote and not shown to the customer.",
         value: "When a quote is accepted, the deal's value becomes its monthly price." } });
   }));
@@ -61,6 +68,11 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send, billing
     res.setHeader("Content-Disposition", `attachment; filename="steward-quote-v${q.version}-signed-${new Date(q.accepted_at).toISOString().slice(0, 10)}.pdf"`);
     res.end(q.pdf);
   }));
+  app.post("/ops/sales/deals/:id/send-to-sign", salesLimiter, door, wrap(async (req, res) => {
+    const r = await SEND.sendToSign(ctx, req.params.id, whoOf(req));   // no transaction: an order number taken twice retries
+    if (r.ok && req.audit) req.audit.label(`sales deal: order ${r.orderNumber} made from the quote (Send to sign)`);
+    send(res, r, 201);
+  }));
   app.get("/ops/sales/plans", salesLimiter, door, wrap(async (req, res) => res.json({ ok: true, ...(await Q.plansOf(query)), defaults: Q.defaultPlans() })));
   app.put("/ops/sales/plans", salesLimiter, door, wrap(async (req, res) => {
     const who = whoOf(req), v = Q.cleanPlans(req.body || {});
@@ -83,6 +95,13 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send, billing
     if (r.error === "gone") return res.status(r.state === "missing" ? 404 : 410).json({ error: r.state, message: r.message });
     if (r.error) return res.status(r.error === "changed" ? 409 : 400).json(r);
     if (req.audit) req.audit.summary = `Quote ${r.id} accepted and signed`;
+    res.json(r);
+  }));
+  app.post("/public/quote/:token/order", quoteLimiter, wrap(async (req, res) => {
+    const r = await SEND.openFromQuote(ctx, req.params.token);
+    if (r.error === "gone") return res.status(r.state === "missing" ? 404 : 410).json({ error: r.state, message: r.message });
+    if (r.error) return res.status(400).json(r);
+    if (req.audit && r.orderNumber) req.audit.summary = `Quote link opened as order ${r.orderNumber}`;
     res.json(r);
   }));
   app.post("/public/quote/:token/card", quoteLimiter, wrap(async (req, res) => {

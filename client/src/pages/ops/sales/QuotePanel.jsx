@@ -7,9 +7,11 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../api";
 import DateInput from "../../../components/inputs/LazyDateInput";
 import { INK, CREAM, EMERALD, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, downloadCsv, failureWords } from "./salesBits";
+import SendToSign from "./SendToSign";   // SALES-6: the one way to a signature
 
 const lab = { display: "block", fontSize: 11, fontWeight: 700, opacity: 0.65, margin: "8px 0 2px" };
-const STATE = { draft: "Draft, no link yet", open: "Link made, not signed", expired: "Link expired", superseded: "Replaced by a newer version", accepted: "Accepted" };
+const STATE = { draft: "Draft, no link yet", open: "Link made, not signed", expired: "Link expired", superseded: "Replaced by a newer version", accepted: "Accepted", ordered: "Signed as an order" };
+const ORDER_STATE = { open: "open, not signed", signed: "signed, card not saved yet", completed: "signed, card on file", expired: "expired", revoked: "replaced by a newer order" };
 
 function QuoteForm({ data, last, onSaved, onCancel }) {
   const plans = data.plans.plans, addons = data.plans.addons;
@@ -54,20 +56,8 @@ function QuoteForm({ data, last, onSaved, onCancel }) {
   </div>;
 }
 
-function Version({ q, reload }) {
-  const [link1, setLink] = useState(null);
+function Version({ q, reload, send }) {
   const [err, setErr] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const makeLink = async () => {
-    setErr(null); setCopied(false);
-    try {
-      const r = await apiFetch(`/ops/sales/quotes/${encodeURIComponent(q.id)}/link`, { method: "POST" });
-      const url = `${window.location.origin}${r.path}`;
-      setLink({ url, says: r.says });
-      try { await navigator.clipboard.writeText(url); setCopied(true); } catch { /* the field below can be copied by hand */ }
-      reload();
-    } catch (e) { setErr(failureWords(e, "No link made.")); }
-  };
   const schedule = async () => { setErr(null); try { await apiFetch(`/ops/sales/quotes/${encodeURIComponent(q.id)}/schedule`, { method: "POST" }); reload(); } catch (e) { setErr(failureWords(e, "Not scheduled.")); } };
   const live = q.state === "draft" || q.state === "open" || q.state === "expired";
   return <div style={{ fontSize: 13, padding: "8px 0", borderTop: `1px solid ${CREAM}` }} data-quote-version={q.version} data-quote-state={q.state}>
@@ -80,11 +70,10 @@ function Version({ q, reload }) {
         ? <>Billing scheduled: first charge {whenWords(q.billing_starts_at)}{q.card_saved_at ? `, ${q.card_brand || "card"} ending ${q.card_last4} on file` : ", no card on file yet"}.</>
         : <><span style={brassTag}>Billing not scheduled</span> {q.billing_error} <button type="button" style={{ ...link, fontSize: 12.5 }} onClick={schedule} data-quote-schedule="1">Schedule billing</button></>}</div>
     </div> : null}
-    {live ? <div style={{ marginTop: 6 }}>
-      <button type="button" style={quiet} onClick={makeLink} data-quote-link="1">{q.state === "draft" ? "Copy link" : "Make a new link"}</button>
-      {link1 ? <div style={{ marginTop: 6 }}><input readOnly value={link1.url} onFocus={e => e.target.select()} style={{ ...box, width: "100%" }} aria-label="Quote link" data-quote-url="1" />
-        <p style={{ ...says, marginTop: 4 }}>{copied ? "Copied. " : ""}{link1.says}</p>
-        <a href={`mailto:?subject=${encodeURIComponent("Your Steward quote")}&body=${encodeURIComponent(`Here is the quote we talked about:\n\n${link1.url}\n`)}`} style={{ ...link, fontSize: 12.5 }}>Open in my email</a></div> : null}
+    {q.order ? <div style={{ marginTop: 3 }} data-quote-order={q.order.state}>Order <b>{q.order.number}</b>: {ORDER_STATE[q.order.state] || q.order.state}.{q.order.state === "signed" || q.order.state === "completed" ? " The signed PDF is under Orders." : ""}</div> : null}
+    {live && q.state !== "ordered" ? <div style={{ marginTop: 6 }} data-quote-link="1">
+      {send && send.ok ? <SendToSign dealId={q.deal_id} label={q.state === "draft" ? "Send to sign" : "Make a new link"} primary={q.state === "draft"} onDone={reload} />
+        : <span style={says}><b>Send to sign</b> isn't ready: {send ? send.says : ""}</span>}
     </div> : null}
     {err ? <p style={{ ...says, opacity: 1 }}><span style={brassTag}>Not done</span> {err}</p> : null}
   </div>;
@@ -98,13 +87,14 @@ export default function QuotePanel({ dealId, onChanged }) {
   useEffect(() => { load(); }, [load]);
   if (err) return <p style={says}>The quotes could not be read.</p>;
   if (!data) return <p style={says}>Loading…</p>;
-  const accepted = data.quotes.find(q => q.state === "accepted");
+  const accepted = data.quotes.find(q => q.state === "accepted" || q.state === "ordered");
   const reload = () => { load(); onChanged(); };
   return <div data-sales-quotes="1">
     <p style={says}>{data.sentences.value} Steward sends nothing: copy the link, or open it in your own email.</p>
     {!accepted && (making || !data.quotes.length) ? <QuoteForm data={data} last={data.quotes[0] || null} onSaved={() => { setMaking(false); reload(); }} onCancel={data.quotes.length ? () => setMaking(false) : null} />
       : !accepted ? <button type="button" style={{ ...link, fontSize: 13, color: EMERALD }} onClick={() => setMaking(true)} data-quote-new="1">New version</button> : null}
-    {data.quotes.map(q => <Version key={q.id} q={q} reload={reload} />)}
+    {data.send && data.send.ok && !accepted ? <p style={{ ...says, color: INK, opacity: 0.85 }} data-quote-send-says="1">Send to sign makes the order from the newest version. {data.send.says}</p> : null}
+    {data.quotes.map(q => <Version key={q.id} q={q} reload={reload} send={data.send} />)}
     <p style={{ ...says, marginTop: 8, color: INK }}>{data.sentences.price}</p>
   </div>;
 }

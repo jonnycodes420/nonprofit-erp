@@ -31,6 +31,8 @@ async function run(pool) {
     ${ACTOR}, ${EDITED})`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS sales_quotes_deal_version ON sales_quotes (deal_id, version)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS sales_quotes_deal ON sales_quotes (deal_id, version DESC)`);
+  // SALES-6: the order (start_links row) a quote was sent to sign as. Status 'ordered' once it is signed.
+  await pool.query(`ALTER TABLE sales_quotes ADD COLUMN IF NOT EXISTS start_link_id TEXT`);
 }
 
 module.exports = { run };

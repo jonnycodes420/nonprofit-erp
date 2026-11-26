@@ -8,6 +8,10 @@
 // call logged on the organization still counts for the deal (dealTouch).
 //
 // reasonOf(touch, now) is the short reason Now shows ("Interested 6 days ago").
+//
+// SALES-6: a call booked on /book with a time (BOOK-1: the booking reaches Steward as a sales_bookings
+// row tied to the contact and deal it made or matched) is a meeting touch at that time. A Calendly booking
+// made on Calendly's own page never reaches Steward (there is no Calendly webhook), so it can't count.
 "use strict";
 
 const DAY = 86400000;
@@ -17,7 +21,7 @@ const OUTCOME_WORDS = {
 };
 
 async function lastTouches(query, now = Date.now()) {
-  const [acts, mails] = await Promise.all([
+  const [acts, mails, booked] = await Promise.all([
     query(`SELECT DISTINCT ON (l.record_type, l.record_id) l.record_type, l.record_id, a.at, a.kind, a.outcome, a.body
              FROM sales_activity_links l JOIN sales_activities a ON a.id = l.activity_id AND a.deleted_at IS NULL AND a.kind <> 'task'
             WHERE a.at <= ?
@@ -25,10 +29,17 @@ async function lastTouches(query, now = Date.now()) {
     query(`SELECT DISTINCT ON (l.record_type, l.record_id) l.record_type, l.record_id, e.sent_at AS at, e.direction, e.subject
              FROM sales_email_links l JOIN sales_emails e ON e.id = l.email_id
             ORDER BY l.record_type, l.record_id, e.sent_at DESC`),
+    query(`SELECT sales_contact_id, sales_deal_id, slot_at FROM sales_bookings WHERE slot_at IS NOT NULL AND slot_at <= ?`, [new Date(now + 60000).toISOString()])
+      .catch(e => { if (e && (e.code === "42P01" || e.code === "42703")) return []; throw e; }),
   ]);
   const out = new Map();
   const put = (k, t) => { const have = out.get(k); if (!have || new Date(t.at) > new Date(have.at)) out.set(k, t); };
   for (const a of acts) put(`${a.record_type}:${a.record_id}`, { at: new Date(a.at).toISOString(), kind: a.kind, outcome: a.outcome || null, says: String(a.body || "").slice(0, 140) });
+  for (const b of booked) {
+    const t = { at: new Date(b.slot_at).toISOString(), kind: "meeting", outcome: null, says: "Call booked on the website" };
+    if (b.sales_contact_id) put(`contact:${b.sales_contact_id}`, t);
+    if (b.sales_deal_id) put(`deal:${b.sales_deal_id}`, t);
+  }
   for (const e of mails) put(`${e.record_type}:${e.record_id}`, { at: new Date(e.at).toISOString(), kind: "email", direction: e.direction, says: String(e.subject || "").slice(0, 140) });
   return out;
 }
