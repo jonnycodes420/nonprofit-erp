@@ -105,8 +105,9 @@ async function run({ ok, login, api, q }) {
   const parts = src("client/src/components/connections/flowParts.jsx");
   ok("§2 the Settings card's state is the card's flow", /const statusOf = c => c\.flow \? c\.flow\.state/.test(conn));
   ok("§2 the detail's badge and sentence are the flow's", /c\.flow \? c\.flow\.label/.test(conn) && /c\.flow \? <FlowSentence flow=\{c\.flow\}/.test(conn));
-  ok("§2 Home and Finance draw ConnectionLines, which reads the same GET /connections flows",
-    /<ConnectionLines onNavigate=\{onNavigate\}\/>/.test(src("client/src/components/home/sectionStack.jsx")) && /import\("\.\.\/connections\/flowParts"\)/.test(src("client/src/components/home/sectionStack.jsx"))
+  // HONEST-1 walk: the line first sat in `hero`, which is the board's surface, so Home never drew it.
+  ok("§2 Home (in the Thread, the Home section that cannot be hidden) and Finance draw ConnectionLines, which reads the same GET /connections flows",
+    /thread:<><div data-testid="home-connections"><Suspense fallback=\{null\}><ConnectionLines onNavigate=\{onNavigate\}\/>/.test(src("client/src/components/home/sectionStack.jsx")) && /import\("\.\.\/connections\/flowParts"\)/.test(src("client/src/components/home/sectionStack.jsx"))
       && /<ConnectionLines[^>]*providers=\{\["quickbooks"\]\}/.test(src("client/src/components/Finance.jsx"))
       && /apiFetch\("\/connections"\)[\s\S]{0,300}c\.flow && states\.includes\(c\.flow\.state\)/.test(parts));
 

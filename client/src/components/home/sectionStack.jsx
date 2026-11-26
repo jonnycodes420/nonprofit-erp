@@ -66,8 +66,9 @@ export function sectionStack({ agentSection, cPad, cardWrap, dragSectionId, edit
           </div>
         ):null;
 
-        // HONEST-1 item 2: a connection that needs a person (a quiet feed, a broken one) raises its hand here, in brass.
-        const sections={hero:<>{heroSection}<div data-testid="home-connections"><Suspense fallback={null}><ConnectionLines onNavigate={onNavigate}/></Suspense></div></>,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        // HONEST-1 item 2: a connection that needs a person (a quiet feed, a broken one) raises its hand on Home, in brass,
+        // above the Thread: the one Home section that can never be hidden (the hero is the board's, not Home's).
+        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:<><div data-testid="home-connections"><Suspense fallback={null}><ConnectionLines onNavigate={onNavigate}/></Suspense></div>{threadSection}</>,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);
