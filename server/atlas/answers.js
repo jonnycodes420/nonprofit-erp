@@ -132,7 +132,7 @@ async function personAnswer({ query, orgId, donorId, today, more = false }) {   
   // TRUTH-3: lifetime, the gift count and the last gift by the profile's rules (shared/numbers), never the stored rollup.
   const [d] = await query(`SELECT d.id, d.name, d.about_them, ROUND(${require("../../shared/numbers/lifetime").LIFETIME("d")}, 2) AS total_giving, ${require("../../shared/numbers/giftCount").GIFT_COUNT("d")} AS gift_count,
                                     (SELECT lg.amount FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_amount,
-                                    (SELECT LEFT(lg.date, 10) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_date, ${require("../../shared/numbers/firstGift").FIRST_DATE("d")} AS donor_since, d.stage, d.deceased, d.do_not_contact
+                                    (SELECT LEFT(lg.date, 10) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_date, ${require("../../shared/numbers/firstGift").FIRST_DATE("d")} AS donor_since, d.stage, d.deceased, d.do_not_contact, d.kind
                              FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return null;
   const first = String(d.name).split(/\s+/)[0];
@@ -168,7 +168,7 @@ async function personAnswer({ query, orgId, donorId, today, more = false }) {   
     ...open,
     ...nexts,
     { kind: "giving", line: giving, link: { tab: "donor", donorId, section: "giving" } },
-    ...(convLines.length ? convLines : [{ kind: "conversation", line: `No conversation with ${first} is logged yet.`, link: { tab: "donor", donorId, section: "timeline" } }]),
+    ...(convLines.length ? convLines : [{ kind: "conversation", line: "No conversation logged yet.", link: { tab: "donor", donorId, section: "timeline" } }]),
     about ? { kind: "about", line: `About ${first}: ${about}`, link: { tab: "donor", donorId } }
       : { kind: "about", line: `Nobody has written an About note for ${first} yet.`, link: { tab: "donor", donorId } },
     // ATLAS-5 (W-1108-Atlas-02X): each note once, by its id.
@@ -177,7 +177,20 @@ async function personAnswer({ query, orgId, donorId, today, more = false }) {   
   if (more) facts.push(...await moreFacts(query, orgId, donorId, first));   // ATLAS-11 item 3: what the brief doesn't say
   if (d.deceased) facts.unshift({ kind: "care", line: `${d.name} is marked as deceased.`, link: { tab: "donor", donorId } });
   else if (d.do_not_contact) facts.unshift({ kind: "care", line: `${d.name} is marked do not contact.`, link: { tab: "donor", donorId } });
-  return { donorId, name: d.name, about, spoke: more ? `Here's everything Steward holds on ${endOnName(d.name)}` : `Here's what Steward knows about ${endOnName(d.name)}`, facts, today, more };
+  // ATLAS-12 item 6: a brief opens as a brief: who they are and their giving shape, the last conversation, the next move.
+  const opening = more ? null : require("./briefAsk").summary({ name: d.name, first, isOrg: d.kind === "organisation", giftCount: n,
+    lifetime: usd(toCents(d.total_giving)), lastAmount: usd(toCents(d.last_gift_amount)), lastDay: d.last_gift_date, since: d.donor_since ? String(d.donor_since).slice(0, 10) : null,
+    rhythm: n >= 3 ? await rhythmWords(query, orgId, donorId, today).catch(() => "") : "", convs, next: moveLine || step ? nexts[0].line : null, day });
+  return { donorId, name: d.name, about, spoke: more ? `Here's everything Steward holds on ${endOnName(d.name)}` : opening, facts, today, more };
+}
+
+// The profile's Giving rhythm phrase ("about every month", "every December"): drift.js over their gifts, as the rail reads it.
+async function rhythmWords(query, orgId, donorId, today) {
+  const DR = require("../../drift");
+  const day0 = today || new Date().toISOString().slice(0, 10);
+  const gs = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../../shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) <= ? AND ${require("../../shared/numbers/money").MONEY("g")}`, [orgId, donorId, day0]);
+  const a = DR.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), day0);
+  return a && a.basis && DR.rhythmOf(a) !== "none" ? DR.rhythmPhrase(a) : "";
 }
 
 // ATLAS-11 item 3 (Jarvis: "Tell me more adds nothing"): Tell me more on a person adds what the
@@ -266,7 +279,8 @@ async function priorContext({ query, orgId, userId, followsId, parse }) {
   let last = person ? { id: person.donorId, name: person.name } : null;
   if (!last && ids.length) { const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [ids[ids.length - 1], orgId]); if (d) last = { id: d.id, name: d.name }; }
   const people = list ? list.people.map(p => ({ id: p.donorId, name: p.name })) : last ? [last] : [];
-  return { id: m.id, onPage: last, context: { ...(last ? { lastPerson: last } : {}), people, ...(list ? { list: list.people.map(p => ({ donorId: p.donorId, name: p.name })) } : {}) } };
+  const topic = answers.some(a => a && a.topic === "campaign") ? "campaign" : null;   // ATLAS-12 item 3: "and the Gala?" stays on campaigns
+  return { id: m.id, onPage: last, topic, context: { ...(last ? { lastPerson: last } : {}), people, ...(list ? { list: list.people.map(p => ({ donorId: p.donorId, name: p.name })) } : {}) } };
 }
 
 module.exports = { periodTotalWords, matchWindow, LINK_CHOICES, recordFirstLine, publicAnswer, priorContext, listAnswer, answerPeople, groupName, personAnswer, unrecordedAmount, linkKind, LINK_WORD, MAX_IDS, SHOWN };

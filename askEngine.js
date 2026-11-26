@@ -79,7 +79,7 @@ async function giftSet(orgId, plan, span) {
 // The rows a donor-level metric counts, from the shared filter: the same
 // rules the Donors list, a Group and the Volunteers screen read.
 const DONOR_METRIC_RULES = {
-  lapsed_count: { lifecycle: "lapsed", notDeceased: "1" },
+  lapsed_count: require("./shared/numbers/populations").population("lapsed").rules,   // ATLAS-12 item 1: DEFINE-1's rule, never a copy
   recurring_donors: { monthly: "1", notDeceased: "1" },
   volunteer_count: { role: "volunteer", volStatus: "active" },   // FIX-31, VOL-3: the Active volunteers, the Volunteers tile's number
   donor_list: { role: "donor" },             // LIST-1: the Donors list, with the question's own rules

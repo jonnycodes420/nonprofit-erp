@@ -83,8 +83,12 @@ function readJourney(t) {
 
 // { step } for a group ask, or null when her words name no group with something to do.
 // A group with nothing Atlas can do with it is left to the usual read (a "show me" list).
+// ATLAS-12 (the eval's off-3): "Add Rosa Delgado to the New donor, first year journey" names one person; the
+// journey's own name ("New donor") is never a group of new donors.
+const ONE_PERSON = /^(?:[Pp]lease\s+)?(?:[Aa]dd|[Pp]ut|[Ee]nroll|[Ss]tart|[Mm]ove)\s+[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*){0,3}\s+(?:to|in|into|on)\s+(?:the\s+|our\s+)?/;
 async function read(text) {
   const t = String(text || "").replace(/[’]/g, "'").replace(/\s+/g, " ").trim();
+  if (ONE_PERSON.test(t)) return null;
   const g = GROUP_START.exec(t);
   if (!g) return null;
   const top100Said = TOP100.test(t);
