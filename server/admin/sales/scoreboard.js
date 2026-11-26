@@ -31,7 +31,7 @@ const SENTENCES = {
   meetingsBooked: "Meetings logged in the week, counted on the day they were booked.",
   meetingsHeld: "Meetings whose time fell in the week and has passed.",
   dealsWon: "Deals that reached a won stage in the week.",
-  mrrAdded: "The monthly value of the deals won in the week.",
+  mrrAdded: "The monthly price of the deals won in the week: what Stripe bills, else the signed order or quote, else the agreed price, else the deal's value.",
   conversion: "Each step over the one before it, across the nine weeks shown.",
   bySource: "Deals made in the nine weeks, by their source: how many, how many had a meeting, how many were won.",
   byList: "Calls made from each prospect list in the nine weeks: dials, connects, and meetings booked on the call.",
@@ -104,6 +104,9 @@ async function load(query, now = Date.now()) {
     query(`SELECT id, name FROM sales_lists`),
     query(`SELECT value FROM sales_settings WHERE key = 'scoreboard_goals'`),
   ]);
+  // SALES-5: MRR added is each won deal's one price (customerPrice.js), not its own value field.
+  const price = await require("./customerPrice").forDealIds(query, deals.filter(d => d.won_at).map(d => d.id));
+  for (const d of deals) if (price.has(d.id)) d.value_cents = price.get(d.id).cents;
   return { calls, meetings, deals, lists, goals: goals[0] ? goals[0].value : DEFAULT_GOALS };
 }
 
@@ -117,7 +120,8 @@ async function rows(query, facts, sb, sel) {
   const isDeal = sel.group === "source" || ["dealsWon", "mrrAdded"].includes(sel.metric);
   if (isDeal) {
     const ds = await query(`SELECT d.id, d.name, d.source, d.value_cents, d.won_at, d.created_at FROM sales_deals d WHERE d.id = ANY(?)`, [ids]);
-    return ds.map(d => ({ type: "deal", id: d.id, name: d.name, at: d.won_at || d.created_at, says: `${d.source || "no source"}${d.won_at ? ` · won, $${(Number(d.value_cents) / 100).toLocaleString("en-US")}/mo` : ""}` }));
+    const price = await require("./customerPrice").forDealIds(query, ds.filter(d => d.won_at).map(d => d.id));
+    return ds.map(d => ({ type: "deal", id: d.id, name: d.name, at: d.won_at || d.created_at, says: `${d.source || "no source"}${d.won_at ? ` · won, ${price.has(d.id) ? price.get(d.id).says : `$${(Number(d.value_cents) / 100).toLocaleString("en-US")}/mo`}` : ""}` }));
   }
   const acts = await require("./activities").withRecords(query, await query(`SELECT a.id, a.kind, a.at, a.body, a.outcome FROM sales_activities a WHERE a.id = ANY(?) ORDER BY a.at DESC`, [ids]));
   return acts.map(a => { const r = a.records.find(x => x.type === "contact") || a.records[0] || null; return { type: r ? r.type : null, id: r ? r.id : null, name: r ? r.name : "(no record)", at: a.at, says: a.body }; });

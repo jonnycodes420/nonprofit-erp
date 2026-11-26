@@ -5,6 +5,7 @@
 // deal's organization and contacts). A linked Steward org shows its facts box,
 // and a deal from Verbal yes on shows ONBOARD-2's five gates, read-only.
 import { useCallback, useEffect, useState } from "react";
+import { useLive } from "../../../lib/liveRead";
 import { apiFetch } from "../../../api";
 import { RailSection, useNarrow } from "../../../components/StewardEditor";
 import { INK, WHITE, CREAM, EMERALD, BRASS, TERRA, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, TYPE_WORDS, InlineField, fieldsOf, valueAt, Failure, failureWords } from "./salesBits";
@@ -92,7 +93,8 @@ function StewardBox({ s, orgId, reload, canLink }) {
     {row("Last sign-in", s.lastSignInAt ? whenWords(s.lastSignInAt) : "nobody yet", s.sentences.lastSignIn)}
     {row("People imported", s.peopleImported.toLocaleString("en-US"), s.sentences.people)}
     {row("Trial or beta ends", s.trialEndsOn ? dayWords(s.trialEndsOn) : "–", s.sentences.trial)}
-    {row("MRR", s.mrrNowCents == null ? "not paying yet" : usd(s.mrrNowCents), s.sentences.mrr)}
+    {row("MRR", s.mrrRow || (s.mrrNowCents == null ? "Not billing yet" : `${usd(s.mrrNowCents)}/mo`), s.priceSentence || s.sentences.mrr)}
+    {s.arrCents != null ? row("ARR", usd(s.arrCents), "The monthly price times 12.") : null}
     <p style={{ ...says, marginTop: 6 }}>Counts and dates only; no donor's name or gift is read here.</p>
     {canLink ? <button type="button" style={{ ...link, fontSize: 12 }} onClick={() => set(null)}>Unlink</button> : null}
   </div>;
@@ -156,12 +158,14 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
   const load = useCallback(() => apiFetch(`/ops/sales/rec/${type}/${encodeURIComponent(id)}`).then(r => { setD(r); setErr(null); })
     .catch(e => setErr(e)), [type, id]);
   useEffect(() => { load(); }, [load]);
+  // SALES-5: a save anywhere in the sales CRM (or a billing change on the org) re-reads this record, on LIVE-2's channel.
+  useLive("sales.record", ["sales", "org"], load);
   const changed = () => { load(); onChanged(); setHeadKey(k => k + 1); };
   if (err) return <section style={card}><button type="button" style={link} onClick={onBack}>← Back</button><Failure e={err} fallback={err.status === 404 ? "This record was deleted or merged." : "This record could not be read."} /></section>;
   if (!d) return <section style={card}><p style={says}>Loading…</p></section>;
   const r = d.record;
-  const save = key => async value => {
-    const body = key.startsWith("props.") ? { props: { [key.slice(6)]: value } } : { [key]: value };
+  const save = key => async (value, extra) => {
+    const body = { ...(key.startsWith("props.") ? { props: { [key.slice(6)]: value } } : { [key]: value }), ...(extra || {}) };
     await apiFetch(`/ops/sales/rec/${type}/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) });
     changed();
   };

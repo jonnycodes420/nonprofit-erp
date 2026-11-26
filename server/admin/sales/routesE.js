@@ -67,12 +67,15 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
     const today = TODAY.civil(now, "America/New_York");
     const bare = d.stage_kind === "open" && !String(d.next_step || "").trim() && !d.has_open_task;
     res.json({ ok: true, header: {
-      stage: d.stage_name, stageKind: d.stage_kind, probability: d.probability, valueCents: d.value_cents, org: d.primary_org_name, orgId: d.org_id,
+      stage: d.stage_name, stageKind: d.stage_kind, probability: d.probability, org: d.primary_org_name, orgId: d.org_id,
+      // SALES-5: the customer's one price (customerPrice.js, on the row the board reads too), its ARR and its sentence.
+      valueCents: d.price_cents, arrCents: d.arr_cents, priceSays: d.price_says, priceSource: d.price_source, billing: d.price_billing,
+      dealValueCents: d.value_cents, dealDiffers: d.price_deal_differs,
       nextStep: d.next_step || null, nextStepOn: d.next_step_on || null, hasOpenTask: d.has_open_task, nextUp: d.next_up || null, nextUpOn: d.next_up_on || null,
       lastTouch: touch ? { ...touch, reason: T.reasonOf(touch, now), days: T.daysSince(touch.at, now) } : null,
       propose: bare ? NOW.propose(touch, lead ? lead.name.split(" ")[0] : d.primary_org_name, today, rules, CM.addBusinessDays) : null,
       moved: moved.map(m => ({ id: m.id, from: m.from_name, to: m.to_name, why: m.why, at: new Date(m.created_at).toISOString() })),
-      sentences: { lastTouch: NOW.SENTENCES.touch } } });
+      sentences: { lastTouch: NOW.SENTENCES.touch, price: require("./customerPrice").SENTENCE } } });
   }));
 }
 

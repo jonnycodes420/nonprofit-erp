@@ -15,6 +15,8 @@
 
 const GIFT = ["gift", "person", "totals", "fund"];
 const RULES = [
+  // SALES-5: Steward's own sales CRM (/ops → Sales, no org's data): a deal's value, a stage, a quote.
+  [/^sales_/, ["sales"]],
   [/^(stored_insights|insight_)/, ["insights"]],
   [/^(imports?|import_|sheet_import_jobs|setup_runs|setup_files|old_report_|screening_imports|statement_mappings|stored_sheets)/, ["import"]],
   [/^(agent_drafts|milestone_drafts|thank_you_drafts|video_thanks|tribute_notices|email_starter_reviews)$/, ["draft", "task"]],
