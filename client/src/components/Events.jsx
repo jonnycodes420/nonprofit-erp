@@ -1192,8 +1192,7 @@ export function EventKiosk({ eventId }) {
     try {
       const r = await checkInOnTheDay(`/events/${eventId}/check-in`, { attendeeId: g.id });
       if (!r) { setMsg("Nothing was recorded. Check them in on the day."); return; }
-      show(r, `${g.name} is in.`);
-      if (r && r.ok) eventRowsChanged(eventId);
+      show(r, `${g.name} is in.`); if (r.ok) eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
   const undoIn = async (g) => {
