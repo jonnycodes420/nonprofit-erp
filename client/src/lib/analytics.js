@@ -19,10 +19,13 @@
 // attribute that can hold a name or an address (scrubEvent), and the address
 // keeps only the query keys in KEEP_QUERY.
 //
-// Replay: inputs are masked, and text under [data-ph-mask] (the donor
-// profile's header, gift rows, contact fields). No replay at all where a card
-// or a signature goes in (NO_REPLAY: the order and start link, a quote, the
-// Checkout landing).
+// Replay: every input and ALL text are masked, and every attribute but the
+// layout ones (replayAttr), so a recording shows the screen's shape, each click
+// and scroll, and never a donor. Masking only named fields (the profile header,
+// gift rows, contact fields, still marked [data-ph-mask]) was tried first: the
+// walk found the donor list carrying names and emails, in text and in title
+// attributes. No replay at all where a card or a signature goes in (NO_REPLAY:
+// the order and start link, a quote, the Checkout landing).
 
 // The project's public, write-only browser key (PostHog's own word for it).
 // It is meant to ship in client code; it is not a secret.
@@ -70,6 +73,17 @@ export function scrubUrl(u) {
     url.hash = "";
     return url.toString();
   } catch { return u; }
+}
+
+// What a replay may keep of an attribute: layout only. A stylesheet's link
+// stays (or the replay has no styles); a person's photo and a mailto do not.
+const REPLAY_KEEP = /^(class|style|data-testid|role|type|width|height|disabled|tabindex|rel|for|colspan|rowspan|aria-hidden|aria-expanded|aria-selected|aria-checked|aria-current|data-ph-mask)$/;
+export function replayAttr(name, value, el) {
+  const tag = el && el.tagName ? el.tagName.toUpperCase() : "";
+  if (REPLAY_KEEP.test(name)) return value;
+  if (tag === "LINK" && name === "href" && !/^(mailto|tel):/i.test(value)) return value;
+  if (tag === "IMG" && name === "src" && !/person-photos|^data:|^blob:/i.test(value)) return value;
+  return "";
 }
 
 const ATTR = /attr__(?!class|data-testid|id|type|role)[\w-]+="(?:[^"\\]|\\.)*"/g;
@@ -124,7 +138,7 @@ export function start() {
       disable_surveys: true,
       capture_exceptions: false,            // Sentry has errors
       disable_session_recording: NO_REPLAY.test(h.pathname),
-      session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask]", blockSelector: "[data-ph-block]" },
+      session_recording: { maskAllInputs: true, maskTextSelector: "*", maskAttributeFn: replayAttr, blockSelector: "[data-ph-block]" },
       before_send: scrubEvent,
       // Before the first pageview, so a partner's visit carries its code from the first page.
       loaded: p => { const partner = partnerFrom(window.location.search); if (partner) p.register({ partner }); },

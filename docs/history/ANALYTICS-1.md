@@ -33,8 +33,14 @@ One PR, five items, no new suite (the landing suite gained section 20).
   `campaign_sent`, `import_finished` (numeric fields of the result only), `profile_opened`, `report_opened` (the report
   id), `connection_connected` (OAuth callback and an API-key giving source), and /book's `book_form_started`,
   `book_time_picked`, `book_submitted` (stage pick, confirm or booked).
-- **Replay.** On, with `maskAllInputs` and `maskTextSelector: "[data-ph-mask]"` on the profile header (name and contact
-  line), gift rows and the Contact tab. Off on /start (ORDER-1's order and card), /quote, /signed-up: at init, and
+- **Replay masks everything that is words.** Built first as the brief said: `maskAllInputs` and `maskTextSelector:
+  "[data-ph-mask]"` on the profile header, gift rows and the Contact tab. The prod-host walk (a local production build
+  routed as www.stewardapp.dev, every PostHog request intercepted, the recorder served from node_modules) opened the
+  snapshots and found the donor list carrying the person's name 5 times and email twice, in text and in `title`
+  attributes, which a text mask never touches. On a CRM nearly every screen names donors, so a list of masked fields
+  cannot hold. Replay now masks all text (`maskTextSelector: "*"`) and blanks every attribute but layout
+  (`replayAttr`: class, style, data-testid, role and the like; a stylesheet link stays, a person's photo and a mailto
+  do not). The walk then found no name, email, phone or typed word in replay or events. The `data-ph-mask` marks stay. Off on /start (ORDER-1's order and card), /quote, /signed-up: at init, and
   stopped on a route change into one.
 - **The site.** The CSP's script-src and connect-src allow us.i.posthog.com and us-assets.i.posthog.com (the recorder and
   remote config load from the assets host). The privacy policy lists PostHog and its date moved to 26 Nov.

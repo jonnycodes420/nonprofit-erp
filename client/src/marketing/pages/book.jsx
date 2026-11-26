@@ -46,9 +46,9 @@ function Card({ code }) {
   const [open, setOpen] = useState("");
   const [err, setErr] = useState("");
   const set = k => e => setF({ ...f, [k]: e.target.value });
-  const booked = useCallback(() => { setState("booked"); track("book_submitted", { stage: "booked", partner: !!code }); }, [code]);
+  const booked = useCallback(() => { setState("booked"); track("book_submitted", { stage: "booked", has_partner: !!code }); }, [code]);
   const started = useRef(false);
-  const startedOnce = () => { if (!started.current) { started.current = true; track("book_form_started", { partner: !!code }); } };
+  const startedOnce = () => { if (!started.current) { started.current = true; track("book_form_started", { has_partner: !!code }); } };
 
   useEffect(() => {
     let alive = true;
@@ -71,7 +71,7 @@ function Card({ code }) {
       const d = await r.json().catch(() => ({}));
       if (r.status === 409) { setState("idle"); setSlot(null); setErr(d.message || "That time was just taken. Pick another one."); return; }
       if (!r.ok) throw new Error(d.message || BOOK_FALLBACK);
-      track("book_submitted", { stage: d.booked ? "booked" : d.open ? "confirm" : "pick", partner: !!code });
+      track("book_submitted", { stage: d.booked ? "booked" : d.open ? "confirm" : "pick", has_partner: !!code });
       if (d.booked) setState("booked");
       else if (d.open) { setOpen(d.open); setState("open"); }
       else setState("embed");

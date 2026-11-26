@@ -767,9 +767,14 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "client", "package.json"), "utf8"));
     ok("posthog-js is pinned to an exact version", /^\d+\.\d+\.\d+$/.test(pkg.dependencies["posthog-js"] || ""), pkg.dependencies["posthog-js"]);
     ok("no replay where a card or a signature goes in", ["/start/tok", "/quote/tok", "/signed-up"].every(p => A.NO_REPLAY.test(p)) && !A.NO_REPLAY.test("/dashboard")
-      && /maskAllInputs:\s*true/.test(own) && /maskTextSelector:\s*"\[data-ph-mask\]"/.test(own));
+      && /maskAllInputs:\s*true/.test(own) && /maskTextSelector:\s*"\*"/.test(own) && /maskAttributeFn:\s*replayAttr/.test(own));
+    // Replay keeps an attribute only when it is layout: a title, an aria-label, a mailto or a person's photo goes blank.
+    const leaks = [["title", "Ada Lovelace", "DIV"], ["aria-label", "Email Ada Lovelace", "A"], ["href", "mailto:ada@example.org", "A"], ["src", "/person-photos/ada.jpg", "IMG"], ["data-name", "Ada", "SPAN"], ["value", "250.00", "INPUT"]]
+      .filter(([n, v, t]) => A.replayAttr(n, v, { tagName: t }) !== "");
+    ok("replay blanks every attribute that can hold a person, and keeps layout", leaks.length === 0 && A.replayAttr("class", "row", { tagName: "DIV" }) === "row"
+      && A.replayAttr("href", "/assets/app.css", { tagName: "LINK" }) === "/assets/app.css", leaks);
     const masked = ["components/profile/ProfileHeader.jsx", "components/profile/GivingTab.jsx", "components/profile/ContactTab.jsx"].filter(f => !/data-ph-mask/.test(fs.readFileSync(path.join(CS, f), "utf8")));
-    ok("the profile header, gift rows and contact fields are masked in replay", masked.length === 0, masked);
+    ok("the profile header, gift rows and contact fields are marked [data-ph-mask] too", masked.length === 0, masked);
     const csp = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8")).headers.map(h => h.headers.find(x => x.key === "Content-Security-Policy")).filter(Boolean).map(h => h.value).join(" ");
     const dir = n => ((new RegExp("(?:^|;)\\s*" + n + " ([^;]*)")).exec(csp) || [])[1] || "";
     ok("the CSP lets the app reach PostHog (script-src and connect-src)", ["script-src", "connect-src"].every(d => [A.POSTHOG_HOST, A.POSTHOG_ASSETS].every(h => dir(d).split(/\s+/).includes(h))), [dir("script-src"), dir("connect-src")]);
