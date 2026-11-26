@@ -43,8 +43,10 @@ async function reset(q) {
 async function run({ ok, login, api, q }) {
   const now = testNow();
   await reset(q);
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,qbo_sync_enabled,run_background_work)
-           VALUES ($1,'Honest Fixture Trust','honest-fixture-trust',1,'active','team',true,true)`, [ORG]);
+  // The org keeps UTC days, so the fixture's day arithmetic (in UTC) is the org's own at any hour
+  // (CI at 00:11 UTC read 39 days for a gift 40 UTC days back in an Eastern org).
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,qbo_sync_enabled,run_background_work,timezone)
+           VALUES ($1,'Honest Fixture Trust','honest-fixture-trust',1,'active','team',true,true,'UTC')`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role)
            VALUES ('u_c2hon',$1,$2,$3,'Hon Admin','admin')`, [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('ff_hon_gen',$1,'General',false),('ff_hon_bld',$1,'Building',true)`, [ORG]);
