@@ -306,16 +306,19 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   }
   // INTEGRITY-2: a line Steward wrote by itself (created_by system:…) is not
   // activity; it goes with the person (undoPeople.js).
+  // FRESH-3: the same rule as the confirm's "activity since" (undoPeople.js ACTIVITY_LINE_SQL): the
+  // run's own lines and a gift's line are not activity. They disagreed, and a person the confirm
+  // said nothing about stayed ("another record holds them").
   // INTEGRITY-3: someone this undo already moved (a run picked up from the
   // queue) is not counted twice.
   const orphans = await query(
     `SELECT d.id, (d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL) AS was_deleted, (d.staged_import_id IS NOT NULL) AS staged
        FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
-       AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id AND COALESCE(i.created_by, '') NOT LIKE 'system:%')
-       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.donor_id=d.id AND COALESCE(t.created_by, '') NOT LIKE 'system:%')
+       AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id AND ${require("./undoPeople").ACTIVITY_LINE_SQL("i")})
+       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.donor_id=d.id AND t.import_id IS DISTINCT FROM ? AND COALESCE(t.created_by, '') NOT LIKE 'system:%')
        AND NOT EXISTS (SELECT 1 FROM deleted_records r WHERE r.org_id=d.org_id AND r.table_name='donors' AND r.record_id=d.id
-                         AND r.restored_at IS NULL AND (r.row_data ->> '__importUndo') = ?)`, [orgId, id, id]);
+                         AND r.restored_at IS NULL AND (r.row_data ->> '__importUndo') = ?)`, [orgId, id, id, id, id]);
   // INTEGRITY-3 (W-Fiona): the people this file created go to the TRASH,
   // restorable for 30 days, never deleted outright; anyone of them already in
   // the trash stays there as they are, trash row and all (undoMoves.js).

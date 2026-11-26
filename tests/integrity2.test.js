@@ -174,6 +174,28 @@ const live = async id => !!(await one(`SELECT 1 AS x FROM donors WHERE id=$1 AND
     ok("§3 the Trash says why Hugo is there", t.body.total === 1 && /^Moved with an import undo of since\.csv, /.test(t.body.people[0].why), t.body.people);
   }
 
+  // ── §3b FRESH-3 (W-1126-Finance-02): a gift deleted by hand after the import does not hold its person
+  // back. Staging, 26 Nov: two people imported with a gift each, one gift deleted, Undo kept that person
+  // ("1 person stayed … another record holds them"): the import's own gift line was counted as activity
+  // by the move (undo.js) and not by the confirm (undoPeople.js).
+  {
+    const ORG = "org_integrity2_gone";
+    const tok = await freshOrg(ORG, "Integrity Two Gone");
+    const sheets = [{ name: "Gifts", grid: [["Name", "Email", "Gift Date", "Amount"],
+      ["Elm Gonegift", "elm.gonegift@example.test", "2025-09-12", "40"], ["Fir Keptgift", "fir.keptgift@example.test", "2025-09-13", "45"]] }];
+    const j = await importJob(tok, { fileName: "gone.csv", sheets, useModel: false, previewOrgId: ORG, today: TODAY });
+    const elm = await one(`SELECT id FROM donors WHERE org_id=$1 AND email='elm.gonegift@example.test'`, [ORG]);
+    const fir = await one(`SELECT id FROM donors WHERE org_id=$1 AND email='fir.keptgift@example.test'`, [ORG]);
+    const g = await one(`SELECT id FROM gifts WHERE org_id=$1 AND donor_id=$2`, [ORG, elm && elm.id]);
+    const del = await api("DELETE", `/gifts/${g && g.id}`, tok);
+    const pre = await api("GET", `/imports/${j.importId}/undo-preview`, tok);
+    const undo = await api("POST", `/imports/${j.importId}/reverse`, tok, {});
+    ok("§3b one imported gift deleted by hand, then Undo: the confirm names nobody and both people go to the trash",
+      !!elm && !!fir && del.status === 200 && (pre.body.activitySinceCount || 0) === 0 && undo.status === 200
+        && !(await live(elm.id)) && !(await live(fir.id)) && (undo.body.stayed || []).length === 0,
+      { del: del.status, since: pre.body && pre.body.activitySince, undo: undo.status, sentence: undo.body && undo.body.sentence, elm: elm && await live(elm.id) });
+  }
+
   // ── §4 Donors-45X: a person's links go with them and come back
   {
     const ORG = "org_integrity2_links";

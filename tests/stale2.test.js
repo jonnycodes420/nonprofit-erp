@@ -659,6 +659,36 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   ok("§6 gone again within the minute: no second reopen, the error with a Reload button", blocked > b1 && loads6 === l1 && reloadBtn >= 1, { blocked: blocked - b1, loads: loads6 - l1, reloadBtn });
   await ctx6.close();
 
+  // ── §12 · FRESH-3 (staging re-check): A WRITE IN ONE TAB MOVES THE OTHER TAB AT ONCE ──
+  // Staging, d6903a8: Pledges and Recurring giving open in another tab still showed the old row at
+  // +5 s (only the bell's minute reached them). One browser context, two tabs: Finance → This month in
+  // tab A, a gift saved by click in tab B; tab A's figures move within seconds, with no reload.
+  {
+    const ctx12 = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const lg12 = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
+    await ctx12.addInitScript(([tk, u, o]) => { localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [lg12.body.token, JSON.stringify(lg12.body.user), JSON.stringify(lg12.body.org)]);
+    const finTab = await ctx12.newPage();
+    let finLoads = 0;
+    finTab.on("load", () => { finLoads++; });
+    await finTab.goto(`${APP}/app/finance`, { waitUntil: "networkidle", timeout: 60000 });
+    const ov = finTab.locator('[data-testid="fin-overview"]');
+    await ov.waitFor({ timeout: 30000 }).catch(() => {});
+    const before = await ov.innerText().catch(() => "(no overview)");
+    const l0 = finLoads;
+    const giveTab = await ctx12.newPage();
+    await giveTab.goto(`${APP}/donors/${P("cleo")}`, { waitUntil: "networkidle", timeout: 60000 });
+    await giveTab.getByRole("tab", { name: /^Giving/ }).first().click({ timeout: 30000 }).catch(() => giveTab.locator('[data-tab="giving"]').first().click());
+    await giveTab.getByRole("button", { name: /\+ Add Gift/ }).first().click({ timeout: 15000 });
+    await giveTab.locator('input[placeholder="Amount ($)"]').first().fill("64");
+    await giveTab.getByRole("button", { name: /^Save$/ }).first().click();
+    let after = before;
+    for (let i = 0; i < 40 && after === before; i++) { await finTab.waitForTimeout(250); after = await ov.innerText().catch(() => before); }
+    ok("§12 a gift saved in tab B moves Finance → This month in tab A within seconds, no reload (not the bell's minute)",
+      before !== "(no overview)" && after !== before && finLoads === l0, { before: before.slice(0, 160), after: after.slice(0, 160), reloads: finLoads - l0 });
+    await ctx12.close();
+  }
+
   // ── §11 · FRESH-3 item 4: ONE BROWSER, TWO TABS, ONE PERSON, ONE SWITCH ────
   // One context is one browser profile: the tabs share localStorage and the cookie jar. Tab A is
   // on Ada's profile in the Heron Society; tab B switches Odile to the Plover Trust the way the
