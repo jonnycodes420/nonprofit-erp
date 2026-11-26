@@ -176,8 +176,17 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("every route's page has a component", ROUTES.every(r => new RegExp("\\b" + r.page + ":").test(pageKeys)), ROUTES.filter(r => !new RegExp("\\b" + r.page + ":").test(pageKeys)).map(r => r.page));
     ok("route paths are unique, and every route has a title and a description",
       new Set(ROUTES.map(r => r.path)).size === ROUTES.length && ROUTES.every(r => r.title && r.description && r.description.length > 30));
-    const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/book", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/legal/privacy", "/legal/terms", "/legal/accessibility"];
+    const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/book", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/privacy", "/legal/terms", "/legal/accessibility"];
     ok("every page the brief names is routed", brief.every(p => known.has(p)), brief.filter(p => !known.has(p)));
+    // HONEST-1 item 6: the draft at /legal/privacy lacked the Google Limited Use
+    // disclosure, so Google verification read the wrong page. Every Privacy link is
+    // /privacy, and the old path redirects there at the edge (and in the app).
+    const vjR = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8")).redirects || [];
+    const privacyLinks = [...ALL.matchAll(/href=\{?["'`]([^"'`]*)["'`]\}?[^>]*>\s*Privacy(?: Policy)?\s*</g)].map(m => m[1]);
+    ok("every Privacy link in the marketing source goes to /privacy (" + privacyLinks.length + " found)",
+      privacyLinks.length > 0 && privacyLinks.every(h => h === "/privacy"), privacyLinks);
+    ok("/legal/privacy is not a marketing page and redirects to /privacy",
+      !ROUTES.some(r => r.path === "/legal/privacy") && vjR.some(r => r.source === "/legal/privacy" && r.destination === "/privacy" && r.permanent));
     const count = pre => ROUTES.filter(r => r.path.startsWith(pre)).length;
     // ASK-2 added the Ask feature page and the demo-questions guide.
     ok("15 feature pages, 4 audience pages, 6 guides", count("/features/") === 15 && count("/for/") === 4 && count("/guides/") === 6);

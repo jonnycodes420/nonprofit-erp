@@ -14,7 +14,7 @@ const {
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates, refreshMailboxSyncHealth, mailboxAccessToken,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
-  processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
+  processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones, sweepQuietConnections,
   processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
   processTrackedSequences, processTrialReminders, processRecordBands, processWorkflowSweeps, query, rateLimitDisabled,
@@ -69,6 +69,10 @@ if (!backgroundTicksDisabled()) {
 const GIVING_SOURCE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 if (!backgroundTicksDisabled()) {
   every("processGivingSources", GIVING_SOURCE_SYNC_INTERVAL_MS, () => recordTick("processGivingSources", processGivingSources), 90000);
+  // HONEST-1 item 2: A QUIET FEED RAISES ITS HAND. Nothing scheduled this sweep (docs/defects.md
+  // P3), so a Givebutter silent 66 days opened no task. Live orgs only (SCALE-5); one task per
+  // incident for the org's admin; no email.
+  every("sweepQuietConnections", GIVING_SOURCE_SYNC_INTERVAL_MS, () => recordTick("sweepQuietConnections", () => sweepQuietConnections({ live: true, notify: false })), 5 * 60 * 1000);
 }
 
 // ── INT-5 · WEBHOOK DELIVERY ───────────────────────────────────────────────

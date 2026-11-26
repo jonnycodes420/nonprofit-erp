@@ -55,7 +55,7 @@ function settleStripeCard(card, { org, C, ownDates = [], historyDates = [], hist
     lastGiftDate, giftDates: dates, today });
   Object.assign(card, {
     connected, status: a.status, sentence: a.sentence, statusDefinition: a.definition,
-    rhythmSentence: a.rhythm ? a.rhythm.sentence : null, silentDays: a.silentDays ?? null, quietAfterDays: a.quietAfterDays ?? null,
+    rhythmSentence: a.rhythm ? a.rhythm.sentence : null, rhythm: a.rhythm || null, silentDays: a.silentDays ?? null, quietAfterDays: a.quietAfterDays ?? null,
     takesGifts: takes, readsHistory: reads,
   });
   return card;

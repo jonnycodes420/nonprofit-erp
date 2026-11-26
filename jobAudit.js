@@ -23,6 +23,7 @@ const JOB_WRITES = {
   processDunning:                    "retries a failed recurring charge and records the attempt",
   processCardExpiry:                 "notes a card about to expire and drafts the note",
   processGivingSources:              "imports gifts from a connected giving source",
+  sweepQuietConnections:             "HONEST-1: opens one task per quiet or broken giving source for the org's admin; no email",
   processScheduledCampaigns:         "sends a campaign the org scheduled",
   processEmailMarketing:             "syncs an audience out and campaign activity back in",
   processQboAutoSync:                "sends waiting gifts to QuickBooks for orgs that turned auto-sync on",

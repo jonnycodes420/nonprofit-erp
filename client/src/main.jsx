@@ -388,6 +388,8 @@ function Root() {
           <Route path="/signed-up"        element={<SignedUpPage />} />
           <Route path="/terms"            element={<TermsPage />} />
           <Route path="/privacy"          element={<PrivacyPage />} />
+          {/* HONEST-1: the draft is not the policy in effect; vercel.json redirects it at the edge too. */}
+          <Route path="/legal/privacy"    element={<Navigate to="/privacy" replace />} />
           <Route path="*"                 element={<Navigate to="/" replace />} />
         </Routes>
         </React.Suspense>
