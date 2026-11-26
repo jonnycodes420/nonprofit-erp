@@ -277,8 +277,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const [fd10] = await q(`SELECT MIN(LEFT(date, 10)) AS d FROM gifts WHERE org_id = $1 AND donor_id = 'd_atl9_odile' AND amount > 0`, [F9.ORG || (await q(`SELECT org_id FROM donors WHERE id='d_atl9_odile'`))[0].org_id]);
   const since10 = new Date(fd10.d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
   ok("§7 ATLAS-10 \"Can you brief me on Odile Marchetti?\" is a brief, with reading off: never the refusal", !!br10 && r10.ai !== "on" && !(r10.lines || []).some(l => /I can log a conversation|can still log a conversation/.test(l.line || "")), (r10.lines || []).map(l => l.line));
-  ok("§7 ATLAS-10 its facts: the open $25,000 ask, the $1,500 gift not yet thanked on Sep 28, 2026, tomorrow's coffee, and donor since her first gift",
-    f10.some(f => f.kind === "open_ask" && /\$25,000 for Youth Arts Access/.test(f.line)) && f10.some(f => f.kind === "unthanked" && /\$1,500 on Sep 28, 2026/.test(f.line))
+  // main-fix: the $1,500 gift is dated 58 days before the fixture's today (atlas9Fixture), so its date is read from there, never typed.
+  const d1500 = F9.addDays(today, -58), MON10 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const w1500 = `${MON10[Number(d1500.slice(5, 7)) - 1]} ${Number(d1500.slice(8, 10))}, ${d1500.slice(0, 4)}`;
+  ok(`§7 ATLAS-10 its facts: the open $25,000 ask, the $1,500 gift not yet thanked on ${w1500}, tomorrow's coffee, and donor since her first gift`,
+    f10.some(f => f.kind === "open_ask" && /\$25,000 for Youth Arts Access/.test(f.line)) && f10.some(f => f.kind === "unthanked" && f.line.includes(`$1,500 on ${w1500}`))
     && f10.some(f => f.kind === "coming_up" && /Coffee with Odile/.test(f.line)) && f10.some(f => f.kind === "giving" && f.line.includes(`Donor since ${since10}.`)), f10.map(f => f.line));
   const ins10 = (await api("GET", "/insights/donor/d_atl9_odile", tok9)).body || {};
   const want10 = ins10.move ? `Next move:` : ins10.after && ins10.after.thank ? `Next: thank Odile for the ${ins10.after.amount} gift on ${ins10.after.day}.` : null;
