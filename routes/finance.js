@@ -515,6 +515,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
         received: { cents: b.receivedCents, amount: toDollars(b.receivedCents), count: b.receivedCount, source: { key: "gifts", params: { from: fyFrom, to: today, fund: f.id } } },
         waiting: { cents: b.gifts.waiting.cents, amount: toDollars(b.gifts.waiting.cents), count: b.gifts.waiting.n, source: { key: "ledger-status", params: { status: "waiting", fund: f.id } } },
         balanceCents: balance, balance: toDollars(balance), balanceWords: NUM.fundCard.balanceWords(b), transactions: b.rows,
+        gapWords: NUM.fundCard.gapWords(b), gapLines: NUM.fundGap.gapLines(b, f.id),   // NUMBERS-9 item 1: the dialog's own line
         inPeriod: toDollars(b.inPeriodCents), outPeriod: toDollars(b.outPeriodCents),
         inPeriodCents: b.inPeriodCents, outPeriodCents: b.outPeriodCents,
         restrictedBy: restricted ? who : [],
@@ -570,6 +571,8 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
     netCents: f.balanceCents, net: toDollars(f.balanceCents), balanceCents: f.balanceCents,
     gifts: gifts.map(g => ({ ...g, amount: Number(g.amount), ledgerWord: WORD[g.ledger] })), giftCount: f.gifts.total.n, giftCents: f.gifts.total.cents,
     waitingCents: f.gifts.waiting.cents, waitingCount: f.gifts.waiting.n,
+    // NUMBERS-9 item 1: gifts on the books beside transactions in, and the rows that make any difference.
+    postedCents: f.gifts.posted.cents, inCents: f.inCents, gapWords: NUM.fundCard.gapWords(f), gapLines: NUM.fundGap.gapLines(f, fundId),
     sentence: `Balance ${NUM.fundCard.balanceWords(f)}${cut(rows.length, f.rows, "transactions")} ${NUM.fundCard.giftWords(f)}${cut(gifts.length, f.gifts.total.n, "gifts")}` });
 }));
 

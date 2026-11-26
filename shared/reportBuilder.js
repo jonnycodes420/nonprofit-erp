@@ -90,7 +90,11 @@ export const ENTITIES = {
       campaign:        { label: "Appeal", sql: "NULLIF(g.campaign,'')", type: "text" },
       type:            { label: "Gift type", sql: "g.type", type: "text" },
       payment_method:  { label: "Payment method", sql: "g.payment_method", type: "text" },
-      acknowledged:    { label: "Thanked", sql: numbersThanks.THANKED_OR_AWAITING("g"), type: "bool" },   // THANKS-1: the one thank-you rule; NUMBERS-8: No = Home's not yet thanked, a refund is neither
+      // NUMBERS-9 item 6: No = waiting to be thanked (shared/numbers/thankBacklog.js WAITING) over the dates the
+      // report picks; Home counts from the day the org started with Steward, so the two agree on that window.
+      // A sample person's gift is in no backlog, so it is neither Yes nor No.
+      acknowledged:    { label: "Thanked", sql: `(CASE WHEN d.is_sample IS TRUE THEN NULL ELSE ${numbersThanks.THANKED_OR_AWAITING("g")} END)`, type: "bool",
+                         sentence: "Thanked: Yes when a thank-you is logged. No when the gift is waiting to be thanked, in whatever dates this report covers; Home counts the same gifts from the day you started with Steward. A refund, a gift refunded in full and sample data are neither." },   // THANKS-1: the one thank-you rule; NUMBERS-8: No = Home's not yet thanked, a refund is neither
       acknowledged_via:{ label: "Thanked how", sql: "g.acknowledged_via", type: "text" },
       tribute:         { label: "Tribute", sql: "g.tribute_name", type: "text" },
       donor_stage:     { label: "Donor stage", sql: "d.stage", type: "text" },

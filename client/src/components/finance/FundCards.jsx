@@ -9,7 +9,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { DonorLink, RecordLink, useUrlWriter } from "../RecordLink";
 import { tabHref, urlParam } from "../../lib/appUrls";
-import { FundDefaultChip, FundBooksLines, NoFundLine, FUND_DEF_WORDS } from "./FundBooks";
+import { FundDefaultChip, FundBooksLines, NoFundLine, FundGapLines, FUND_DEF_WORDS } from "./FundBooks";
 
 const IN = T.ink;
 const OUT = T.terracotta;
@@ -85,6 +85,8 @@ export function FinFundCards() {
           {open.error && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{open.error}</div>}
           {open.loading && <div style={{ fontSize:13, color:T.ink3 }}>Opening the rows…</div>}
           {open.sentence && <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginBottom:12 }}>{open.sentence}</div>}
+          {/* NUMBERS-9 item 1: the card's own line, from the same function. */}
+          {open.gapWords && <div style={{ marginBottom:12 }}><FundGapLines f={open} name={open.label}/></div>}
           {open.rows && (
             <div style={{ maxHeight:380, overflowY:"auto" }}>
               {!open.rows.length && !(open.gifts && open.gifts.length) && <div style={{ fontSize:13, color:T.ink3 }}>Nothing has moved through this fund yet.</div>}

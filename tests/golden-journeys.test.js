@@ -300,9 +300,12 @@ async function agentLeg(H) {
 
   // ── J2 record a gift ─────────────────────────────────────────────────────
   console.log("\nJ2 record a gift");
-  // A cheque that came in ten days ago, entered now: old enough to be in the
-  // not-thanked backlog (seven days by default), so J3 can watch it leave.
-  const g2 = await api("POST", `/donors/${H.marisol}/gifts`, dana, { amount: "40.10", date: civilPlusDays(-10), type: "cash", paymentMethod: "Check" });
+  // A cheque that came in today, in the not-thanked backlog, so J3 can watch it leave. NUMBERS-9:
+  // waiting to be thanked is one definition (shared/numbers/thankBacklog.js), counted from the day
+  // this org started with Steward (today, the import's day); her backlog days are set to 0 so a gift
+  // from today is old enough for Acknowledgments' list.
+  await q(`UPDATE orgs SET ack_backlog_days = 0 WHERE id = $1`, [ORG]);
+  const g2 = await api("POST", `/donors/${H.marisol}/gifts`, dana, { amount: "40.10", date: civilPlusDays(0), type: "cash", paymentMethod: "Check" });
   H.gift = g2.body && (g2.body.id || (g2.body.gift && g2.body.gift.id));
   ok("J2 recordGift took it", g2.status === 201 && H.gift, g2.body);
   const [g2row] = await q(`SELECT ROUND(amount*100)::int c, acknowledgement_sent, created_by FROM gifts WHERE id=$1 AND org_id=$2`, [H.gift, ORG]);

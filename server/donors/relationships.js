@@ -359,6 +359,8 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   const broughtIn = await CN.broughtInFor(orgId, donorId);
   // NUMBERS-8 item 2 (W-1125-Finance-37): Gives through comes from the soft credit on an
   // organisation's gifts, whatever links them (a program officer, an owner, or no link at all).
+  // NUMBERS-9 item 5: and from an Owner link ("gives through it"), every gift of the organization,
+  // softly (softThrough.js CREDITED_THROUGH, the one table both sides and the figure read).
   const ST = require("../../shared/numbers/softThrough");
   const gtAll = await ST.givesThroughOf(query, orgId, donorId).catch(e => { console.error("[relationships] gives through:", e.message); return []; });
   const gtHidden = new Set(gtAll.length ? await require("../auth/portfolio").hiddenOf(req.user, orgId, gtAll.map(g => g.id)) : []);
@@ -427,7 +429,20 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
-  res.json({ relationships, householdTotal, householdTotalSource, through, broughtIn, givesThrough, givesThroughDefinition, throughPeople, givenThroughDefinition: ST.GIVEN_THROUGH_SENTENCE });
+  // NUMBERS-9 item 5 (W-1125-Finance-37, repeat): a person linked to an organization by anything but Owner
+  // (a program officer, works at) holds nothing through it unless a gift credits them. The rail says so by
+  // name, rather than leaving an empty Giving tab beside the organization's lifetime to be read as a fault.
+  const throughIds = new Set(givesThrough.map(g => g.id));
+  const notThrough = await (async () => {
+    const orgs = await query(`SELECT id, name, kind, person_types FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, relatedIds]);
+    const [self] = await query("SELECT kind, person_types FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
+    if (isOrgRow(self)) return [];
+    return relationships.filter(r => r.relationshipType !== "owner" && !throughIds.has(r.relatedDonorId)
+        && isOrgRow(orgs.find(o => o.id === r.relatedDonorId)))
+      .map(r => ({ id: r.relatedDonorId, name: (orgs.find(o => o.id === r.relatedDonorId) || {}).name || "", type: r.relationshipType }));
+  })();
+  for (const r of relationships) if (notThrough.some(n => n.id === r.relatedDonorId)) r.creditsNothing = true;   // the rail reads it beside the link
+  res.json({ relationships, householdTotal, householdTotalSource, through, broughtIn, givesThrough, givesThroughDefinition, throughPeople, givenThroughDefinition: ST.GIVEN_THROUGH_SENTENCE, notThrough });
 }));
 
 app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async (req, res) => {

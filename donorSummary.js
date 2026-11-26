@@ -36,7 +36,7 @@ const { NOT_CREDIT } = require("./creditTypes");
 // shared/numbers/lastGift.js and firstGift.js, and the profile's Last gift
 // opens the same row.
 const { GIFT, MONEY } = require("./shared/numbers/money");
-const { LAST_GIFT_ORDER } = require("./shared/numbers/lastGift");
+const { LAST_GIFT_ORDER, NET_OF } = require("./shared/numbers/lastGift");
 
 // FIX-49 · THE OLD SYSTEM'S FIRST GIFT, and the first gift on file: one rule,
 // shared/numbers/firstGift.js ("Donor since", the tags and first_gift_date).
@@ -64,7 +64,8 @@ const PERSON_X = (dd = "dd") => `(SELECT ${dd}.id AS donor_id, ${dd}.imported_to
                        COUNT(g.id) FILTER (WHERE ${GIFT("g")} AND NOT ${AFTER_IMPORT(dd)}) AS before_n,
                        ${FIRST_ON_FILE_AGG("g")} AS row_first,
                        MAX(g.date) FILTER (WHERE ${GIFT("g")}) AS row_last,
-                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
+                       -- NUMBERS-9 item 3: the last gift as it is now, less what was refunded on it (lastGift.js NET_OF)
+                       (ARRAY_AGG(${NET_OF("g")} ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
                      FROM gifts g WHERE g.org_id = ${dd}.org_id AND g.donor_id = ${dd}.id) ga)`;
 // The rollup a person should carry, from PERSON_X's columns.
 const SUMMARY_COLS = `x.donor_id,

@@ -132,7 +132,7 @@ export function ProfileHeaderFigures({ figures }) {
         <One f={F.thisYear} kind="money" label="This fiscal year" def={censusById("profile.thisYear").sentence} figureKey="profile.thisYear" />
       </Cell>
       <Cell label="Last gift" def={censusById("profile.lastGift").sentence} testid="dp-fig-lastGift"
-        under={lg && lg.date ? `${displayDate(lg.date)} · ${lg.method || "method not on file"}` : null}>
+        under={lg && lg.date ? <>{`${displayDate(lg.date)} · ${lg.method || "method not on file"}`}{lg.refundWords && <span data-testid="dp-fig-lastGift-refund" style={{ display: "block" }}>{lg.refundWords}</span>}</> : null}>
         <One f={F.lastGift} kind="money" label="Last gift" def={censusById("profile.lastGift").sentence} figureKey="profile.lastGift" />
       </Cell>
       <Cell label="Last contact" def={lc.def} testid="dp-fig-lastContact" under={lc.under} oneLine>

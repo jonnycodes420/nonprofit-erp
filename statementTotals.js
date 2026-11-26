@@ -15,6 +15,7 @@
 //     statement; a sample gift is not real and is never on one.
 // Every sum is integer cents, converted once, by money.js.
 const { toCents, toDollars } = require("./money");
+const { giftDeductibleCents } = require("./shared/numbers/deductible");
 
 const cents = v => toCents(String(v ?? "0")) ?? 0;
 
@@ -28,8 +29,9 @@ function statementLines(gifts, { year = false } = {}) {
     && !(year && CREDIT_TYPES.has(String(g.type || "").trim().toLowerCase())));
   const lines = kept.map(g => {
     const amount = cents(g.amount);
-    const stored = g.deductible_amount != null ? cents(g.deductible_amount) : amount;
-    const deductible = amount <= 0 ? amount : Math.max(0, Math.min(stored, amount));
+    // NUMBERS-9 item 2: the one rule (shared/numbers/deductible.js), the letter's and the list's too:
+    // the stored deductible, else the gift less the fair market value received, never below $0.
+    const deductible = giftDeductibleCents(g);
     return { id: g.id, date: g.date, amountCents: amount, deductibleCents: deductible, paymentMethod: g.payment_method || "" };
   });
   const totalCents = lines.reduce((s, l) => s + l.amountCents, 0);

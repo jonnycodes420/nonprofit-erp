@@ -10,7 +10,7 @@
 //   askOwnGifts     (W-1115-Finance-34X) a person's ask names a largest gift that is theirs, unless
 //                   its words say it is the household's.
 //   lastGiftIsGift  (W-1116-Fundraising-15X) a person's Last gift is a gift above $0, never a refund
-//                   row, never a gift refunded in full.
+//                   row, never a gift refunded in full; NUMBERS-9: its amount is the gift less its refunds.
 //   thanksRule      (W-1115-Finance-02X) every thank-you count (Home's org-wide, each profile's) is
 //                   the gifts above $0, not refunded in full, with no thank-you logged.
 //   portfolioFoots  (W-1115-Donors-06X) the officer rows and Unassigned add up to the Donors tab.
@@ -66,7 +66,7 @@ async function flows14Checks({ orgId, get, q, agree, diffs, skip, today, named =
     const people = await q(`SELECT DISTINCT r.donor_id AS id FROM gifts r JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
                              WHERE r.org_id = $1 AND (r.amount < 0 OR r.refunded_in_full IS TRUE) AND d.deleted_at IS NULL AND d.erased_at IS NULL AND d.imported_last_gift_date IS NULL LIMIT 8`, [orgId]);
     for (const { id } of people) {
-      const [k] = await q(`SELECT ROUND(g.amount * 100)::bigint AS c FROM gifts g WHERE g.org_id = $1 AND g.donor_id = $2 AND ${KEPT("g")} AND g.date IS NOT NULL AND LEFT(g.date, 10) <= $3
+      const [k] = await q(`SELECT ROUND((g.amount + COALESCE((SELECT SUM(rf.amount) FROM gifts rf WHERE rf.org_id = g.org_id AND rf.refund_of = g.id), 0)) * 100)::bigint AS c FROM gifts g WHERE g.org_id = $1 AND g.donor_id = $2 AND ${KEPT("g")} AND g.date IS NOT NULL AND LEFT(g.date, 10) <= $3
                             ORDER BY g.date DESC, g.created_at DESC, g.amount DESC LIMIT 1`, [orgId, id, today]);
       const d = await get(`/donors/${id}`).catch(() => null);
       if (!d) continue;

@@ -59,9 +59,12 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
   const [err, setErr] = useState("");
   const [gone, setGone] = useState(() => new Set());   // taken away here; kept away until Undo
   const refs = useRef({});
+  // NUMBERS-9 item 6: the gifts waiting to be thanked behind these drafts (shared/numbers/thankBacklog.js),
+  // said only org-wide and only when the two counts differ.
+  const [backlogLine, setBacklogLine] = useState(null);
 
   const read = useLiveRead("comms.thank-yous", ["draft"],
-    () => apiFetch("/thank-yous").then(r => ((r && r.drafts) || []).filter(d => !donorId || d.donorId === donorId)).catch(() => []),
+    () => apiFetch("/thank-yous").then(r => { if (!donorId) setBacklogLine((r && r.backlog && r.backlog.sentence) || null); return ((r && r.drafts) || []).filter(d => !donorId || d.donorId === donorId); }).catch(() => []),
     [donorId]);
   const { reload } = read;
   useEffect(() => {
@@ -124,6 +127,7 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
         <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
           {intro || "Steward wrote these for you. Read one, send it from your own email, then mark it sent."}
         </div>
+        {backlogLine && <div data-testid="ty-backlog-line" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{backlogLine}</div>}
       </div>
       {!rows.length && <div style={{ fontSize: 13, color: T.ink3 }}>{donorId ? "No thank-you is waiting for this person." : "No thank-you is waiting to be sent."}</div>}
       {rows.length > 0 && (

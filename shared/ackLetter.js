@@ -56,7 +56,11 @@ const MAY_BE_EMPTY = new Set(["tribute", "signer_title"]);
 // LETTERS-1: what one gift may be deducted for. The stored deductible part
 // (never more than the gift), else the amount less what was received; never
 // below zero. The receipt's rule (statementTotals.js), in integer cents.
+// NUMBERS-9 item 2: on the server each gift arrives with `deductibleCents` already computed by the
+// one rule (shared/numbers/deductible.js, the year-end statement's and the receipt's); it is read
+// as it is. The fallback below is that same rule, for a caller that has not computed it.
 export function deductibleCents(g) {
+  if (g && Number.isInteger(g.deductibleCents)) return g.deductibleCents;
   const amt = toCents(g.amount), val = toCents(g.qpqValue || 0);
   if (g.deductible != null && g.deductible !== "") return Math.max(0, Math.min(toCents(g.deductible), amt));
   return Math.max(0, amt - val);
@@ -174,14 +178,25 @@ export function letterFields({ donor, gifts, org, today = "" }) {
 // what was received and what is deductible, printed under the letter, so no
 // template can leave it out. The deductible part is the receipt's
 // (statementTotals.js): what was stored, never more than the gift.
+// NUMBERS-9 item 2 (W-1126-Donors-T3): a letter that covers more than one gift names each gift it
+// covers and ends with the deductible across all of them, so the one figure a donor reads off it is
+// their total, never a single gift's disclosure ($310) beside a $600 letter whose total is $410.
 export function goodsServicesLines(gifts) {
-  const qs = (gifts || []).filter(g => toCents(g.qpqValue || 0) > 0);
-  return qs.map(g => {
-    const val = toCents(g.qpqValue);
-    const ded = deductibleCents(g);
-    const s = `You received goods or services valued at ${formatCents(val)}; the deductible amount is ${formatCents(ded)}.`;
-    return qs.length > 1 ? `For your gift of ${formatLetterDate(g.date) || "an undated day"}: ${s}` : s;
-  }).join("\n");
+  const list = gifts || [];
+  const qs = list.filter(g => toCents(g.qpqValue || 0) > 0);
+  if (list.length <= 1) {
+    return qs.map(g => `You received goods or services valued at ${formatCents(toCents(g.qpqValue))}; the deductible amount is ${formatCents(deductibleCents(g))}.`).join("\n");
+  }
+  const lines = list.map(g => {
+    const val = toCents(g.qpqValue || 0);
+    const day = formatLetterDate(g.date) || "No date";
+    return val > 0
+      ? `${day}: your gift of ${formatCents(toCents(g.amount))}. You received goods or services valued at ${formatCents(val)}; the deductible amount is ${formatCents(deductibleCents(g))}.`
+      : `${day}: your gift of ${formatCents(toCents(g.amount))}, all of it deductible: ${formatCents(deductibleCents(g))}.`;
+  });
+  const total = list.reduce((t, g) => t + toCents(g.amount), 0), ded = list.reduce((t, g) => t + deductibleCents(g), 0);
+  return [`This letter covers your ${list.length} gifts:`, ...lines,
+    `In all you gave ${formatCents(total)}, and the deductible amount of these ${list.length} gifts is ${formatCents(ded)}.`].join("\n");
 }
 
 // Render one letter. Returns the text and the fields that were needed and

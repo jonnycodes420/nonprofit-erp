@@ -159,8 +159,9 @@ const addDays = require("../orgTime").addDays;
   const ty = ((tpls.body && tpls.body.templates) || []).find(t => t.key === "thank_you");
   const pv = ty ? await api("POST", "/email-preview", tok, { blocks: LIB.campaignBlocksFromHtml("thank_you", ty.body), subject: ty.subject, as: silas, campaign: true }) : { body: {} };
   const pvText = String((pv.body && pv.body.html) || "").replace(/<[^>]+>/g, " ");
-  ok("§2 the Thank-you starter previewed for Silas (newest row a refund) names his last real gift, $5,801, and no \"{{\"",
-    /\$5,801/.test(pvText) && !/\{\{/.test(pv.body && pv.body.html || "") && !/-\$?25|\$-25/.test(pvText) && !((pv.body.problems || []).length),
+  // NUMBERS-9 item 3: the last gift is the gift as it is now, less the $25 refunded on it: $5,776.
+  ok("§2 the Thank-you starter previewed for Silas (newest row a refund) names his last real gift, $5,776 after its $25 refund, and no \"{{\"",
+    /\$5,776/.test(pvText) && !/\{\{/.test(pv.body && pv.body.html || "") && !/-\$?25|\$-25/.test(pvText) && !((pv.body.problems || []).length),
     { status: pv.status, problems: pv.body && pv.body.problems, text: pvText.replace(/\s+/g, " ").slice(0, 300) });
 
   // ── §3 givers are donors ─────────────────────────────────────────────────
