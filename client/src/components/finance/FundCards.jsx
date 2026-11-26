@@ -3,7 +3,7 @@
 // server function (shared/numbers/fundCard.js), so the balance on the card is the dialog's title,
 // and the dialog's sentence says what each of its figures counts.
 import { useState, useEffect } from "react";
-import { useChanged } from "../../lib/changes";
+import { useLive } from "../../lib/liveRead";   // FRESH-3: the census holds it
 import { T, fmtFull, Card, EmptyState, Modal } from "../shared";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
@@ -24,7 +24,7 @@ export function FinFundCards() {
   const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id || null });
   // FEEL-1: the cards read again on STALE-1's announcement of a gift, pledge or
   // fund change, so a total never sits on the figure from before the change.
-  useChanged(["gift", "pledge", "fund", "totals"], () => {
+  useLive("finance.fund-cards", ["gift", "pledge", "fund", "totals"], () => {
     apiFetch("/finance/funds-detail").then(r => setD(r)).catch(() => {});
   });
   useEffect(() => {

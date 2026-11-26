@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { apiFetch } from "../api";
+import { useLive } from "../lib/liveRead";   // FRESH-3
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
@@ -657,6 +658,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
     setRoster(r); setMovement(m); setFunds(Array.isArray(f) ? f : []); setLoading(false);
   }).catch(() => setLoading(false));
   useEffect(() => { load(); }, []);
+  useLive("finance.recurring", ["gift", "person"], () => load());   // FRESH-3: a cancel, a payment or a new plan moves the roster
 
   const say = msg => { setToast(msg); setTimeout(() => setToast(null), 4000); };
 

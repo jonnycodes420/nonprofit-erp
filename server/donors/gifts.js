@@ -915,8 +915,11 @@ app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
           + (SELECT COUNT(*)::int FROM pledge_installments WHERE pledge_id=? AND org_id=? AND paid_gift_id IS NOT NULL) AS n`,
     [req.params.id, req.user.orgId, req.params.id, req.user.orgId]);
   if (paid && paid.n > 0) {
-    return res.status(409).json({ error: "pledge_has_payments",
-      sentence: "This pledge has payments applied to it, so it cannot be deleted. Write it off instead." });
+    // FRESH-3 item 5 (W-1126-Finance-02): a written-off pledge was told to "write it off instead".
+    const said = p.status === "written_off"
+      ? "This pledge has payments applied to it, so it stays on the record: the payments are real gifts. It is already written off, so nothing more is expected on it."
+      : "This pledge has payments applied to it, so it cannot be deleted. Write it off instead.";
+    return res.status(409).json({ error: "pledge_has_payments", message: said, sentence: said });
   }
   const undoId = await trashRow("pledges", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" });

@@ -370,14 +370,19 @@ const ASKED_ABOUT = /^\s*(?:what(?:'s| is| was| are)|where(?:'s| is| does)|when(
 // What Steward does keep (an email, a phone, giving) is a question for Ask, never this.
 const KEPT = /\b(email|e-mail|phone|number|address|city|zip|giving|gave|given|gift|gifts|donat\w*|total|lifetime|last gift|first gift|pledge\w*|stage|tags?|household|spouse|employer|birthday|age|notes?|about)\b/i;
 const ASKED_OF = /^\s*(?:[Ww]hat(?:'s| is| was| are)|[Ww]here(?:'s| is| does)|[Ww]hen(?:'s| is)|[Dd]o you know|[Tt]ell me)\s+(?:the\s+)?([A-Z][\w-]*(?:\s+[A-Z][\w-]*)?)['’]s\s+([^?.!]{1,60}?)\s*[?.!]*\s*$/;
-export function cantKnow(words, { anyCase = false } = {}) {
+// ATLAS-12 item 5: "what's her favorite color" said after a name is that person's; `name` is who the question was about.
+const ASKED_OF_PRONOUN = /^\s*(?:what(?:'s| is| was| are)|where(?:'s| is| does)|when(?:'s| is)|do you know|tell me)\s+(his|her|their)\s+([^?.!]{1,60}?)\s*[?.!]*\s*$/i;
+export function cantKnow(words, { anyCase = false, name = null } = {}) {
   const w = String(words || "").replace(/\s+/g, " ").trim();
-  const m = ASKED_OF.exec(w) || (anyCase ? new RegExp(ASKED_OF.source, "i").exec(w) : null);
+  let m = ASKED_OF.exec(w) || (anyCase ? new RegExp(ASKED_OF.source, "i").exec(w) : null);
+  const p = !m && ASKED_OF_PRONOUN.exec(w);
+  if (p) m = [p[0], name || "", p[2]];
   if (!m) return null;
   const what = m[2].trim().replace(/^(?:the|their|her|his)\s+/i, "");
   if (KEPT.test(what)) return null;
-  const who = m[1].replace(/['’]s$/i, "").split(" ").map(x => x[0].toUpperCase() + x.slice(1)).join(" ");
-  return `I don't have ${who}'s ${what}. I can add it as a note if you tell me.`;
+  const who = m[1] ? m[1].replace(/['’]s$/i, "").split(" ").map(x => x[0].toUpperCase() + x.slice(1)).join(" ") : "";
+  // ATLAS-12 item 5 (Jarvis: "the color half ignored"): said plainly, whatever else the question asked.
+  return `Steward doesn't know ${who ? `${who}'s` : "their"} ${what}. I can add it as a note if you tell me.`;
 }
 // What Ask said when it could not answer, in plain words: never a quoted fragment of the question.
 export function plainCant(words, said) {
