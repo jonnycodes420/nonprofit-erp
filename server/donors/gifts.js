@@ -87,6 +87,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
   if (cc.error) return res.status(cc.status).json({ error: cc.error, code: cc.code });
   const campaignId = cc.campaignId || null;
   const paymentMethodIn = G.paymentMethod || null;
+  { const neg = require("../money/negativeGift").giftAmountRefusal(String(amount == null ? "" : amount).replace(/[$,\s]/g, "")); if (neg) return res.status(400).json(neg); }   // INPUT-1: its own sentence
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -174,6 +175,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
   let amt;
   try { amt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  { const neg = require("../money/negativeGift").giftAmountRefusal(amt); if (neg) return res.status(400).json(neg); }   // INPUT-1
 
   // PLEDGES-2 · A PAYMENT ABOVE WHAT IS STILL OWED ASKS (W-1107-Finance-25X):
   // record what is over as an extra gift, or reduce the payment to the balance.
@@ -348,6 +350,8 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   if (amount !== undefined) {
     try { newAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
     catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+    // INPUT-1: an edit can't turn a gift negative; a refund row keeps its sign.
+    if (!g.refund_of) { const neg = require("../money/negativeGift").giftAmountRefusal(newAmt); if (neg) return res.status(400).json(neg); }
   }
   // GIFTS-1: the event is editable; "" or null clears it, undefined keeps it.
   const eventIn = req.body.eventId !== undefined ? req.body.eventId : req.body.event_id;

@@ -341,6 +341,14 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   "Same as last" is the browser tab's (`client/src/lib/stickyGift.js`); the server never fills a field for her.
 - **Recurring giving lists every active plan (MONEY-4).** Card plans and staff-recorded offline plans, with a Source; MRR adds the offline plans' monthly equivalent (`shared/numbers/offlineMrr.js`) and says so.
 
+- **A negative amount is a refund, and only a refund (INPUT-1).** `recordGift` throws a 400 refusal
+  (`server/money/negativeGift.js`) for any negative amount not carrying `refundOf`; the gift form's create and edit
+  routes and the ledger's `POST /finance/transactions` answer the same sentence first. A client never strips a sign
+  it was typed with: it keeps the minus and says why under the field.
+- **What follows a future-dated gift happens on its day (INPUT-1).** The thank-you draft, journeys (and the gift's
+  thread) and sequences ask `giftDay.held` first; a scheduled gift writes a `gift_day_holds` row instead, and the
+  hourly tick releases it as a gift.recorded event naming only those steps (`only`). A new gift.recorded handler that
+  speaks to or about the donor holds the same way.
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)

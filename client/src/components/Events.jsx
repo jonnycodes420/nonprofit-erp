@@ -33,6 +33,7 @@ import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1
 import EventTicketTypes from "./events/EventTicketTypes";   // EVENTS-4: tickets made where the event is
 import { civil } from "../../../shared/eventPage";   // EVENTS-4: a one-day event is one date
 import KioskWalkIn from "./events/KioskWalkIn";   // EVENTS-4: the door's walk-in part, moved out whole
+import { checkInOnTheDay, confirmPastEvent } from "../lib/checkInDay";   // INPUT-1: check-in happens on the day
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -119,6 +120,7 @@ function NewEventPanel({ onSave, onClose }) {
 
   const save = async () => {
     if (!form.name.trim() || !form.date) return;
+    if (!(await confirmPastEvent(form.date, orgTodayCivil(), displayDate(form.date)))) return;   // INPUT-1: a past date asks first
     setSaving(true);
     try {
       const evt = await apiFetch("/events", {
@@ -1188,9 +1190,9 @@ export function EventKiosk({ eventId }) {
   const tap = async (g) => {
     setMsg("");
     try {
-      const r = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: g.id }) });
-      show(r, `${g.name} is in.`);
-      if (r && r.ok) eventRowsChanged(eventId);
+      const r = await checkInOnTheDay(`/events/${eventId}/check-in`, { attendeeId: g.id });
+      if (!r) { setMsg("Nothing was recorded. Check them in on the day."); return; }
+      show(r, `${g.name} is in.`); if (r.ok) eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
   const undoIn = async (g) => {
@@ -1222,7 +1224,8 @@ export function EventKiosk({ eventId }) {
       if (!r) return;
       const id = r && r.ids && r.ids[0];
       if (!id) { setMsg("They are already on the list. Find them by name above."); return; }
-      const c = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: id }) });
+      const c = await checkInOnTheDay(`/events/${eventId}/check-in`, { attendeeId: id });
+      if (!c) { setMsg("They are on the list. Nothing else was recorded; check them in on the day."); eventRowsChanged(eventId); return; }
       show(c, "In.");
       setTerm(""); setWalkGuestOf(""); setWalkEmail("");
       eventRowsChanged(eventId);

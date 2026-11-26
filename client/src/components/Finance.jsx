@@ -31,6 +31,7 @@ import { FinFundCards, Definitions4 } from "./finance/FundCards";   // NUMBERS-8
 import { Figure } from "./Figure";   // TRUTH-3: the ledger's three figures open their gifts
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { ConnectionLines } from "./connections/flowParts";   // HONEST-1
+import { ledgerAmountProblem } from "../lib/amountCheck";   // INPUT-1
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.
@@ -134,7 +135,13 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
   const [routing, setRouting] = useState(null);         // { kind:'grant'|'donor', entity } | null
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [amtErr, setAmtErr] = useState("");   // INPUT-1: said under the amount, keeping what she typed
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+  // INPUT-1: the server's refusal is said under the amount, not lost to the console.
+  const save = async payload => {
+    try { await onSave(payload); }
+    catch (e) { setAmtErr(errorMessage(e, "The entry was not saved.")); }
+  };
   const filtered = accounts.filter(a => a.active !== false && a.type === (form.type === "income" ? "revenue" : "expense"));
 
   // Debounced org-scoped lookup (donors + open grants) as the name is typed.
@@ -166,9 +173,11 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
   // open-ask foundation or a known donor gets ONE routing prompt first.
   const trySave = async () => {
     if (!form.description || !form.amount || busy) return;
-    setErr("");
+    setErr(""); setAmtErr("");
+    const amountProblem = ledgerAmountProblem(form.amount, form.type);
+    if (amountProblem) { setAmtErr(amountProblem); return; }
     const payload = { ...form, donorId: linked?.kind === "donor" ? linked.entity.id : undefined };
-    if (form.type !== "income") { onSave(payload); return; }
+    if (form.type !== "income") { save(payload); return; }
     if (linked?.kind === "grant") { setRouting({ kind:"grant", entity:linked.entity }); return; }
     if (linked?.kind === "donor") { setRouting({ kind:"donor", entity:linked.entity }); return; }
     const q = form.vendorDonor.trim();
@@ -186,7 +195,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
       } catch { /* lookup failure never blocks a manual save */ }
       setBusy(false);
     }
-    onSave(payload);
+    save(payload);
   };
 
   // Accept the grant prompt → the EXISTING award flow (PUT status:'awarded').
@@ -226,7 +235,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
   const decline = () => {
     const donorId = routing?.kind === "donor" ? routing.entity.id : (linked?.kind === "donor" ? linked.entity.id : undefined);
     setRouting(null);
-    onSave({ ...form, donorId });
+    save({ ...form, donorId });
   };
 
   const sugBtn = { display:"block", width:"100%", textAlign:"left", background:"none", border:"none", padding:"8px 11px", fontSize:13, color:T.ink, cursor:"pointer" };
@@ -288,7 +297,8 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Amount ($)</div>
-            <input type="number" value={form.amount} onChange={set("amount")} placeholder="0.00" style={inp}/>
+            <input type="number" value={form.amount} onChange={e => { setAmtErr(""); set("amount")(e); }} placeholder="0.00" style={inp} data-testid="fin-txn-amount" aria-invalid={amtErr ? "true" : undefined}/>
+            {amtErr && <div role="alert" data-testid="fin-txn-amount-error" style={{ fontSize:12, color:T.ink, background:T.gold50, border:"1px solid "+T.gold300, borderRadius:8, padding:"6px 10px", marginTop:6 }}>{amtErr}</div>}
           </div>
         </div>
         <div>
@@ -971,7 +981,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       if (thisYear) setTransactions(prev => [created, ...prev]);
       await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
       setShowTxnModal(false);
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); throw e; }   // INPUT-1: the modal says why
   };
 
   // A money-in routed to the grant-award or gift flow: the ledger was stamped

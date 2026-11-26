@@ -17,6 +17,7 @@ import { displayOrgDate } from "../lib/orgDay";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import TimeInput from "./inputs/TimeInput";   // FLOWS-5: a time as she types it
 import { VolunteerStatusRecord } from "./volunteers/VolunteerStatusRecord";   // VOL-3: status, and the record editable
+import { saveHours } from "../lib/hoursEntry";   // INPUT-1: over 16 hours asks first
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -78,11 +79,11 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
     catch (e) { setMsg(errorMessage(e, fallback)); return null; }
   };
   const save = () => act(async () => {
-    await apiFetch(`/donors/${donor.id}/volunteer-hours`, { method: "POST", body: JSON.stringify(entryBody(form)) });
+    if (!(await saveHours(`/donors/${donor.id}/volunteer-hours`, "POST", entryBody(form)))) return;
     setForm({ ...emptyEntry, key: entryKey() }); setAdding(false); setMsg("Hours saved.");
   }, "Those hours did not save.");
   const saveEdit = () => act(async () => {
-    await apiFetch(`/volunteer-shifts/${edit.id}`, { method: "PATCH", body: JSON.stringify(entryBody(edit)) });
+    if (!(await saveHours(`/volunteer-shifts/${edit.id}`, "PATCH", entryBody(edit)))) return;
     setEdit(null); setMsg("Changed.");
   }, "That change did not save.");
   const remove = s => act(async () => {

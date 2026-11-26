@@ -564,6 +564,10 @@ app.use((err, req, res, next) => {
   // FIX-58: an upload S3 refused every try is a 503 with its sentence, never a
   // 500 (and never a copy in Postgres; assetStore.putThemeAsset).
   if (require("../shared/requestLimits").answerError(err, req, res, route)) return;   // LOAD-1: too long, or abandoned
+  // INPUT-1: a writer's refusal (server/money/negativeGift.js) is the sender's mistake, with its sentence.
+  if (err && err.refusal === true && Number(err.status) >= 400 && Number(err.status) < 500) {
+    return res.status(Number(err.status)).json({ error: err.message, code: err.code, field: err.field || null, sentence: err.message });
+  }
   if (err && err.code === "asset_store_unavailable") {
     console.error(`[503] ${req.method} ${route} asset store unavailable`);
     return res.status(503).json({ error: err.message, code: err.code });

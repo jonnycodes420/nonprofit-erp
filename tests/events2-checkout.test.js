@@ -174,7 +174,7 @@ async function events4FreeNoStripe() {
   const kiosk = await api("GET", `/events/${E4}/kiosk`, tok);
   const ida = (kiosk.body?.guests || []).find(x => x.email === "ida.free@example.test");
   ok("§EVENTS-4 the free guest is expected at the door", !!ida && kiosk.body.expected === 2, kiosk.body?.expected);
-  const inRes = await api("POST", `/events/${E4}/check-in`, tok, { attendeeId: ida && ida.id });
+  const inRes = await api("POST", `/events/${E4}/check-in`, tok, { attendeeId: ida && ida.id, forShiftDate: true });
   ok("§EVENTS-4 …and checks in", inRes.body?.ok === true, inRes.body);
   await api("POST", `/events/${E4}/attendees`, tok, { name: "Ina Invited", email: "ina.invited@example.test" });
   const kiosk2 = await api("GET", `/events/${E4}/kiosk`, tok);
@@ -332,13 +332,13 @@ async function events4FreeNoStripe() {
   const PASS = await import("../shared/passCode.js");
   const secret = process.env.JWT_SECRET || "local-test-secret";
   const good = PASS.makePassCode({ kind: "ticket", orgId: ORG, id: att[0].id, expiresOn: null, secret });
-  const scan1 = await api("POST", `/events/${EVENT}/scan`, tok, { code: good });
+  const scan1 = await api("POST", `/events/${EVENT}/scan`, tok, { code: good, forShiftDate: true });
   ok("a real ticket checks the person in", scan1.body?.ok === true && /Fen/.test(scan1.body.sentence || ""), scan1.body);
   const bad = good.slice(0, -1) + (good.slice(-1) === "A" ? "B" : "A");
-  const scan2 = await api("POST", `/events/${EVENT}/scan`, tok, { code: bad });
+  const scan2 = await api("POST", `/events/${EVENT}/scan`, tok, { code: bad, forShiftDate: true });
   ok("an edited code is refused", scan2.body?.ok === false && scan2.body.reason === "tampered", scan2.body);
   const other = PASS.makePassCode({ kind: "ticket", orgId: "org_somebody_else", id: att[0].id, expiresOn: null, secret });
-  const scan3 = await api("POST", `/events/${EVENT}/scan`, tok, { code: other });
+  const scan3 = await api("POST", `/events/${EVENT}/scan`, tok, { code: other, forShiftDate: true });
   ok("a code signed for another org is refused here", scan3.body?.ok === false, scan3.body);
 
   await events4FreeNoStripe();

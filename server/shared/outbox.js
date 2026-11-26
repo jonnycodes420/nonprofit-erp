@@ -99,6 +99,7 @@ async function relay(ids = null) {
     const payload = typeof ev.payload === "string" ? JSON.parse(ev.payload) : (ev.payload || {});
     for (const h of handlers.get(ev.type) || []) {
       if (!h.applies({ ...payload, ready: ev.ready })) continue;
+      if (Array.isArray(payload.only) && !payload.only.includes(h.name)) continue;   // INPUT-1: a gift's day releases only what was held
       J.id.push("job_" + uuid().replace(/-/g, "").slice(0, 20)); J.name.push(jobName(h.name)); J.org.push(ev.org_id);
       J.key.push(`ev:${ev.id}:${h.name}`); J.payload.push(JSON.stringify({ eventId: ev.id })); J.round.push(ev.id); J.max.push(h.maxAttempts);
     }

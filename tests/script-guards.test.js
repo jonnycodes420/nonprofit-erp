@@ -102,6 +102,10 @@ const GUARDED_WRITERS = [
   // SENDS-2: sets one org's waiting volunteer reminders whose shift is not tomorrow to expired. Dry run
   // by default; --apply writes through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
   "sends2-stale-reminders",
+  // INPUT-1: lists the rows written before INPUT-1 that carry the old state (gift-form window since GIFTS-3,
+  // early thank-you drafts, wrapped shifts, check-in hours on the wrong day, negative ledger rows). Dry run by
+  // default; --apply (one org) only gives wrapped shifts their next-day end date, through writerDbUrl, one audit row.
+  "input1-existing-rows",
   // LETTERS-1: merges one org's campaigns that share a name into the oldest with a goal, through the
   // app's own merge (Undo kept). Dry run by default; --apply writes through writerDbUrl, one audit row
   // per merge. Never org_creo or the demo. Nothing sends.

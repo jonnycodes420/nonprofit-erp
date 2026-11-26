@@ -23,6 +23,7 @@ import PersonField from "./PersonField";
 import TributeFields from "./TributeFields";   // THANKS-1 item 5
 import SameAsLast from "./SameAsLast";
 import { unpickedProblem } from "../../lib/giftForm";
+import { NEGATIVE_GIFT_SENTENCE } from "../../lib/amountCheck";   // INPUT-1
 
 const TYPES = ["cash", "check", "credit_card", "stock", "in_kind", "matching", "other"];
 
@@ -43,6 +44,7 @@ export default function GiftForm({ mode = "create", form: f, setForm, pledges = 
   const unpicked = unpickedProblem(f);
   const cover = !edit && f.pledgeId && pledgeCoverWords ? pledgeCoverWords(open.find(x => x.id === f.pledgeId), f.amount) : "";
   const hasExtras = !!(f.sc || f.trib || f.match || f.tribType);
+  const amountSaid = error === NEGATIVE_GIFT_SENTENCE;   // INPUT-1: said under the Amount, not at the foot of the form
 
   return (
     <div data-testid={edit ? "gift-edit-form" : "dp-add-gift-form"} data-mode={mode}
@@ -51,9 +53,11 @@ export default function GiftForm({ mode = "create", form: f, setForm, pledges = 
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{edit ? "Edit gift" : "New Gift"}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 8 }}>
         <label><span style={lbl}>Amount</span>
-          {/* GIFTS-3 item 3: the amount is text in whole cents, never a browser's float */}
-          <input value={f.amount} onChange={e => set({ amount: e.target.value.replace(/[^0-9.,$]/g, "") })} placeholder={edit ? "Amount" : "Amount ($)"}
-            inputMode="decimal" autoComplete="off" data-testid={tid + "-amount"} style={inp} /></label>
+          {/* GIFTS-3 item 3: the amount is text in whole cents, never a browser's float.
+              INPUT-1: a minus stays as typed, so Save can say why it won't take it (it used to vanish). */}
+          <input value={f.amount} onChange={e => set({ amount: e.target.value.replace(/[^0-9.,$-]/g, "") })} placeholder={edit ? "Amount" : "Amount ($)"}
+            inputMode="decimal" autoComplete="off" data-testid={tid + "-amount"} aria-invalid={amountSaid ? "true" : undefined} style={inp} />
+          {amountSaid && <span role="alert" data-testid={tid + "-amount-error"} style={{ display: "block", fontSize: 12, color: T.ink, background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "5px 8px", marginTop: 4 }}>{error}</span>}</label>
         <label><span style={lbl}>Date</span>
           <DateInput value={f.date} onChange={e => set({ date: e.target.value })} style={inp} /></label>
         <label><span style={lbl}>Type</span>
@@ -106,7 +110,7 @@ export default function GiftForm({ mode = "create", form: f, setForm, pledges = 
           <PersonField label="Employer that will match it" value={f.match || null} onChange={pickPerson("match")} onTyped={typed("match")} compact={edit} testid={edit ? "gift-edit-match" : "gift-match-employer"} />
           <input value={f.matchAmount || ""} onChange={e => set({ matchAmount: e.target.value })} placeholder="Expected match (blank = same amount)" inputMode="decimal" style={inp} />
         </div>)}
-      {(error || unpicked || problem) && <div role="alert" data-testid={tid + "-error"} style={{ fontSize: 12, color: T.ink, background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>{error || unpicked || problem}</div>}
+      {((error && !amountSaid) || unpicked || problem) && <div role="alert" data-testid={tid + "-error"} style={{ fontSize: 12, color: T.ink, background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>{(amountSaid ? "" : error) || unpicked || problem}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.ink, cursor: "pointer" }}>
           <input type="checkbox" checked={!!f.thanked} onChange={e => set({ thanked: e.target.checked })} data-testid={tid + "-thanked"} style={{ accentColor: T.greenDk }} />

@@ -32,6 +32,7 @@ OUTBOX.on("gift.recorded", "journeys", async (raw, deps) => {
     const [t] = await deps.query(`SELECT 1 FROM donors WHERE id = ? AND email LIKE '%@jobs1-fail.test'`, [raw.donorId]);
     if (t) throw new Error("the journey engine is down (a test told it to be)");
   }
+  if (await require("../giftDay").held(raw, deps, "journeys")) return;   // INPUT-1: its journeys and its task wait for its day
   const p = await giftFacts(raw, deps);
   if (!p) return;
   const failed = fires(p) && p.amount > 0 ? await startJourneys(p, deps) : [];

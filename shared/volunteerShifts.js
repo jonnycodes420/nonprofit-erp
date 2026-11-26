@@ -262,9 +262,19 @@ export function validateSlot(raw = {}) {
   const endTime = String(raw.endTime || "").slice(0, 5);
   if (!TIME_RE.test(startTime)) errors.push({ field: "startTime", message: "A shift needs a start time, like 09:00." });
   if (!TIME_RE.test(endTime)) errors.push({ field: "endTime", message: "A shift needs an end time, like 13:00." });
-  const hundredths = TIME_RE.test(startTime) && TIME_RE.test(endTime) ? slotHundredths({ startTime, endTime }) : null;
-  if (TIME_RE.test(startTime) && TIME_RE.test(endTime) && hundredths === null) {
-    errors.push({ field: "endTime", message: `A shift is more than zero and at most ${MAX_SHIFT_HOURS} hours long.` });
+  // INPUT-1 item 5: the end comes after the start. An overnight shift says so
+  // with an end date, the next day; an end before the start is never guessed.
+  const rawEnd = String(raw.endDate || "").slice(0, 10);
+  const endDate = DATE_RE.test(rawEnd) && rawEnd !== date ? rawEnd : null;
+  const times = TIME_RE.test(startTime) && TIME_RE.test(endTime);
+  let hundredths = null;
+  if (endDate && DATE_RE.test(date) && endDate !== addDaysCivil(date, 1)) {
+    errors.push({ field: "endDate", message: "An overnight shift ends the day after it starts." });
+  } else if (times && !endDate && minutesOf(endTime) <= minutesOf(startTime)) {
+    errors.push({ field: "endTime", message: "The shift ends before it starts. For an overnight shift, set the end date to the next day." });
+  } else if (times) {
+    hundredths = slotHundredths({ startTime, endTime });
+    if (hundredths === null) errors.push({ field: "endTime", message: `A shift is more than zero and at most ${MAX_SHIFT_HOURS} hours long.` });
   }
   // CAPACITY: null is unlimited, a number is a number, and a number is
   // refused rather than rounded — somebody typing "eight" meant eight.
@@ -288,7 +298,7 @@ export function validateSlot(raw = {}) {
   const r = validateRoles(raw.roles);
   errors.push(...r.errors);
   return { ok: errors.length === 0, errors,
-    slot: { date, startTime, endTime, capacity, notes, hundredths, name, color, venue, locationDetail, published, roles: r.roles } };
+    slot: { date, endDate, startTime, endTime, capacity, notes, hundredths, name, color, venue, locationDetail, published, roles: r.roles } };
 }
 
 export function validateCredential(raw = {}, today = null) {
@@ -412,9 +422,24 @@ export const FOOTER_SENTENCES = Object.freeze({
 // Two shifts overlap when they are on the same day and each starts before the
 // other ends. Back to back (one ends at 12:00, the next starts at 12:00) is
 // not a conflict: that is somebody doing the morning and the afternoon.
+// INPUT-1 item 5: a place is a span of real time, start to end, so a shift
+// that runs past midnight (an end date the next day) overlaps what it really
+// overlaps, and the conflict count and the badge read the same spans. A shift
+// saved before this with its end before its start, and no end date, is read
+// the way its hours were booked: ending the next day.
+const DAY_MS = 86400000;
+const dayNo = iso => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / DAY_MS;
+export function spanOf(p) {
+  const a = minutesOf(p && p.startTime), b = minutesOf(p && p.endTime);
+  if (!p || !DATE_RE.test(String(p.date || "")) || a === null || b === null) return null;
+  const startDay = dayNo(String(p.date));
+  const endDay = DATE_RE.test(String(p.endDate || "")) ? dayNo(String(p.endDate)) : (b > a ? startDay : startDay + 1);
+  return { s: startDay * 1440 + a, e: endDay * 1440 + b };
+}
 export function overlaps(a, b) {
-  if (!a || !b || a.date !== b.date) return false;
-  return minutesOf(a.startTime) < minutesOf(b.endTime) && minutesOf(b.startTime) < minutesOf(a.endTime);
+  const x = spanOf(a), y = spanOf(b);
+  if (!x || !y) return false;
+  return x.s < y.e && y.s < x.e;
 }
 // Every pair of a person's places that overlap. `places` are
 // { personId, slotId, date, startTime, endTime }, only places that count
@@ -427,10 +452,10 @@ export function findConflicts(places = []) {
   }
   const out = [];
   for (const [personId, list] of byPerson) {
-    list.sort((x, y) => (x.date + x.startTime).localeCompare(y.date + y.startTime));
-    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
-      if (list[j].date !== list[i].date) break;
-      if (list[i].slotId !== list[j].slotId && overlaps(list[i], list[j])) out.push({ personId, a: list[i].slotId, b: list[j].slotId, date: list[i].date });
+    const spans = list.map(p => ({ p, sp: spanOf(p) })).filter(x => x.sp).sort((x, y) => x.sp.s - y.sp.s);
+    for (let i = 0; i < spans.length; i++) for (let j = i + 1; j < spans.length; j++) {
+      if (spans[j].sp.s >= spans[i].sp.e) break;   // sorted by start: nothing later can overlap i
+      if (spans[i].p.slotId !== spans[j].p.slotId) out.push({ personId, a: spans[i].p.slotId, b: spans[j].p.slotId, date: spans[i].p.date });
     }
   }
   return out;

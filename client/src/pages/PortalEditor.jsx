@@ -41,6 +41,7 @@ import InlineText, { INLINE_CSS } from "../components/InlineText";
 import { retryImport } from "../lib/lazyRetry";
 import PageThemeRail from "../components/PageThemeRail";
 import HistoryPanel from "../components/PageHistoryPanel";
+import { keepTyped } from "../lib/keepTyped";   // INPUT-1: an autosave never eats a space she is typing
 import WidgetOptions, { E, btnQuiet, inp, lbl } from "./PortalEditorBlockOptions";   // PAGES-1: split out (file size)   // PAGES-1: moved to its own module (file size)        // PAGES-1: the page's own theme
 import { pageVarsFor, PAGE_BUTTON_CSS } from "./VolunteerPage";   // PAGES-1: the same theme CSS as the public page
 import { draftForm } from "../lib/previewForm";   // GIFTS-3 item 4: the preview draws the draft's form
@@ -342,7 +343,8 @@ export default function PortalEditor() {
         // Adopt the server's canonical row (normalized colors, data URIs →
         // asset URLs) ONLY if nothing changed while the request was in flight.
         if (seq === psSeq.current) {
-          const { adjusted, message, ...row } = r;
+          const { adjusted, message, ...saved } = r;
+          const row = keepTyped(next, saved);   // INPUT-1
           psRef.current = row; setPs(row);
           setDesignNote(adjusted ? (message || "Adjusted slightly for legibility.") : "");
           setSaveState("saved");
@@ -369,7 +371,7 @@ export default function PortalEditor() {
         const r = await apiFetch(apiBase + "/draft", { method: "PUT", body: JSON.stringify({ widgets: next, formPosition: pos ?? formPosition }) });
         // Adopt the server's canonical draft (data-URI images became asset
         // paths) ONLY if nothing changed while the request was in flight.
-        if (seq === editSeq.current) { setWidgets(r.draft); setSaveState("saved"); loadPreview(); }
+        if (seq === editSeq.current) { setWidgets(keepTyped(next, r.draft)); setSaveState("saved"); loadPreview(); }   // INPUT-1
       } catch (e) { setErr(errorMessage(e, "Could not save the draft.")); setSaveState("error"); }
     }, 1200);
   }, [apiBase, formPosition, loadPreview]);
@@ -384,7 +386,7 @@ export default function PortalEditor() {
     try {
       const r = await apiFetch(apiBase + "/settings", { method: "PUT", body: JSON.stringify(body) });
       if (seq === dsSeq.current) {
-        if (r && r.draftSettings) { dsRef.current = r.draftSettings; setDs(r.draftSettings); }
+        if (r && r.draftSettings) { const kept = keepTyped(next, r.draftSettings); dsRef.current = kept; setDs(kept); }   // INPUT-1
         setMeta(m => m ? { ...m, draftSettings: r?.draftSettings || m.draftSettings } : m);
         setDsErrors([]); setDsSave("saved");
         loadPreview();
@@ -1025,10 +1027,22 @@ function AmountList({ valueDollars, onChange, min = 0, max = 8, whole = false, t
 // headline and the story are typed in the preview, so they are not here; the
 // cover photo is its own section (passed in), and a click on a part of the
 // preview opens the section that sets it (`at`).
+// The draft's own words over the normalized ones, field by field (INPUT-1).
+function typedDesign(raw, norm) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const str = (v, d) => (typeof v === "string" ? v : d);
+  const impact = { ...norm.impact };
+  if (r.impact && typeof r.impact === "object") for (const k of Object.keys(r.impact)) impact[k] = str(r.impact[k], impact[k]);
+  return { ...norm, impact, privacyUrl: str(r.privacyUrl, norm.privacyUrl), phone: str(r.phone, norm.phone) };
+}
 function giftSections({ ds, onSet, onSetForm, errors, funds, camps, saveState, facts = {}, at, formPosition, onFormPosition, coverSection }) {
   const f = ds.form || {};
   // GIVE-3 — the page's design, one field at a time onto the draft.
-  const design = normalizeDesign(ds.design);
+  // INPUT-1 item 2: the boxes show what she TYPED. normalizeDesign squeezes and trims every line,
+  // and a box fed that on each render could not hold a space at the end of a word: typing
+  // "Every gift helps" into an amount's line saved "Everygifthelps" (Jarvis, 25 Nov). The
+  // normalized copy fills what she has not typed; the server tidies the ends when it saves.
+  const design = typedDesign(ds.design, normalizeDesign(ds.design));
   const setDesign = patch => onSet("design", { ...design, ...patch });
   const needs = wayNeeds(facts, design);
   const des = f.designation || { mode: "none", fundId: null, fundIds: [] };

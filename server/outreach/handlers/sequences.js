@@ -10,6 +10,7 @@ const OUTBOX = require("../../shared/outbox");
 const { giftFacts, fires } = require("./giftFacts");
 
 OUTBOX.on("gift.recorded", "sequences", async (raw, deps) => {
+  if (await require("../giftDay").held(raw, deps, "sequences")) return;   // INPUT-1: a future gift enrolls on its day
   const p = await giftFacts(raw, deps);
   if (!p) return;
   const armed = (key) => !p.armedSequences || p.armedSequences.includes(key);
