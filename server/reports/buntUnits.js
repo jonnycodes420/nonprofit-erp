@@ -51,7 +51,10 @@ async function buntUnits(query, orgId, rows) {
   for (const [, members] of units) {
     const hhName = members.map(m => hh.get(m.id)).find(x => x && x.household_name);
     const lead = [...members].sort((a, b) => b.priorYearTotal - a.priorYearTotal || String(a.id).localeCompare(String(b.id)))[0];
-    const name = members.length === 1 ? lead.name : hhName ? hhName.household_name : members.map(m => m.name).join(" and ");
+    // NUMBERS-9 item 4 (W-1126-Atlas-01): a household line's Lifetime is its people's added, so its
+    // name never reads as one person's: a household named for one of them says "household".
+    const hhLabel = hhName && members.some(m => m.name === hhName.household_name) ? `${hhName.household_name} household` : hhName && hhName.household_name;
+    const name = members.length === 1 ? lead.name : hhLabel || members.map(m => m.name).join(" and ");
     const mine = new Set(members.map(m => m.id));
     // Also connected: an Owner / Works at link to someone else on this list, their own amount, on their own row.
     const connected = [];
@@ -62,7 +65,7 @@ async function buntUnits(query, orgId, rows) {
       if (o && !connected.some(c => c.id === o.id)) connected.push({ id: o.id, name: o.name, how: CONNECTED_WORD[l.type], priorYearTotal: o.priorYearTotal });
     }
     out.push({
-      id: lead.id, name, unit: members.length === 1 ? null : "household", members: members.length > 1 ? members.map(m => ({ id: m.id, name: m.name })) : null,
+      id: lead.id, name, unit: members.length === 1 ? null : "household", members: members.length > 1 ? members.map(m => ({ id: m.id, name: m.name, lifetimeGiving: m.lifetimeGiving })) : null,
       connected: connected.length ? connected : null,
       email: lead.email, assignedTo: lead.assignedTo,
       priorYearTotal: Math.round(members.reduce((s, m) => s + Math.round(m.priorYearTotal * 100), 0)) / 100,

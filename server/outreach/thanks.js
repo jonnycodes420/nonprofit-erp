@@ -54,8 +54,18 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
   const draftMod = await import("../../shared/draftNote.js");
   const voice = draftMod.voiceFrom(samples);
+  // NUMBERS-9 item 6 (W-1125-Finance-T7): the card counted drafts and said nothing of the gifts
+  // waiting behind them ("4 thank-yous ready" beside 7 gifts not yet thanked). The backlog is the
+  // one definition (shared/numbers/thankBacklog.js); the card says it whenever it differs.
+  const TB = require("../../shared/numbers/thankBacklog");
+  const since = await require("../../routes/crm").reportHooks.thanksSince(orgId);
+  const bl = await TB.backlog(query, orgId, since);
+  const sinceWords = orgTime.formatCivil(since);
+  const backlog = { ...bl, sinceWords, source: { key: "unthanked", params: { since } }, definition: TB.SENTENCE,
+    sentence: bl.n !== rows.length || bl.drafted !== rows.length ? TB.backlogWords(bl, sinceWords) : null };
   res.json({
     count: rows.length,
+    backlog,
     // The sentence Home shows. Numbers under ten spelled, BUILD-86 C.2's rule.
     headline: rows.length === 0 ? null
       : `${["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"][rows.length] || rows.length} thank-you${rows.length === 1 ? "" : "s"} ready.`,
@@ -275,18 +285,18 @@ app.get("/acknowledgments/backlog", requireAuth, wrap(async (req, res) => {
   const days = Number.isInteger(org?.ack_backlog_days) && org.ack_backlog_days >= 0 ? org.ack_backlog_days : ACK.DEFAULT_ACK_BACKLOG_DAYS;
   const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
   const cutoff = orgTime.addDays(today, -days);
-  const rows = await query(
-    `SELECT g.id, g.amount, g.date, g.donor_id, d.name, d.address, d.city, d.state, d.zip, d.deceased, f.name AS fund
-       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-       LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14, THANKS-1: the one rule (a receipt is not a thank-you)
-        AND g.is_sample IS NOT TRUE AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
-        AND g.date <= ? AND g.date >= ?
-      ORDER BY g.date ASC, d.name LIMIT 500`, [orgId, cutoff, orgTime.addDays(today, -730)]);
+  // NUMBERS-9 item 6: the backlog is the waiting-to-be-thanked gifts (shared/numbers/thankBacklog.js
+  // WAITING, from the day she started with Steward; it was its own 730 days) older than her N days.
+  const TB = require("../../shared/numbers/thankBacklog");
+  const since = await require("../../routes/crm").reportHooks.thanksSince(orgId);
+  const { rows, older } = await TB.waitingOlderThan(query, orgId, since, cutoff);
+  const all = await TB.backlog(query, orgId, since);
+  const sinceWords = orgTime.formatCivil(since);
   res.json({
-    days, cutoff,
-    // The one sentence under the count, per BUILD-97 Part 2.
-    sentence: `Gifts that arrived more than ${days === 1 ? "a day" : days + " days"} ago and nobody has marked as thanked. An administrator can change the number of days here.`,
+    days, cutoff, since, waiting: { n: all.n, cents: all.cents, drafted: all.drafted }, older,
+    // The one sentence under the count, per BUILD-97 Part 2, and how it differs from Home's count.
+    sentence: `${older.toLocaleString("en-US")} of the ${all.n.toLocaleString("en-US")} ${all.n === 1 ? "gift" : "gifts"} waiting to be thanked since ${sinceWords} arrived more than ${days === 1 ? "a day" : days + " days"} ago. An administrator can change the number of days here.`,
+    definition: TB.SENTENCE,
     gifts: rows.map(r => ({ id: r.id, amount: Number(r.amount), date: r.date, donorId: r.donor_id, name: r.name, fund: r.fund,
       hasAddress: !!ACK.addressLines(r), deceased: !!r.deceased })),
   });

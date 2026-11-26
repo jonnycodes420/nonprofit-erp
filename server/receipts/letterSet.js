@@ -45,6 +45,7 @@ function makeLetterSet({ query, ACK_READY, donorFacingOrgName }) {
   async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false, userId = null, excludeDoNotContact = false, today = "" } = {}) {
     const ACK = await ACK_READY;
     const L = require("./letterDoc");
+    const D = require("../../shared/numbers/deductible");
     const ids = [...new Set((Array.isArray(giftIds) ? giftIds : []).map(String).filter(Boolean))].slice(0, 1000);
     if (!ids.length) return { error: "Choose the gifts to write letters for." };
     const tpl = await ackTemplate(orgId, templateId);
@@ -64,7 +65,9 @@ function makeLetterSet({ query, ACK_READY, donorFacingOrgName }) {
     for (const r of rows) {
       const e = byDonor.get(r.donor_id) || { donor: r, gifts: [] };
       e.gifts.push({ id: r.id, amount: r.amount, date: r.date, fund: r.fund, tributeType: r.tribute_type, tributeName: r.tribute_name,
-                     qpqValue: r.quid_pro_quo_value, deductible: r.deductible_amount, event: r.event_name, campaign: r.campaign_name });
+                     qpqValue: r.quid_pro_quo_value, deductible: r.deductible_amount, event: r.event_name, campaign: r.campaign_name,
+                     // NUMBERS-9 item 2: the one deductible rule (shared/numbers/deductible.js), read by the letter's words too
+                     deductibleCents: D.giftDeductibleCents(r) });
       byDonor.set(r.donor_id, e);
     }
     // Never blank: an unsigned letter is not posted.
@@ -94,7 +97,7 @@ function makeLetterSet({ query, ACK_READY, donorFacingOrgName }) {
       }
       // HOME-3: what was received in exchange, and what is deductible, under every letter that needs it
       const text = fields._goodsServices ? `${r.text}\n\n${fields._goodsServices}` : r.text;
-      const deductibleCents = gifts.reduce((t, g) => t + ACK.deductibleCents(g), 0);
+      const deductibleCents = D.deductibleAcross(gifts).deductibleCents;   // NUMBERS-9 item 2: = the letter's own "In all" line
       letters.push({ donorId: donor.donor_id, name: donor.name, address, text, giftIds: giftIdsHere, totalCents: fields._totalCents, deductibleCents,
                      signer: signer.name, goodsServices: fields._goodsServices || "", layout: layout ? L.fillLayout(layout, fields) : null });
     }

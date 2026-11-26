@@ -93,7 +93,17 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                     <button type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(g.id)} style={{background:"none",border:"none",padding:0,color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",textDecoration:"underline dotted"}}>{g.name}</button>
                     <span style={{whiteSpace:"nowrap"}}><Figure variant="inline" kind="money" value={g.cents/100} label={givesThrough.org?`${g.name}, given through ${donor.name}`:`Given through ${g.name}`} definition={givesThrough.definition} source={g.source}/></span>
                   </div>))}
+                {/* NUMBERS-9 item 5: how each was credited (an Owner link or a soft credit), so it never reads as their own giving */}
+                {givesThrough.rows.some(g=>g.howWords)&&<div data-testid="dp-rail-gives-through-how" style={{fontSize:12,color:RAIL.dim,lineHeight:1.45}}>{givesThrough.rows.filter(g=>g.howWords).map(g=>`${g.name}: ${g.howWords}`).join(". ")}.</div>}
                 <div style={{fontSize:12,color:RAIL.dim,marginTop:4,lineHeight:1.45}}>{givesThrough.definition}</div>
+              </RailSection>}
+              {/* NUMBERS-9 item 5 (W-1125-Finance-37, repeat): linked to an organization as a program officer or an
+                  employee, nothing of its giving is theirs. Said by name, so an empty Giving tab is not read as a fault. */}
+              {!givesThrough&&(relationships||[]).some(r=>r.creditsNothing)&&<RailSection title="Gives through" testid="dp-rail-not-through">
+                {(relationships||[]).filter(r=>r.creditsNothing).map(r=>(
+                  <div key={r.id} data-testid="dp-rail-not-through-row" style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.5,padding:"2px 0"}}>
+                    {`${r.relatedDonorName}'s gifts are its own: nothing is credited to ${donor.name}. Link them as Owner (gives through it), or add a soft credit on a gift, to credit them.`}
+                  </div>))}
               </RailSection>}
               {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving
                   pattern, how to reach them, and the tags the header did not show. */}

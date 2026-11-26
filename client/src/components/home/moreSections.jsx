@@ -41,6 +41,8 @@ export function thankYouSection({ TY_WORDS, cPad, cardWrap, onNavigate, onPanel,
       <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
         <div style={{minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:8}}>
           <span style={sSerif}>{thankYous.headline}</span>
+          {/* NUMBERS-9 item 6: the gifts waiting to be thanked behind the drafts, when the counts differ */}
+          {thankYous.backlog&&thankYous.backlog.sentence&&<div data-testid="ty-backlog-line" style={{fontSize:12,lineHeight:1.5,color:T.ink3}}>{thankYous.backlog.sentence}</div>}
           {thankYous.voice&&!thankYous.voice.ready&&(
             <div data-testid="ty-voice-line" style={{fontSize:12,lineHeight:1.5,color:T.ink3}}>
               Plain for now. Paste {TY_WORDS[thankYous.voice.needs]||thankYous.voice.needs} of your own thank-yous and Steward will write like you.

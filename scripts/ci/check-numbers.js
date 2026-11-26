@@ -126,7 +126,7 @@ async function checkOrg(orgId, opts = {}) {
   const gifts = await query(
     `SELECT g.id, g.donor_id, g.type, g.amount::text AS amount, g.date, g.created_at, to_char(g.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS created_us, g.import_row, g.campaign_id, g.campaign, g.fund_id,
             COALESCE(g.cover_fee_amount, 0)::text AS cover, g.is_sample, g.dispute_status, g.deductible_amount::text AS deductible_amount,
-            g.refunded_in_full, g.scheduled_on
+            g.refunded_in_full, g.scheduled_on, g.refund_of
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]);
   const donors = await query(
@@ -180,7 +180,9 @@ async function checkOrg(orgId, opts = {}) {
     const impLast = imp ? day(d.imported_last_gift_date) : null;
     const rowLast = latest ? day(latest.date) : null;
     const wantLast = rowLast && (!impLast || rowLast >= impLast) ? rowLast : impLast;
-    const wantLastAmt = rowLast && (!impLast || rowLast >= impLast) ? c(latest.amount) : impLast ? c(d.imported_last_gift_amount) : 0;
+    // NUMBERS-9 item 3: the last gift as it is now, less what was refunded on it (written out here).
+    const netOf = g => c(g.amount) + (byDonor.get(d.id) || []).filter(r => r.refund_of === g.id).reduce((n, r) => n + c(r.amount), 0);
+    const wantLastAmt = rowLast && (!impLast || rowLast >= impLast) ? netOf(latest) : impLast ? c(d.imported_last_gift_amount) : 0;
     if ((day(d.last_gift_date) || null) !== (wantLast || null)) add("donor-stored", { donor: d.id, what: "last_gift_date", stored: day(d.last_gift_date), gifts: wantLast });
     else if (c(d.last_gift_amount) !== wantLastAmt) add("donor-stored", { donor: d.id, what: "last_gift_amount", stored: c(d.last_gift_amount), gifts: wantLastAmt });
     if ((!gs.length && !imp) || (sample && !sample.has(d.id))) return;

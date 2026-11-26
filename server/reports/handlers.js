@@ -341,19 +341,19 @@ async function reportBuntList(orgId, p, kind) {
   const fast = kind === "lybunt" && B.samePrior(cur, prior) ? B.lybuntSet(orgId, cur, prior) : null;
   const rows = fast ? await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
-            COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
+            ROUND(${NUMBERS.lifetime.LIFETIME("d")}, 2) AS total_giving, d.last_gift_date, d.last_gift_amount,   -- NUMBERS-9 item 4: the profile's Lifetime, live
             COALESCE(ga.prior_sum, 0) AS prior_year_total, ?::text AS last_year_from, ?::text AS last_year_to
        FROM donors d JOIN ${fast.sql} ga ON ga.donor_id = d.id
       WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${B.LIVE_PERSON("d")}
-      ORDER BY COALESCE(d.total_giving, 0) DESC, d.id`,
+      ORDER BY 5 DESC, d.id`,
     [prior.from, prior.to, ...fast.args, orgId]) : await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
-            COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
+            ROUND(${NUMBERS.lifetime.LIFETIME("d")}, 2) AS total_giving, d.last_gift_date, d.last_gift_amount,   -- NUMBERS-9 item 4: the profile's Lifetime, live
             ${NUMBERS.givingBetween.LAST_YEAR_SUM("d")} AS prior_year_total, ly.f AS last_year_from, ly.t AS last_year_to
      FROM donors d ${NUMBERS.givingBetween.LAST_YEAR_JOIN("d")}
      WHERE d.org_id = ? AND d.deleted_at IS NULL
        AND ${bp0.sql}
-     ORDER BY COALESCE(d.total_giving, 0) DESC, d.id`,
+     ORDER BY 5 DESC, d.id`,
     // LEDGER-1: each person's amount is what they gave in the last year they
     // gave (givingBetween.LAST_YEAR_SUM): last year for LYBUNT, and for SYBUNT
     // their own last year, never the prior year they did not give in.

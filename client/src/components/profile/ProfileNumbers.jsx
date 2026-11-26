@@ -89,7 +89,7 @@ export function ProfileNumbers({ figures }) {
       <Tile label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime" f={F.lifetime} kind="money" figureKey="profile.lifetime" under={lifeUnder} giveWay={10000} />
       <Tile label="This fiscal year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear" f={F.thisYear} kind="money" figureKey="profile.thisYear" under={fyUnder} />
       <Tile label="Last gift" def={censusById("profile.lastGift").sentence} testid="dp-fig-lastGift" f={F.lastGift} kind="money" figureKey="profile.lastGift"
-        under={lg && lg.date ? `${displayDate(lg.date)}${lg.method && !/^(unknown|needs you)$/i.test(lg.method) ? ` · ${lg.method}` : ""}` : null} />
+        under={lg && lg.date ? `${displayDate(lg.date)}${lg.method && !/^(unknown|needs you)$/i.test(lg.method) ? ` · ${lg.method}` : ""}${lg.refundWords ? ` · ${lg.refundWords}` : ""}` : null} />
       <Tile label="Last contact" def={lc.def} testid="dp-fig-lastContact" f={lc.f} kind="count" suffix=" days ago" figureKey={lc.key} under={lc.under} />
     </div>
   );
