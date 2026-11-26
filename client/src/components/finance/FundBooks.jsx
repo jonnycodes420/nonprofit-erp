@@ -44,7 +44,26 @@ export function FundBooksLines({ f, defs = {} }) {
           {` in ${f.waiting.count === 1 ? "1 gift" : `${f.waiting.count.toLocaleString("en-US")} gifts`} not on the books yet.`}
         </div>
       )}
+      <FundGapLines f={f} name={f.name}/>
     </>
+  );
+}
+
+// NUMBERS-9 item 1 (W-1122-Finance-F7): gifts on the books beside transactions in. The sentence says
+// whether they agree, and each part of any difference is a figure that opens its rows
+// (shared/numbers/fundGap.js). The card and the dialog show the same server words.
+export function FundGapLines({ f, name }) {
+  if (!f || !f.gapWords) return null;
+  return (
+    <div data-testid="fund-gap" style={{ fontSize:12, color:T.ink3, marginTop:4, lineHeight:1.5 }}>
+      <div data-testid="fund-gap-words">{f.gapWords}</div>
+      {(f.gapLines || []).map(l => (
+        <div key={l.kind} data-testid={`fund-gap-${l.kind}`} style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
+          <span>{l.label} ({l.n.toLocaleString("en-US")})</span>
+          <Hold style={{ fontWeight:700, color:T.ink }}><Figure variant="inline" kind="money" value={l.cents / 100} label={`${name}, ${l.label.toLowerCase()}`} source={l.source}/></Hold>
+        </div>
+      ))}
+    </div>
   );
 }
 

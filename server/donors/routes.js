@@ -56,6 +56,8 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   let { whereSql, params, orderBy, selectCols, selectArgs } = filter;
   // TRUTH-5 (W-1109-Finance-35X): each row's gift count is giftCount.js's, the profile's, never the stored rollup.
   selectCols = `${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live`;
+  // NUMBERS-9 item 3 (W-1126-Finance-01): what was refunded on the last gift, so a row says "$35 · $50 less a $15 refund".
+  selectCols = `${selectCols}, ${require("../../shared/numbers/lastGift").LAST_GIFT_REFUNDED("donors")} AS last_gift_refunded`;
   // WALKB-1 · A SEARCH SAYS WHY EACH PERSON MATCHED, NAMES FIRST
   // (server/donors/personMatch.js personMatchReasonSql).
   const searchQ = String(req.query.search || "").trim();
@@ -181,7 +183,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const _sumLost = require("../../shared/numbers/lapse").lostSql("donors", _sumToday);   // COUNTS-1: Re-engage's Lost & Found
   const _vis = require("../auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
   const donors = await query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
-                  last_gift_amount, gift_count, assigned_to, assigned_to_name,
+                  last_gift_amount, ${require("../../shared/numbers/lastGift").LAST_GIFT_REFUNDED("donors")} AS last_gift_refunded, gift_count,   -- NUMBERS-9 item 3 assigned_to, assigned_to_name,
                   pending_assignee_invite_id, pending_assignee_name,
                   city, state, zip, country, address, kind, contact_name,
                   latitude, longitude, geocode_status,
@@ -354,7 +356,8 @@ async function donorProfileFigures(orgId, donorId, today) {
   // figure's own first row (the same rows its drawer opens), so the date under
   // Last gift is the date of the gift that number is.
   const UNDER = {
-    lastGift: r => r.date ? { date: String(r.date).slice(0, 10) } : null,
+    // NUMBERS-9 item 3: the amount is the gift less its refund; the refund is named under it.
+    lastGift: r => r.date ? { date: String(r.date).slice(0, 10), refundWords: /^Less a refund/.test(String(r.detail || "")) ? String(r.detail) : null } : null,
     lastMet: r => ({ date: String(r.date || "").slice(0, 10) || null, what: meetingPhrase(r.name) }),
     // POLISH-4: an email from them is "from them", not "replied": nothing says
     // it answered one of hers ("Email replied Oct 30" for a first message).

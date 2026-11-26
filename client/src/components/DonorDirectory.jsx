@@ -41,6 +41,12 @@ import { useTop100On } from "../lib/top100On";   // POLISH-12
 import { filteredEmptySentence } from "../../../shared/filteredEmpty.js";   // FLOWS-13 item 4: an empty filtered list names its filters
 import { useCanExport } from "../lib/exportAccess";   // ACCESS-3: no Export CSV for the Campaign cabinet
 import { HouseholdListRow, unitCountWords } from "./donors/HouseholdListRow";   // HOUSEHOLD-1 item 2
+
+// NUMBERS-9 item 3 (W-1126-Finance-01): a last gift is shown as it is now, the gift less its refund,
+// and the refund is named ("$35 · $50 less a $15 refund"), the words of shared/numbers/lastGift.js.
+function lastAmountWords(d) {
+  return d.lastRefunded > 0 ? `${fmtFull(d.lastAmount)} · ${fmtFull(d.lastAmount + d.lastRefunded)} less a ${fmtFull(d.lastRefunded)} refund` : fmtFull(d.lastAmount);
+}
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.
@@ -239,7 +245,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null,
               <div className="re-col-lifetime" style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
               <div className="re-col-lastgift" style={{textAlign:"right"}}>
                 {giftDate
-                  ?<><div style={{fontSize:13,color:T.ink,fontWeight:600}}>{giftDate}</div><div style={{fontSize:11,color:T.ink3,marginTop:1}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div></>
+                  ?<><div style={{fontSize:13,color:T.ink,fontWeight:600}}>{giftDate}</div><div style={{fontSize:11,color:T.ink3,marginTop:1}}>{d.lastAmount>0?lastAmountWords(d):""}</div></>
                   :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>
                 }
               </div>
@@ -1072,7 +1078,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   lifetime:()=>(
                 <span style={{...oneLine,fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</span>),
                   last_gift_date:()=>(d.lastGift
-                    ?<><span style={{...oneLine,fontSize:12,color:T.ink}}>{displayMonth(d.lastGift)}</span>{!compact&&<span style={{...oneLine,fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):"—"}</span>}</>
+                    ?<><span style={{...oneLine,fontSize:12,color:T.ink}}>{displayMonth(d.lastGift)}</span>{!compact&&<span style={{...oneLine,fontSize:11,color:T.ink3}}>{d.lastAmount>0?lastAmountWords(d):"—"}</span>}</>
                     :<><span style={{...oneLine,fontSize:12,color:T.ink3}}>No gift</span>{!compact&&<span style={{...oneLine,fontSize:11,color:T.ink3}}>—</span>}</>),
                   engagement:()=>{
                     // TABLE-1: one shape on every row, a score and a word. Nothing
@@ -1130,7 +1136,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   {searchWhy(d)&&<div data-testid="match-why" style={{fontSize:13,color:T.ink2,marginTop:2,overflowWrap:"anywhere"}}>{searchWhy(d)}</div>}
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
                     {fmtFull(d.total)}
-                    {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{displayMonth(d.lastGift)}</>:" · no gifts yet"}
+                    {d.lastGift?<>{" · "}{d.lastAmount>0?lastAmountWords(d)+" ":""}{displayMonth(d.lastGift)}</>:" · no gifts yet"}
                   </div>
                 </div>
                 {sc!=null

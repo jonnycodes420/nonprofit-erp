@@ -14,6 +14,28 @@ const { GIFT } = require("./money");
 // are the same in every way a person can see.
 const LAST_GIFT_ORDER = "g.date DESC NULLS LAST, g.created_at DESC, g.amount DESC, g.import_row DESC NULLS LAST, g.id DESC";
 
+// NUMBERS-9 item 3 (W-1126-Finance-01): "Last gift $50 gross while Lifetime is $35 net after a $15
+// refund". The last gift is still the latest gift (a refund is never one), and its amount is the
+// gift as it is now: less what was refunded on it (refunds.js NET_AMOUNT), with the refund named:
+// "$35 · $50 less a $15 refund". The stored donors.last_gift_amount is this net figure
+// (donorSummary.js), so the Directory, lists, exports and merge fields agree with Lifetime.
+// SQL: what has been refunded on gift row `g`, in dollars (0 when nothing).
+const REFUNDED_ON = (g = "g") => `COALESCE(-(SELECT SUM(rf.amount) FROM gifts rf WHERE rf.org_id = ${g}.org_id AND rf.refund_of = ${g}.id), 0)`;
+// SQL: gift row `g`'s amount less its refunds, in dollars.
+const NET_OF = (g = "g") => `(${g}.amount - ${REFUNDED_ON(g)})`;
+// SQL: what was refunded on person `d`'s last gift on file, in dollars (0 when nothing, or no gift).
+const LAST_GIFT_REFUNDED = (d = "d") => `COALESCE((SELECT ${REFUNDED_ON("g")} FROM gifts g
+    WHERE g.org_id = ${d}.org_id AND g.donor_id = ${d}.id AND g.date IS NOT NULL AND ${GIFT("g")}
+    ORDER BY ${LAST_GIFT_ORDER} LIMIT 1), 0)`;
+const usd = c => "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+// The words for a last gift: "$35 · $50 less a $15 refund", or "$50" when nothing came back.
+function lastGiftWords({ cents, refundedCents = 0 }) {
+  if (cents == null) return "";
+  if (!(refundedCents > 0)) return usd(cents);
+  return `${usd(cents)} · ${usd(cents + refundedCents)} less a ${usd(refundedCents)} refund`;
+}
+const REFUND_SENTENCE = "The last gift is shown as it is now: the gift less anything refunded on it, the same basis as Lifetime.";
+
 // SQL: person `d`'s last gift date on file (no imported floor), or NULL.
 const LAST_ON_FILE = (d = "d") => `(SELECT MAX(lg.date) FROM gifts lg WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND lg.date IS NOT NULL AND ${GIFT("lg")})`;
 // SQL: with the imported last gift as the floor.
@@ -23,14 +45,14 @@ const LAST_DATE = (d = "d") => `GREATEST(${LAST_ON_FILE(d)}, NULLIF(${d}.importe
 async function lastGifts(query, orgId, ids) {
   if (!ids || !ids.length) return new Map();
   const rows = await query(
-    `SELECT DISTINCT ON (d.id) d.id, g.date AS g_date, ROUND(g.amount * 100)::bigint AS g_cents,
+    `SELECT DISTINCT ON (d.id) d.id, g.date AS g_date, ROUND(${NET_OF("g")} * 100)::bigint AS g_cents, ROUND(${REFUNDED_ON("g")} * 100)::bigint AS g_refunded,
             NULLIF(d.imported_last_gift_date, '') AS imp_date, ROUND(COALESCE(d.imported_last_gift_amount, 0) * 100)::bigint AS imp_cents
        FROM donors d LEFT JOIN gifts g ON g.org_id = d.org_id AND g.donor_id = d.id AND g.date IS NOT NULL AND ${GIFT("g")}
       WHERE d.org_id = ? AND d.id = ANY(?::text[])
       ORDER BY d.id, ${LAST_GIFT_ORDER}`, [orgId, ids]);
   return new Map(rows.map(r => {
     const onFile = r.g_date ? String(r.g_date).slice(0, 10) : null, imp = r.imp_date ? String(r.imp_date).slice(0, 10) : null;
-    const v = onFile && (!imp || onFile >= imp) ? { date: onFile, cents: Number(r.g_cents) }
+    const v = onFile && (!imp || onFile >= imp) ? { date: onFile, cents: Number(r.g_cents), refundedCents: Number(r.g_refunded) || 0 }
       : imp ? { date: imp, cents: Number(r.imp_cents) } : null;
     return [r.id, v];
   }));
@@ -47,4 +69,4 @@ function lastOf(rows, imported = null) {
   return top;
 }
 
-module.exports = { LAST_GIFT_ORDER, LAST_ON_FILE, LAST_DATE, lastGifts, lastOf };
+module.exports = { LAST_GIFT_ORDER, LAST_ON_FILE, LAST_DATE, lastGifts, lastOf, REFUNDED_ON, NET_OF, LAST_GIFT_REFUNDED, lastGiftWords, REFUND_SENTENCE };

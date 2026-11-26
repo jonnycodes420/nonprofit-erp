@@ -22,9 +22,11 @@ const { COUNTED } = require("./giftCount");
 const { GIFT_FUND_ROWS, LEDGER_FUND_ROWS } = require("./fundLines");
 const LS = require("./ledgerStatus");
 const { fundBooks } = require("./fundBooks");
+const FG = require("./fundGap");   // NUMBERS-9 item 1: why gifts on the books and transactions in differ
 
 const SENTENCES = {
   balance: "The books: every income row on this fund less every expense row, in every year. The dialog lists those same rows.",
+  gap: FG.SENTENCE,
   gifts: "Every gift that lands in this fund, in any year, by where it stands with the books. A gift that names no fund lands in the default fund, because that is where it posts.",
 };
 
@@ -38,7 +40,7 @@ const EMPTY = () => ({
 // this fiscal year's gifts that name no fund (fundBooks.js).
 async function fundCard(query, orgId, { fyFrom, today, month, defaultId = null, fundId = null }) {
   const one = fundId ? " AND f.id = ?" : "";
-  const [ledger, gifts, books] = await Promise.all([
+  const [ledger, gifts, books, gaps] = await Promise.all([
     query(
       `SELECT f.id AS fund_id,
               COALESCE(SUM(CASE WHEN ft.type='income'  THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_all,
@@ -63,6 +65,7 @@ async function fundCard(query, orgId, { fyFrom, today, month, defaultId = null, 
         GROUP BY 1, 2`,
       [defaultId, fyFrom, orgId, ...(fundId ? [defaultId, fundId] : [])]),
     fundBooks(query, orgId, { from: fyFrom, to: today, fyFrom, defaultId }),
+    FG.fundGap(query, orgId, { defaultId, fundId }),
   ]);
   const out = new Map();
   const row = id => { if (!out.has(id)) out.set(id, EMPTY()); return out.get(id); };
@@ -83,6 +86,7 @@ async function fundCard(query, orgId, { fyFrom, today, month, defaultId = null, 
     if (!out.has(id)) continue;
     Object.assign(out.get(id), { receivedCents: b.receivedCents, receivedCount: b.receivedCount });
   }
+  for (const [id, g] of gaps) if (out.has(id)) out.get(id).gap = g;
   out.noFund = books.noFund;
   return out;
 }
@@ -103,4 +107,7 @@ function giftWords(f) {
     + (g.noFundIn ? ` ${g.noFundIn === 1 ? "1 of them names no fund and posts" : `${g.noFundIn.toLocaleString("en-US")} of them name no fund and post`} here, the default fund.` : "");
 }
 
-module.exports = { fundCard, balanceWords, giftWords, SENTENCES };
+// NUMBERS-9 item 1: the line that says why the two figures differ (fundGap.js), the same on card and dialog.
+const gapWords = f => FG.gapWords(f);
+
+module.exports = { fundCard, balanceWords, giftWords, gapWords, SENTENCES };

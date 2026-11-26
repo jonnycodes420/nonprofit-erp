@@ -749,13 +749,12 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     -- the gift's org); it lets the planner read this org's recent gifts by
     -- (org_id, date) instead of probing every donor: 43 ms -> 10 ms at 25k.
     JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id
-    WHERE d.org_id = ? AND d.deleted_at IS NULL
-      AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14: the one thank-you rule
+    WHERE d.org_id = ? AND ${require("../../shared/numbers/thankBacklog").WAITING("g", "d")}   -- NUMBERS-9 item 6: the one backlog rule
       AND d.deceased IS NOT TRUE
       AND g.date >= ? ${scopeClause}
     ORDER BY g.amount DESC
     LIMIT 5
-  `, [orgId, ninetyDaysAgo, ...scopeParams]),
+  `, [orgId, await require("../../routes/crm").reportHooks.thanksSince(orgId), ninetyDaysAgo, ...scopeParams]),   // the largest five of the backlog, last 90 days
     // Tax receipts — $250+ gifts with no acknowledgment (applied only when
     // the org has receipts enabled)
     query(`

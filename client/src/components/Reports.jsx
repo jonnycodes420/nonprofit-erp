@@ -586,7 +586,11 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave in their last year", type: "money",
           ...(active === "sybunt" ? { render: r => `${fmtFull(r.priorYearTotal)}${r.lastYear ? ` · ${yearMode === "fiscal" ? fyLabelFromEnd(Number(String(r.lastYear.to).slice(0, 4)), fsm) : String(r.lastYear.from).slice(0, 4)}` : ""}` } : {}) },
         { key: "lastGiftDate", label: "Last gift", type: "date", render: r => `${displayDate(r.lastGiftDate) || "No date"}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
-        { key: "lifetimeGiving", label: "Lifetime", type: "money" },
+        // NUMBERS-9 item 4 (W-1126-Atlas-01): a household line's Lifetime is its people's, added, and says so, each
+        // person at their own profile's Lifetime (shared/numbers/lifetime.js, live); never one name beside the sum.
+        { key: "lifetimeGiving", label: "Lifetime", type: "money", render: r => r.members && r.members.every(m => m.lifetimeGiving != null)
+          ? <span data-testid="bunt-unit-lifetime">{fmtFull(r.lifetimeGiving)}<span style={{ display: "block", color: T.ink3, fontWeight: 400, fontSize: 12 }}>{`household: ${r.members.map(m => `${m.name} ${fmtFull(m.lifetimeGiving)}`).join(" + ")}`}</span></span>
+          : fmtFull(r.lifetimeGiving) },
         { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span>, hideWhenEmpty: true },
         { key: "email", label: "Email", type: "text", render: r => r.email || <span style={{ color: T.ink3 }}>No email</span> },
       ]} rows={shownRows} />;
