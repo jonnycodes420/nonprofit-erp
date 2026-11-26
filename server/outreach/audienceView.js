@@ -81,13 +81,14 @@ function zeroWhy(id, n, f) {
     : { text: "No one is lapsing or lapsed: everyone who gave has given in the last 12 months, or a pledge holds them." };
   if (id === "major") {
     if (f.majorAll) return { text: `${f.majorAll.toLocaleString("en-US")} ${f.majorAll === 1 ? "donor is" : "donors are"} at the Major level, and none has an email address.` };
-    if (!f.staged) return { text: `No one gave at your Major level in the last 12 months, and no one has a major-gift stage yet. Set stages for your top ${TOP_TO_STAGE}.`, noStages: true, action: setStages };
+    if (!f.staged) return { text: `No one gave at your Major level in the last 12 months, and no one has a major-gift stage yet.`, noStages: true, action: setStages };
     return { text: `No one gave at your Major level (${f.majorCut}) in the last 12 months.`, action: { label: "Change the levels", to: "giving-levels" } };
   }
   const word = STAGE_WORD[id];
-  if (!f.staged) return id === "solicit"
-    ? { text: "Comes from Major Gifts stages, and none are set yet.", noStages: true, action: setStages }
-    : { text: `No one has a major-gift stage yet, so no one is at ${word}.`, noStages: true, action: setStages };
+  // The mockup's words: the Major card carries the step; the stage cards say where they come from.
+  if (!f.staged) return id === "prospect"
+    ? { text: "No one is marked as a prospect: no one has a major-gift stage yet.", noStages: true }
+    : { text: `Comes from Major Gifts stages (${word}), and none are set yet.`, noStages: true };
   if (f.stageAll[id]) return { text: `${f.stageAll[id].toLocaleString("en-US")} ${f.stageAll[id] === 1 ? "person is" : "people are"} at ${word}, and none has an email address.` };
   return { text: `No one is at the ${word} stage yet.`, action: { label: "Open the pipeline", to: "pipeline" } };
 }
@@ -111,7 +112,7 @@ async function audienceView(ctx, orgId, { coordinator = false } = {}) {
   const DEF = {
     all: { label: "All donors", short: "Everyone with an email who has given.",
       definition: "Every donor with an email address. People who only volunteer or work here are not in it." },
-    lapsed: { label: lapsePop.name, population: "lapsing_or_lapsed", short: "Gave before, nothing in about the last 12 months.",
+    lapsed: { label: lapsePop.name, population: "lapsing_or_lapsed", short: "Last gift 9 to 12 months ago, or none in 12 months.",
       definition: `${lapsePop.name}, with an email address: ${P.ids.lapsed.length.toLocaleString("en-US")} of the ${P.quiet.size.toLocaleString("en-US")} ${POPS.unitWords("lapsing_or_lapsed", P.quiet.size)} on it. ${lapsePop.sentence}` },
     steward: { label: "In ongoing care", short: "At the Ongoing care stage in Major Gifts.", definition: "Donors with an email address at the Ongoing care stage." },
     major: { label: "Major donors", short: `Gave ${facts.majorCut} in the last 12 months.`,

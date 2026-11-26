@@ -49,7 +49,8 @@ export function firstLine(body) {
 }
 export function mailtoFor(d) {
   if (!d.donorEmail) return null;
-  return `mailto:${encodeURIComponent(d.donorEmail)}?subject=${encodeURIComponent(d.subject || "Thank you for your gift")}&body=${encodeURIComponent(d.body || "")}`;
+  // The address keeps its @ (some mail apps do not decode %40); the rest is encoded.
+  return `mailto:${encodeURIComponent(d.donorEmail).replace(/%40/g, "@")}?subject=${encodeURIComponent(d.subject || "Thank you for your gift")}&body=${encodeURIComponent(d.body || "")}`;
 }
 
 export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Thank-yous waiting to send", intro, onNavigate, hideWhenEmpty = false, testid = "ty-drafts", selection = null, onCount = null }) {
