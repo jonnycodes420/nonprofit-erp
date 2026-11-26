@@ -34,6 +34,17 @@ function lastGiftWords({ cents, refundedCents = 0 }) {
   if (!(refundedCents > 0)) return usd(cents);
   return `${usd(cents)} · ${usd(cents + refundedCents)} less a ${usd(refundedCents)} refund`;
 }
+// SQL (binds org id, person id): the profile's Last gift row, its amount net of refunds, its detail
+// naming the refund ("Less a refund of $15.00 on $50.00") or how it was paid. `order` is LAST_GIFT_ORDER.
+const LAST_GIFT_ROW = (order = LAST_GIFT_ORDER) => `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
+       ROUND(${NET_OF("g")}::numeric, 2) AS amount,
+       CASE WHEN ${REFUNDED_ON("g")} > 0
+            THEN 'Less a refund of ' || TO_CHAR(${REFUNDED_ON("g")}, 'FM$999,999,990.00') || ' on ' || TO_CHAR(g.amount, 'FM$999,999,990.00')
+            ELSE COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) END AS detail
+  FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+  LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+ WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id = ? AND g.date IS NOT NULL AND ${GIFT("g")}
+ ORDER BY ${order} LIMIT 1`;
 const REFUND_SENTENCE = "The last gift is shown as it is now: the gift less anything refunded on it, the same basis as Lifetime.";
 
 // SQL: person `d`'s last gift date on file (no imported floor), or NULL.
@@ -69,4 +80,4 @@ function lastOf(rows, imported = null) {
   return top;
 }
 
-module.exports = { LAST_GIFT_ORDER, LAST_ON_FILE, LAST_DATE, lastGifts, lastOf, REFUNDED_ON, NET_OF, LAST_GIFT_REFUNDED, lastGiftWords, REFUND_SENTENCE };
+module.exports = { LAST_GIFT_ORDER, LAST_ON_FILE, LAST_DATE, lastGifts, lastOf, REFUNDED_ON, NET_OF, LAST_GIFT_REFUNDED, lastGiftWords, REFUND_SENTENCE, LAST_GIFT_ROW };

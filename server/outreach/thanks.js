@@ -289,18 +289,9 @@ app.get("/acknowledgments/backlog", requireAuth, wrap(async (req, res) => {
   // WAITING, from the day she started with Steward; it was its own 730 days) older than her N days.
   const TB = require("../../shared/numbers/thankBacklog");
   const since = await require("../../routes/crm").reportHooks.thanksSince(orgId);
-  const rows = await query(
-    `SELECT g.id, g.amount, g.date, g.donor_id, d.name, d.address, d.city, d.state, d.zip, d.deceased, f.name AS fund
-       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-       LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND ${TB.WAITING("g", "d")}   -- the one rule (a receipt is not a thank-you; a draft still waits)
-        AND g.date <= ?
-      ORDER BY g.date ASC, d.name LIMIT 500`, [orgId, since, cutoff]);
+  const { rows, older } = await TB.waitingOlderThan(query, orgId, since, cutoff);
   const all = await TB.backlog(query, orgId, since);
   const sinceWords = orgTime.formatCivil(since);
-  const older = rows.length < 500 ? rows.length : (await query(
-    `SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id=? AND ${TB.WAITING("g", "d")} AND g.date <= ?`, [orgId, since, cutoff]))[0].n;
   res.json({
     days, cutoff, since, waiting: { n: all.n, cents: all.cents, drafted: all.drafted }, older,
     // The one sentence under the count, per BUILD-97 Part 2, and how it differs from Home's count.

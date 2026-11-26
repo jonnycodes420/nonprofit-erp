@@ -2820,11 +2820,8 @@ async function main() {
                           processor_fee_amount = $4, processor_fee_source = 'stripe_balance_transaction'
           WHERE id = $1 AND org_id = $5`,
         [g.id, chargedCents / 100, (chargedCents - intendedCents) / 100, feeCents / 100, ORG]);
-      // NUMBERS-9 item 1 (W-1122-Finance-F7): the gift's ledger row was written at the intended
-      // amount; the ledger counts the charge (giftFooting.js), so its row moves with it. Before this,
-      // General Operating's gifts on the books stood $82.13 above its transactions in.
-      await q(`UPDATE fin_transactions SET amount = $2 WHERE gift_id = $1 AND org_id = $3 AND type = 'income'`,
-        [g.id, chargedCents / 100, ORG]);
+      // NUMBERS-9 item 1: the ledger counts the charge (giftFooting.js), so the gift's row moves with it.
+      await q(`UPDATE fin_transactions SET amount = $2 WHERE gift_id = $1 AND org_id = $3 AND type = 'income'`, [g.id, chargedCents / 100, ORG]);
     }
     // The donor rollups move with them, because the charge IS the gift.
     await q(

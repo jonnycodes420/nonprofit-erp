@@ -1022,16 +1022,8 @@ const SOURCES = {
     sql: (orgId, p) => ({
       // IMPORT-4: the last gift is a dated one; a gift with no date is never "last".
       // NUMBERS-3: the last GIFT (shared/numbers/lastGift.js): never a refund or a credit row.
-      // NUMBERS-9 item 3 (W-1126-Finance-01): the gift as it is now, less anything refunded on it, and the refund named.
-      sql: `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
-                   ROUND(${LG9.NET_OF("g")}::numeric, 2) AS amount,
-                   CASE WHEN ${LG9.REFUNDED_ON("g")} > 0
-                        THEN 'Less a refund of ' || TO_CHAR(${LG9.REFUNDED_ON("g")}, 'FM$999,999,990.00') || ' on ' || TO_CHAR(g.amount, 'FM$999,999,990.00')
-                        ELSE COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) END AS detail
-              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-              LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id = ?
-               AND g.date IS NOT NULL AND ${require("./shared/numbers/money").GIFT("g")} ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,   // MONEY-4: never a gift refunded in full
+      // NUMBERS-9 item 3 (W-1126-Finance-01): the gift less its refunds, the refund named (lastGift.js LAST_GIFT_ROW).
+      sql: LG9.LAST_GIFT_ROW(LAST_GIFT_ORDER),   // MONEY-4: never a gift refunded in full
       args: [orgId, p.donor],
     }),
   },

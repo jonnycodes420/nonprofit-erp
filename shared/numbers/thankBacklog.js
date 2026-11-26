@@ -41,6 +41,21 @@ async function backlog(query, orgId, since) {
   return { n: Number(r && r.n) || 0, cents: Number(r && r.cents) || 0, drafted: Number(r && r.drafted) || 0, since };
 }
 
+// Acknowledgments' backlog: the waiting gifts dated on or before `cutoff` (her N days), oldest first,
+// the first 500 listed, and how many there are in all.
+async function waitingOlderThan(query, orgId, since, cutoff) {
+  const rows = await query(
+    `SELECT g.id, g.amount, g.date, g.donor_id, d.name, d.address, d.city, d.state, d.zip, d.deceased, f.name AS fund
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id
+      WHERE g.org_id = ? AND ${WAITING("g", "d")} AND g.date <= ?
+      ORDER BY g.date ASC, d.name LIMIT 500`, [orgId, since, cutoff]);
+  const older = rows.length < 500 ? rows.length : (await query(
+    `SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND ${WAITING("g", "d")} AND g.date <= ?`, [orgId, since, cutoff]))[0].n;
+  return { rows, older };
+}
+
 const SENTENCE = "Waiting to be thanked: every gift dated on or after the day you started with Steward with no thank-you logged. A refund, a gift refunded in full, sample data and a deleted person's gifts wait for no thanks. A drafted thank-you still waits until it is marked sent.";
 
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
@@ -55,4 +70,4 @@ function backlogWords(b, sinceWords) {
   return `${gifts(b.n)} (${usd(b.cents)}) ${b.n === 1 ? "is" : "are"} waiting to be thanked since ${sinceWords}; ${tail}.`;
 }
 
-module.exports = { WAITING, DRAFTED, backlog, backlogWords, SENTENCE };
+module.exports = { waitingOlderThan, WAITING, DRAFTED, backlog, backlogWords, SENTENCE };
