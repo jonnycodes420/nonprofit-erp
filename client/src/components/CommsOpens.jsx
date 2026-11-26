@@ -2,13 +2,9 @@
 // where nothing did: an Audience row, an Analytics number, a bar, the people in
 // Your email tool. The pieces that make each one open live here so the
 // 2,700-line Communications.jsx only places them.
-import { useEffect, useState } from "react";
-import { apiFetch } from "../api";
-import { T, Spin, stageName } from "./shared";
-import { DonorLink } from "./RecordLink";
-import { Figure } from "./Figure";
+import { useState } from "react";
+import { T } from "./shared";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
-import { errorMessage } from "../lib/domainError";
 
 // "$55,000" for whole dollars, "$55,000.50" otherwise. One way to write money here.
 export function dollars(n) {
@@ -36,86 +32,7 @@ export function OpenRows({ source, title, value, kind = "count", children, testi
 }
 
 // ── AUDIENCE ─────────────────────────────────────────────────────────────────
-// Counted by the server with the rules a campaign sends by
-// (GET /communications/audience). Each chip shows its people; every name opens
-// the profile and every total opens the gifts behind it.
-export function AudienceTab({ onEmailSegment }) {
-  const [d, setD] = useState(null);
-  const [err, setErr] = useState("");
-  const [seg, setSeg] = useState("all");
-  const [all, setAll] = useState(false);
-  useEffect(() => {
-    apiFetch("/communications/audience").then(setD).catch(e => setErr(errorMessage(e, "Audience did not load.")));
-  }, []);
-  if (err) return <div style={{ color: T.ink, padding: 20 }}>{err}</div>;
-  if (!d) return <Spin />;
-  const active = d.segments.find(s => s.id === seg) || d.segments[0];
-  const shown = all ? active.rows : active.rows.slice(0, 50);
-  const giving = active.rows.length > 0 && active.rows[0].totalGiving !== undefined;
-  const cols = giving ? "1fr 200px 120px 110px" : "1fr 200px 120px";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="audience-tab">
-      {/* At phone width a row is the name and what they gave; the email and
-          stage are on the profile the name opens. */}
-      <style>{`@media (max-width: 640px){ .aud-grid{grid-template-columns:minmax(0,1fr) auto !important} .aud-email,.aud-stage{display:none} }`}</style>
-      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Audience</h2>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {d.segments.map(s => (
-          <button key={s.id} type="button" aria-pressed={seg === s.id} data-testid="audience-seg" data-seg={s.id}
-            onClick={() => { setSeg(s.id); setAll(false); }}
-            style={{ background: T.white, border: "1px solid " + (seg === s.id ? T.ink : T.bg3), borderRadius: 8,
-                     padding: "7px 14px", cursor: "pointer", color: seg === s.id ? T.ink : T.ink3, fontSize: 12.5,
-                     fontWeight: seg === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 6 }}>
-            {s.label}
-            <span data-testid="audience-seg-count" style={{ background: T.bg3, borderRadius: 99, padding: "1px 7px", fontSize: 11, color: T.ink }}>
-              {s.count.toLocaleString("en-US")}
-            </span>
-          </button>
-        ))}
-      </div>
-      <div data-testid="audience-definition" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: "70ch" }}>
-        {active.definition}
-        {active.id === "all" && d.donorTotal !== null && d.donorTotal !== active.count &&
-          ` ${active.count.toLocaleString("en-US")} of your ${d.donorTotal.toLocaleString("en-US")} donors have one; Donors counts all of them.`}
-      </div>
-      {active.rows.length === 0 ? (
-        <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>Nobody is in this audience today.</div>
-      ) : (
-        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-          <div className="aud-grid" style={{ display: "grid", gridTemplateColumns: cols, padding: "9px 16px", fontSize: 10, fontWeight: 700, color: T.ink3, gap: 8 }}>
-            <span>Name</span><span className="aud-email">Email</span><span className="aud-stage">Stage</span>{giving && <span>Given in total</span>}
-          </div>
-          {shown.map(p => (
-            <div key={p.id} data-testid="audience-row" className="audience-row aud-grid"
-              style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 16px", borderTop: "1px solid " + T.bg3, fontSize: 13, gap: 8, alignItems: "center", minWidth: 0 }}>
-              <DonorLink id={p.id} style={{ fontWeight: 600, color: T.ink }}>{p.name}</DonorLink>
-              <span className="aud-email" style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.email}</span>
-              <span className="aud-stage" style={{ fontSize: 11.5, color: T.ink3 }}>{p.stage ? stageName(p.stage) : "Not set"}</span>
-              {giving && <span style={{ fontSize: 12.5, color: T.ink }}>
-                <Figure variant="cell" kind="money" value={p.totalGiving} label={`${p.name}, given in total`}
-                  source={{ key: "donor-lifetime", params: { donor: p.id } }} />
-              </span>}
-            </div>
-          ))}
-          {active.rows.length > 50 && (
-            <button type="button" data-testid="audience-show-all" onClick={() => setAll(v => !v)}
-              style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 16px", fontSize: 12.5, color: T.green, fontWeight: 700,
-                       background: "none", border: "none", borderTop: "1px solid " + T.bg3, cursor: "pointer" }}>
-              {all ? "Show the first 50" : `Show all ${active.rows.length.toLocaleString("en-US")}`}
-            </button>
-          )}
-        </div>
-      )}
-      {onEmailSegment && (
-        <button type="button" onClick={onEmailSegment}
-          style={{ alignSelf: "flex-start", background: T.green, color: T.white, border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, cursor: "pointer" }}>
-          Email this audience
-        </button>
-      )}
-    </div>
-  );
-}
-
+// COMMS-3: moved to communications/AudienceView.jsx (who you can reach, the six cards, the list).
 // ── SENDS PER MONTH ──────────────────────────────────────────────────────────
 // One bar per month over the last twelve, labelled, each opening that month's
 // sends (figure source emails-sent with the month's first and last day). Months

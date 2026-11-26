@@ -48,9 +48,10 @@ async function downloadPost(path, body, fallbackName) {
 function GivingLetters({ isReadOnly, templates }) {
   const first = takePick();
   const [sources, setSources] = useState(null);
-  const [kind, setKind] = useState(first && first.campaignId ? "campaign" : "event");
-  const [id, setId] = useState(first ? (first.eventId || first.campaignId || "") : "");
-  const [from, setFrom] = useState("");
+  // COMMS-3: Audience's "Send them a printed letter" leaves { group: "mail_only", from }.
+  const [kind, setKind] = useState(first && first.group ? "group" : first && first.campaignId ? "campaign" : "event");
+  const [id, setId] = useState(first ? (first.group || first.eventId || first.campaignId || "") : "");
+  const [from, setFrom] = useState(first && first.from ? first.from : "");
   const [to, setTo] = useState("");
   const [tplId, setTplId] = useState("");
   const [preview, setPreview] = useState(null);
@@ -60,7 +61,7 @@ function GivingLetters({ isReadOnly, templates }) {
   const [thankYou, setThankYou] = useState(false);
   const [marked, setMarked] = useState(null);
   useEffect(() => { apiFetch("/letters/giving/sources").then(setSources).catch(() => setSources({ events: [], campaigns: [] })); }, []);
-  const choice = () => ({ [kind === "event" ? "eventId" : "campaignId"]: id, from: from || null, to: to || null, templateId: tplId || null });
+  const choice = () => ({ [kind === "group" ? "group" : kind === "event" ? "eventId" : "campaignId"]: id, from: from || null, to: to || null, templateId: tplId || null });
   const doPreview = useCallback(async () => {
     if (!id) return;
     setBusy("preview"); setMsg(""); setMarked(null);
@@ -81,20 +82,21 @@ function GivingLetters({ isReadOnly, templates }) {
     catch (e) { setMsg(errorMessage(e, "The letters could not be marked.")); }
     setBusy("");
   };
-  const list = sources ? (kind === "event" ? sources.events : sources.campaigns) : [];
+  const list = sources ? (kind === "event" ? sources.events : kind === "campaign" ? sources.campaigns : []) : [];
   return (
     <section style={card} data-testid="letters-giving">
       <h2 style={h2}>Letters for everyone who gave</h2>
-      <p style={sub}>Pick an event or a campaign and the dates. Steward writes one letter for each person who gave, with the deductible amount their receipt shows.</p>
+      <p style={sub}>Pick an event, a campaign or your mail-only donors (no email, a postal address), and the dates. Steward writes one letter for each person who gave, with the deductible amount their receipt shows.</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={kind} onChange={e => { setKind(e.target.value); setId(""); }} style={input} aria-label="Event or campaign" data-testid="letters-kind">
+        <select value={kind} onChange={e => { setKind(e.target.value); setId(e.target.value === "group" ? "mail_only" : ""); }} style={input} aria-label="Event or campaign" data-testid="letters-kind">
           <option value="event">An event</option>
           <option value="campaign">A campaign</option>
+          <option value="group">Your mail-only donors</option>
         </select>
-        <select value={id} onChange={e => setId(e.target.value)} style={{ ...input, minWidth: 220 }} aria-label={kind === "event" ? "Event" : "Campaign"} data-testid="letters-source">
+        {kind !== "group" && <select value={id} onChange={e => setId(e.target.value)} style={{ ...input, minWidth: 220 }} aria-label={kind === "event" ? "Event" : "Campaign"} data-testid="letters-source">
           <option value="">{!sources ? "Loading…" : list.length ? `Choose ${kind === "event" ? "an event" : "a campaign"}` : `No ${kind === "event" ? "event" : "campaign"} has gifts yet`}</option>
           {list.map(s => <option key={s.id} value={s.id}>{s.name}{s.dateWords ? ` · ${s.dateWords}` : ""}</option>)}
-        </select>
+        </select>}
         <label style={{ fontSize: 13, color: T.ink3 }}>From <DateInput value={from} onChange={e => setFrom(e.target.value)} style={input} data-testid="letters-from" /></label>
         <label style={{ fontSize: 13, color: T.ink3 }}>To <DateInput value={to} onChange={e => setTo(e.target.value)} style={input} data-testid="letters-to" /></label>
         <select value={tplId} onChange={e => setTplId(e.target.value)} style={input} aria-label="Letter template" data-testid="letters-template">

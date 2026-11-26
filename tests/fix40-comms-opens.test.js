@@ -165,7 +165,7 @@ async function main() {
       seg("all").count === 2 && JSON.stringify((seg("all").rows || []).map(r => r.id).sort()) === JSON.stringify([D.ada, D.ben]), seg("all"));
     ok("§counts …and it says how many donors Donors counts", aud.body.donorTotal === 3, aud.body.donorTotal);
     ok("§counts Lapsing or lapsed is the one lapse rule: Ben's last gift was ten months ago", seg("lapsed").label === "Lapsing or lapsed" && seg("lapsed").count === 1 && seg("lapsed").rows[0].id === D.ben, seg("lapsed"));
-    ok("§counts the words: \"Major\" (FIX-49: the Major giving level)", seg("major").label === "Major" && seg("major").count === 1, seg("major"));
+    ok("§counts the words: \"Major donors\" (FIX-49: the Major giving level; COMMS-3's card name)", seg("major").label === "Major donors" && seg("major").count === 1, seg("major"));
     ok("§counts each segment carries its one-line definition", (aud.body.segments || []).every(s => s.definition && s.definition.length > 20));
     const audOther = await api("GET", "/communications/audience", otherTok);
     ok("§tenant another org's Audience names nobody from this one", !JSON.stringify(audOther.body).includes("Fortyworth"));

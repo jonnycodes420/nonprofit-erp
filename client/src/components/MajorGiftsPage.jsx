@@ -12,7 +12,7 @@ import { MG_TAB, mgView, mgShownViews, mgViewIn } from "../lib/majorGiftsTab";
 
 // NAV-1 (menu): `views` is the org's "Major Gifts shows" list. With one view on,
 // the page is that view with no tab strip; the rail still reads Major Gifts.
-export function MajorGiftsPage({ isReadOnly, onNavigate, initialView, initialScope, views }) {
+export function MajorGiftsPage({ isReadOnly, onNavigate, initialView, initialScope, views, stageTop }) {
   const shown = mgShownViews(views);
   const [view, setViewRaw] = useState(mgViewIn(mgView(initialView), shown));
   const setView = v => setViewRaw(mgViewIn(v, shown));
@@ -32,7 +32,7 @@ export function MajorGiftsPage({ isReadOnly, onNavigate, initialView, initialSco
       <div data-mg-view={view}>
         {view === "top100" && <Top100View isReadOnly={isReadOnly} onNavigate={onNavigate} />}
         {view === "portfolios" && <PortfolioView isReadOnly={isReadOnly} onNavigate={onNavigate} />}
-        {view === "pipeline" && <Pipeline embedded isReadOnly={isReadOnly} onNavigate={onNavigate} initialScope={initialScope} />}
+        {view === "pipeline" && <Pipeline embedded isReadOnly={isReadOnly} onNavigate={onNavigate} initialScope={initialScope} stageTop={stageTop} />}
         {view === "plans" && <PlansView isReadOnly={isReadOnly} />}
       </div>
     </div>

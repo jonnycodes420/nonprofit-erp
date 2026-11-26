@@ -379,7 +379,7 @@ function AppShell() {
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode,unit:opts.unit,year:opts.year}:null);   // NUMBERS-8: LYBUNT's unit and year
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
-    setMgIntent(t==="majorgifts"?{view:opts?.subtab,scope:opts?.scope}:null);
+    setMgIntent(t==="majorgifts"?{view:opts?.subtab,scope:opts?.scope,stageTop:!!opts?.stageTop}:null);   // COMMS-3: Audience's "Set stages for your top 40"
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
     // open, rather than on a list somebody then has to find it in.
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
@@ -1075,7 +1075,7 @@ function AppShell() {
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="fundraising"&&<AtlasNote place="gifts" onNavigate={navigateTo}/>}
-      {tab==="majorgifts"&&canMG===true&&<MajorGiftsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={mgIntent?.view} initialScope={mgIntent?.scope} views={navOrg?.mgViews}/>}
+      {tab==="majorgifts"&&canMG===true&&<MajorGiftsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={mgIntent?.view} initialScope={mgIntent?.scope} stageTop={mgIntent?.stageTop} views={navOrg?.mgViews}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} hasP2p={navOrg?navOrg.hasP2p:undefined}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the

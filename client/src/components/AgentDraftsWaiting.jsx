@@ -10,7 +10,7 @@ import { dismissDrafts, DismissX, SelectBox } from "./DraftDismiss";
 import { useChangeRev } from "../lib/changes";
 import { errorMessage } from "../lib/domainError";
 
-export function AgentDraftsWaiting({ highlightDraftId = null, selection = null }) {
+export function AgentDraftsWaiting({ highlightDraftId = null, selection = null, onCount = null }) {
   const [items, setItems] = useState(null);
   // AGENT-5: Atlas's "Review and send" opens its draft here, ready to read.
   const [open, setOpen] = useState(() => /^adr_/.test(String(highlightDraftId || "")));
@@ -18,6 +18,7 @@ export function AgentDraftsWaiting({ highlightDraftId = null, selection = null }
   const load = () => apiFetch("/agent/waiting").then(w => setItems(agentDraftsIn(w))).catch(() => setItems([]));
   useEffect(() => { load(); }, [rev]);   // eslint-disable-line react-hooks/exhaustive-deps
   const n = (items || []).length;
+  useEffect(() => { if (onCount && items) onCount(n); }, [n, items == null]);   // eslint-disable-line react-hooks/exhaustive-deps
   if (!n) return null;
   // COMMS-1: each Atlas draft is a row with its own ×.
   return (
@@ -32,7 +33,7 @@ export function AgentDraftsWaiting({ highlightDraftId = null, selection = null }
             {selection && selection.selecting && <SelectBox checked={selection.has("agent", it.id)} onChange={on => selection.toggle("agent", it.id, on)} label={`Select the draft to ${it.who}`} />}
             <div style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, color: T.ink }}><b>{it.who}</b>{it.subject ? ` · ${it.subject}` : ""}</div>
             <button type="button" onClick={() => setOpen(true)} style={{ background: T.white, border: "1px solid " + T.ink, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: T.ink }}>Read the draft</button>
-            <DismissX onClick={() => dismissDrafts([{ kind: "agent", id: it.id }]).then(() => load()).catch(e => alert(errorMessage(e)))} label={`Dismiss the draft to ${it.who}`} />
+            <DismissX onClick={() => dismissDrafts([{ kind: "agent", id: it.id }]).then(() => load()).catch(e => alert(errorMessage(e)))} label={`Not sending the draft to ${it.who}`} />
           </div>
         ))}
       </div>

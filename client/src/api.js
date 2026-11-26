@@ -176,7 +176,9 @@ const HANDED_SHARE_MS = 1500;
 // LOAD-1: a conversation's suggested next steps are a POST only because they
 // carry a body; the route reads the note and writes nothing. Opening a profile
 // asks for them, and that threw away the profile's own reads still parked.
-const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/, /^\/interactions\/[^/]+\/suggest$/];
+// COMMS-3: opening a thank-you draft notes that she read it, and nothing on any screen
+// changes for it; it threw away and re-read Drafts to review under her click.
+const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/, /^\/interactions\/[^/]+\/suggest$/, /^\/thank-yous\/[^/]+\/opened$/];
 
 // ── SCALE-2: A SCREEN'S FIRST READS IN ONE REQUEST ─────────────────────────
 // Home opened with 25 requests. prefetch(paths) asks for them in ONE

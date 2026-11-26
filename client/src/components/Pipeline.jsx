@@ -10,6 +10,7 @@ import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, DriftBadge, Modal 
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { DonorLink } from "./RecordLink";
+import { StageTopDonors } from "./majorGifts/StageTopDonors";   // COMMS-3: from an Audience card at 0
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -142,7 +143,8 @@ const COL_PAGE = 30; // render this many cards/column at a time (never hundreds)
 
 // FIX-1 §B — `embedded`: the board renders inside Fundraising → Major gifts,
 // under that page's title, so it drops its own. Nothing else changes.
-export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
+export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded, stageTop = false }) {
+  const [staging, setStaging] = useState(!!stageTop);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState(initialScope === "all" ? "all" : "mine");
@@ -265,6 +267,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
 
   const board = (
     <div>
+      {staging && <StageTopDonors isReadOnly={isReadOnly} onDone={load} onClose={() => setStaging(false)} />}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
         {embedded ? <span /> : <PageTitle main="Prospect" accent="Pipeline" />}
         {/* D-2 Fix A (BUILD-45): a board can hold a $100k donor while no asks

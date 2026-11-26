@@ -3019,13 +3019,8 @@ async function historicalGiving(orgId, from, to, { baseline = false } = {}) {
 }
 
 // ── THE ENGINE ─────────────────────────────────────────────────────────────
-// HISTORY-1: By year (the profile) and Year over year (Reports), in their own module.
-Object.assign(SOURCES, require("./server/reports/yoySources")({ FigureParamError }));
-Object.assign(SOURCES, require("./server/reports/ledgerSources")({ FigureParamError }));   // TRUTH-3: the ledger's three figures
-Object.assign(SOURCES, require("./server/donors/broughtInSources")(), require("./server/donors/householdSources")());   // HOUSEHOLD-1: a household row's this year
-Object.assign(SOURCES, require("./server/donors/recordsGapSources")());   // FLOWS-10 item 14: who is on the Donors tab and not a record   // CONNECT-1: who someone brought in, and what they gave since
-Object.assign(SOURCES, require("./server/onboard/totalsSources")());   // ONBOARD-3: what explains a year that differs from the old system
-Object.assign(SOURCES, require("./server/volunteers/volunteerSources")(), require("./server/donors/givesThroughSources")());   // VOL-3: the Volunteers header cards open their rows; NUMBERS-8: Gives through
+// The sources that live in their own modules (yoy, ledger, brought in, households, volunteers, audience…).
+Object.assign(SOURCES, require("./server/reports/sourceModules")({ FigureParamError, query }));
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
 const num = v => (v === null || v === undefined ? null : Number(v));

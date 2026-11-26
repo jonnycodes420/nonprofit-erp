@@ -32,7 +32,8 @@ import DupeName from "./DupeName";   // POLISH-8: two of one name say which is w
 import { campaignStats, sentWord, wentOutToNobody, NOBODY_SENTENCE, reachedAnyone, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { CalendarDays } from "lucide-react";
-import { AudienceTab, SendsPerMonth, EmailToolGifts, OpenRows } from "./CommsOpens";
+import { SendsPerMonth, EmailToolGifts, OpenRows } from "./CommsOpens";
+import { AudienceTab } from "./communications/AudienceView";   // COMMS-3: who you can reach
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
@@ -882,10 +883,14 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
   const [busyId, setBusyId] = useState(null);
   const rowRefs = useRef({});
 
+  // COMMS-3 item 1: only the first read shows the spinner. A re-read after a change keeps the
+  // page on screen: the spinner unmounted the thank-yous below, and the draft she had just
+  // opened closed under her click (staging, 26 Nov). The newest read's answer wins.
+  const seq = useRef(0);
   const load = async () => {
-    setLoading(true);
-    try { setDrafts(await apiFetch("/milestone-drafts")); } catch (e) {}
-    setLoading(false);
+    const n = ++seq.current;
+    try { const r = await apiFetch("/milestone-drafts"); if (n === seq.current) setDrafts(r); } catch (e) {}
+    if (n === seq.current) setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
@@ -965,6 +970,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
     setBusyId(null);
   };
   const sel = useSelection();
+  const [tyCount, setTyCount] = useState(0), [agentCount, setAgentCount] = useState(0);   // COMMS-3: "Select several" needs two or more
   const dismissSelected = async () => {
     try {
       if (await dismissDrafts(sel.list, { onRestored: () => load() })) {
@@ -985,12 +991,14 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Drafts to review</h2>
-        <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
-          Emails drafted for a milestone, an anniversary, a journey step or Atlas. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
+        {/* COMMS-3 item 2: what to do, in one line. */}
+        <p data-testid="drafts-lead" style={{ margin: "4px 0 0", fontSize: 13.5, color: T.ink2 || T.ink }}>
+          Steward wrote these for you. Read one, send it from your own email, then mark it sent.
         </p>
-        <div style={{ marginTop: 12 }}><SelectBar selecting={sel.selecting} setSelecting={sel.setSelecting} selected={sel.list} onDismiss={dismissSelected} total={1} /></div>
-        <AgentDraftsWaiting highlightDraftId={highlightDraftId} selection={sel} />
-        <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" selection={sel} /></div>
+        <div style={{ marginTop: 12 }}><SelectBar selecting={sel.selecting} setSelecting={sel.setSelecting} selected={sel.list} onDismiss={dismissSelected} total={drafts.length + tyCount + agentCount} /></div>
+        <AgentDraftsWaiting highlightDraftId={highlightDraftId} selection={sel} onCount={setAgentCount} />
+        <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" selection={sel} onCount={setTyCount}
+          intro="Each one is for a gift. The words are a draft: change anything in your own email before you send it." /></div>
         {reviewedCount > 0 && (
           <button type="button" data-commit data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
             style={{ marginTop: 12, background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
@@ -1270,7 +1278,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // WIRE-1: /app/communications?audience=<group id> (a Group page's "Email
   // this group") opens a new campaign with that group as its audience. It
   // opens a draft and nothing more: she writes it, and each send is hers.
-  const [presetSeg] = useState(() => { const a = urlParam("communications", "audience"); return a ? { mode: "audience", audienceId: a } : null; });
+  const [presetSeg, setPresetSeg] = useState(() => { const a = urlParam("communications", "audience"); return a ? { mode: "audience", audienceId: a } : null; });
   const [failedOnly, setFailedOnly]   = useState(null);   // WHY-1 Part 8: the campaign whose failed rows are showing
   // FIX-6 item 5 — which figure is open, and the rows behind it.
   const [statRows, setStatRows] = useState(null);
@@ -2271,7 +2279,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}
-        {nav === "audience" && <AudienceTab onEmailSegment={() => { setNav("campaigns"); openBuilder(); }} />}
+        {/* COMMS-3: "Start a campaign to Lapsed" and "Email these N" open CAMPAIGN-2's flow with that audience chosen. */}
+        {nav === "audience" && <AudienceTab onNavigate={onNavigate} onOpenLetters={() => setNav("letters")}
+          onEmailSegment={isReadOnly ? null : seg => { setPresetSeg(seg ? { ...seg } : null); setNav("campaigns"); openBuilder(); }} />}
 
         {/* ── ANALYTICS ─────────────────────────────────────────────────────── */}
         {nav === "analytics" && (

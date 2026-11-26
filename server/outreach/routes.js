@@ -946,44 +946,19 @@ async function hubMailState(orgId) {
 // is exactly the Lapsing people plus the Lapsed people. A volunteer coordinator gets no giving column
 // (VOL-2's rule).
 const POPS = require("../../shared/numbers/populations");   // DEFINE-1's registry, read by the server
-// "Lapsing or lapsed, with an email address: 327 of the 340 people …" and the sentence, then Re-engage's.
-function lapsedChipWords(withEmail, all) {
-  const p = POPS.population("lapsing_or_lapsed"), re = POPS.population("reengage");
-  return `${p.name}, with an email address: ${withEmail.toLocaleString("en-US")} of the ${all.toLocaleString("en-US")} ${POPS.unitWords(p.id, all)} on it. ${p.sentence} `
-    + `Not the same group as ${re.name} on Donors, which leaves out the Lapsing and counts people with no email. ${re.sentence}`;
+// COMMS-3: the card's definition is audienceView.js's; this adds which group it is not.
+function lapsedNotReengage() {
+  const re = POPS.population("reengage");
+  return `Not the same group as ${re.name} on Donors, which leaves out the Lapsing and counts people with no email. ${re.sentence}`;
 }
 app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const coordinator = req.user.role === "volunteer_coordinator";
-  const donors = await query(
-    `SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`, [orgId]);   // TRUTH-4: Everyone's rule
-  const quiet = await DS.quietIds(orgId, orgToday(await orgTz(orgId)));
-  const all = filterBySegment(donors, { mode: "donors" });
-  const byStage = st => all.filter(d => d.stage === st);
-  const SEGS = [
-    { id: "all", label: "All donors", rows: all,
-      definition: "Every donor with an email address. People who only volunteer or work here are not in it." },
-    { id: "major", label: "Major", rows: filterBySegment(all, await resolveSegmentSpec({ mode: "major" }, orgId)),
-      definition: "Donors with an email address at the Major giving level: what they gave in the last 12 months against your cut points in Settings, Giving levels." },
-    // RULES-1 (Jarvis, Nov 23: "Communications says 327" beside LYBUNT's 465 and Re-engage's 280): the
-    // registry's population, its name and sentence, the part of it with an email, and which group it is not.
-    { id: "lapsed", population: "lapsing_or_lapsed", label: POPS.population("lapsing_or_lapsed").name, rows: all.filter(d => quiet.has(d.id)),
-      definition: lapsedChipWords(all.filter(d => quiet.has(d.id)).length, quiet.size) },
-    { id: "prospect", label: "Prospects", rows: byStage("prospect"), definition: "Donors with an email address at the Prospect stage." },
-    { id: "steward", label: "In ongoing care", rows: byStage("steward"), definition: "Donors with an email address at the Ongoing care stage." },
-    { id: "solicit", label: "Ready to solicit", rows: byStage("solicit"), definition: "Donors with an email address at the Solicit stage." },
-  ];
-  const everyone = await query(`SELECT id, person_types, ${require("../../shared/numbers/isDonor").HAS_GIVEN("donors")} AS has_given FROM donors WHERE org_id = ? AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`, [orgId]);   // TRUTH-4: Donors' own count
-  const donorTotal = everyone.filter(d => require("../../shared/numbers/isDonor").isDonorRow(d)).length;   // FLOWS-18: a giver is a donor
-  res.json({
-    donorTotal,
-    segments: SEGS.map(s => ({
-      id: s.id, label: s.label, count: s.rows.length, definition: s.definition, ...(s.population ? { population: s.population } : {}),
-      rows: s.rows.slice().sort((a, b) => (Number(b.total_giving) || 0) - (Number(a.total_giving) || 0))
-        .map(d => ({ id: d.id, name: d.name, email: d.email, stage: d.stage,
-                     ...(coordinator ? {} : { totalGiving: Number(d.total_giving) || 0 }) })),
-    })),
-  });
+  // COMMS-3: the reach bar, the six cards (each with its count, its dollars and, at 0, why) and
+  // each person's status pill, last gift and Lifetime, built once (server/outreach/audienceView.js).
+  const body = await require("./audienceView").audienceView({ query }, req.user.orgId, { coordinator: req.user.role === "volunteer_coordinator" });
+  // RULES-1: Lapsing or lapsed names which group it is not.
+  const lap = body.segments.find(s => s.id === "lapsed");
+  if (lap) lap.definition += " " + lapsedNotReengage();
+  res.json(body);
 }));
 
 app.get("/communications/hub", requireAuth, wrap(async (req, res) => {

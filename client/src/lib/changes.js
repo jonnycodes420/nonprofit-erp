@@ -41,6 +41,8 @@ const RULES = [
   // owners move who owns each person (Home's portfolio, the Donors list's owner).
   [/^\/onboarding\/setup\/voice$/, ["org", "person", "totals", "insights"]],
   [/^\/onboarding\/setup\/owners$/, ["person", "totals"]],
+  // COMMS-3: opening a thank-you draft is not a change: nothing re-reads for it (the server says "none").
+  [/^\/thank-yous\/[^/]+\/opened$/, []],
   // COMMS-1: a draft dismissed, restored, sent, approved or skipped moves every count of drafts waiting.
   [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
   // SENDS-2: a committed send plan sends drafts (Communications, volunteers, auction winners) or
@@ -60,6 +62,8 @@ const RULES = [
   // LETTERS-1: "Mark these as sent" stamps each printed gift's acknowledgment (and its thank-you when she says so).
   [/^\/letters\/giving\/mark\b/, ["gift", "person", "task", "draft"]],
   [/^\/fundraising\/(campaigns?|appeals?|goals?)\b/, ["totals", "gift", "pledge"]],
+  // COMMS-3: "Set stages for your top 40" gives people a stage and puts them on her board.
+  [/^\/pipeline\/stage-top\b/, ["person", "totals"]],
   [/^\/(atlas|tell|voice|memos?|requests)\b/, ALL],
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],
   [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b|^\/offline-plans?\b/, GIFT],   // FLOWS-13: a staff-recorded plan's payment or cancel

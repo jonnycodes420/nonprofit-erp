@@ -19,6 +19,10 @@ export const SURFACES = [
   { name: "comms.overview", file: "components/Communications.jsx", read: "Overview: Recent sends, emails sent, who you can reach", shows: ["campaigns", "donors"] },
   { name: "comms.campaigns", file: "components/Communications.jsx", read: "Campaigns list and its count", shows: ["campaigns"] },
   { name: "comms.sent", file: "components/Communications.jsx", read: "Sent list and its counts", shows: ["campaigns"] },
+  // COMMS-3: the thank-you queue (Drafts to review, the profile's Emails tab, Money in).
+  // COMMS-3: Audience: who you can reach, the six cards, the list.
+  { name: "comms.audience", file: "components/communications/AudienceView.jsx", read: "Audience: the reach bar, the biggest gap, each card's count and given, the list", shows: ["donors", "gifts"] },
+  { name: "comms.thank-yous", file: "components/ThankYouDrafts.jsx", read: "Thank-yous waiting to send, and their count", shows: ["thank_you_drafts"] },
   { name: "volunteers.roster", file: "components/VolunteersHub.jsx", read: "Volunteers header sentence, the counts card, the list", shows: ["donors", "volunteer_shifts"] },
   { name: "volunteers.shifts", file: "components/VolunteersHub.jsx", read: "Records → Recent shifts", shows: ["volunteer_shifts", "donors"] },
   { name: "events.list", file: "components/Events.jsx", read: "Events list, its cards' Raised and the stats strip", shows: ["events", "event_attendees", "gifts"] },
