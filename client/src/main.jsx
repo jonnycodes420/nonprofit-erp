@@ -20,6 +20,7 @@ import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged, stayHer
 import { installCommitGuard } from "./lib/commitGuard";
 import { installChunkReload, reopenAfterUpdate, REOPENING_WORDS } from "./lib/chunkReload";   // FRESH-1 item 2
 import { safeNext } from "./lib/appUrls";
+import { start as startAnalytics, identifyFrom, forget as forgetAnalytics } from "./lib/analyticsDoor";   // ANALYTICS-1
 import { SkeletonAppShell, SkeletonPublic } from "./components/Skeleton";
 // The marketing site (LANDING-2) is route-split too since HARDEN-2: main.jsx
 // holds only its paths (computed from marketing/routes.js at build time), and
@@ -90,6 +91,7 @@ function LaterBeacons() {
     if (document.readyState === "complete") go(); else window.addEventListener("load", go, { once: true });
     return () => { clearTimeout(t); window.removeEventListener("load", go); };
   }, []);
+  React.useEffect(() => { if (on) startAnalytics(); }, [on]);   // ANALYTICS-1: PostHog's chunk, after the page has settled
   return on ? <React.Suspense fallback={null}><VercelBeacons /></React.Suspense> : null;
 }
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
@@ -138,7 +140,7 @@ function AuthProvider({ children }) {
     const raw   = localStorage.getItem("npe_user");
     const org   = localStorage.getItem("npe_org");
     if (!token) return null;
-    try { const a = { token, user: JSON.parse(raw), org: JSON.parse(org) }; setPageOrg(a.org, { user: a.user }); return a; }
+    try { const a = { token, user: JSON.parse(raw), org: JSON.parse(org) }; setPageOrg(a.org, { user: a.user }); identifyFrom(a.user, a.org); return a; }
     catch { return null; }
   });
   const login = (data) => {
@@ -146,6 +148,7 @@ function AuthProvider({ children }) {
     localStorage.setItem("npe_user", JSON.stringify(data.user));
     localStorage.setItem("npe_org",  JSON.stringify(data.org));
     setPageOrg(data.org, { announce: true, user: data.user });
+    identifyFrom(data.user, data.org);
     setAuth(data);
   };
   const logout = () => {
@@ -163,6 +166,7 @@ function AuthProvider({ children }) {
     localStorage.removeItem("npe_user");
     localStorage.removeItem("npe_org");
     setPageOrg(null, { user: null });
+    forgetAnalytics();
     // FLOWS-1 item 6: sign-out landed on a solid blank page (the ink body with
     // nothing drawn on it). It now ends on a fresh load of the sign-in page,
     // carrying nothing of the signed-in app; the server's logout gets at most
@@ -175,6 +179,7 @@ function AuthProvider({ children }) {
       const next = { ...auth, org };
       localStorage.setItem("npe_org", JSON.stringify(org));
       setPageOrg(org);
+      identifyFrom(next.user, org);
       setAuth(next);
       return org;
     } catch { return null; }

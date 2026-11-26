@@ -4,6 +4,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **ANALYTICS-1 (2026-11-26): product analytics goes through `client/src/lib/analytics.js` only.** Screens call
+  `lib/analyticsDoor.js` (a queue), which alone loads it. It is the one importer of posthog-js, loads it lazily after the page settles, and runs only on the production hosts, never under a
+  test browser and never on a donor's pages. A new event is added to `EVENTS` and sent with `track(name, props)`;
+  props are counts, kinds and flags, never a person's name, contact, money or words (`clean()`, and
+  tests/landing2-marketing.test.js §20 scans every call). Replay masks all text and every attribute but layout (`replayAttr`); a new attribute replay must keep is added to `REPLAY_KEEP`, never one that can hold a person.
 - **RULES-1 (2026-11-23): one schema file per build.** New DDL goes in its own file in `server/db/ddl/builds/`, named `YYYY-MM-DD-<brief>.js`; boot runs that folder in name order after `part7.js`, which no longer grows (split-shells ratchet).
 - **SCALE-6 (2026-11-20): JIT is off on every application connection, and a whole-org read
   never asks a person's giving unit per row.** The main pool starts each connection with

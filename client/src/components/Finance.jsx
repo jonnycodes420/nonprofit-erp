@@ -10,6 +10,7 @@ import { T, activeMark, fmt, fmtFull, fmtWhole, Card, EmptyState, SectionLabel, 
 import { askConfirm } from "./ConfirmDialog";
 import { askAndRemove, offerRemovalUndo } from "../lib/removeThrough";   // TRASH-1: a transaction's Delete asks in removal.js's words; Undo brings it back
 import { apiFetch, API, getToken } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { usePeopleById } from "../lib/people";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
@@ -226,6 +227,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
         amount:Number(form.amount), date:form.date, type:"cash",
         notes:form.description, fundId:form.fundId || undefined,
       })});
+      track("gift_recorded", { via: "finance" });
       onRouted({ kind:"gift", name:d.name });
     } catch(e) { setErr(errorMessage(e, "Could not log the gift.")); setBusy(false); }
   };

@@ -21,6 +21,7 @@
 // name, or "they".
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { T, firstNameOf, fmtFull } from "./shared";
 import { displayDate, displayDateShort, humanDates } from "../../../shared/displayDate.js";
 import { askConfirm } from "./ConfirmDialog";
@@ -827,6 +828,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
       }
       if (person && gift) {
         await apiFetch(`/donors/${person.id}/gifts`, { method: "POST", body: JSON.stringify({ amount: gift.amount, date: meetingDay, fundId: fund?.fundId || undefined }) });
+        track("gift_recorded", { via: "meeting" });
         done.push("the gift");
       }
       // The server opens the next step with its date when she saved one

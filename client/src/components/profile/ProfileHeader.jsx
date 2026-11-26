@@ -19,6 +19,7 @@ import { useVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerS
 import { CallScriptModal, ImpactSummaryModal, ExportDoneModal, openJourneyPicker, downloadPersonData } from "./MoreActions";   // ATLAS-3, ATLAS-4
 import { MergedFromBanner } from "./MergedFromBanner";   // HOUSEHOLD-1 item 5
 import { useDonorSince } from "./donorSince";   // PROFILE-4
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -92,6 +93,7 @@ function MoreMenu({groups,onPick,onClose}){
 
 function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen,noGifts}){
   const since=useDonorSince(donor.id,noGifts);   // PROFILE-4: the quiet line under the name
+  useEffect(()=>{ track("profile_opened",{person_type:(Array.isArray(donor.personTypes)&&donor.personTypes[0])||(Array.isArray(donor.person_types)&&donor.person_types[0])||"donor",read_only:!!isReadOnly}); },[donor.id]);   // eslint-disable-line react-hooks/exhaustive-deps -- ANALYTICS-1: once per person opened, by kind only
   const volSt=useVolunteerStatus(donor.id);   // RULES-1 item 7: shared with the role line's Mark as former
   const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
   const [moreOpen,setMoreOpen]=useState(null);   // ATLAS-3: "call" or "impact"
@@ -106,7 +108,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
             name (Donor since, the contact bits), then the numbers strip. Less
             than half the old height (Jonathan, 24 Nov: "cut that white window
             in half"), and it scrolls away with the page; only the tabs stick. */}
-        <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"10px 0 0",display:"grid",gridTemplateColumns:"44px minmax(0,1fr) auto",columnGap:14,rowGap:0,alignItems:"center"}}>
+        <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" data-ph-mask="" style={{padding:"10px 0 0",display:"grid",gridTemplateColumns:"44px minmax(0,1fr) auto",columnGap:14,rowGap:0,alignItems:"center"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:6}}>
             <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"1px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:22}}>← Donors</button>
           </div>

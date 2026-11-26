@@ -16,6 +16,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { atlasName } from "../lib/atlas";   // AGENT-5
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { T, fmtFull } from "./shared";
 import { retryImport } from "../lib/lazyRetry";
 // SWEEP-6 (PERF-1): an answer's body loads with the first answer, not with Home.
@@ -277,6 +278,8 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
     let a = null, err = "";
     try { a = await runGo(q.go, { lastPlan: lastPlan(before), lastQuery: lastQuery(before), scope: donorId ? { donor: donorId } : null, context: threadContext(before, scope) }); }
     catch (e) { err = errorMessage(e, "Steward could not work that out just now."); }
+    // ANALYTICS-1: the kind of answer, never the question's words.
+    track("atlas_asked", { via: q.go.via || (q.go.plan ? "plan" : q.go.qplan ? "qplan" : "typed"), answer_kind: err ? "error" : !a || a.answered === false ? "unanswered" : (a.kind || (a.question && a.question.key) || "answer"), on_profile: !!donorId, follow_up: before.length > 0 });
     const next = [...before, { text: q.text, go: q.go, a, err }];
     setTurns(next); setBusy(false);
     return next;

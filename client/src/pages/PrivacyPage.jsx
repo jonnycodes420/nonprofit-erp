@@ -15,7 +15,7 @@ const PAL = {
 // Moved from "June 2, 2025" on 2026-09-12: the party/controller definition
 // above is a change to the document, and a stale last-updated date beside a
 // changed document is itself a false statement.
-const LAST_UPDATED = "September 12, 2026";
+const LAST_UPDATED = "November 26, 2026";   // ANALYTICS-1: PostHog added to Third-Party Services
 
 function Nav() {
   return (
@@ -101,6 +101,7 @@ export default function PrivacyPage() {
           <li style={S.li}><strong>Google Gmail API</strong> if you connect your Gmail account, we access your Gmail to sync donor email history and send emails on your behalf. We request only the minimum necessary scopes and do not read emails unrelated to donors in your Steward account.</li>
           <li style={S.li}><strong>Intercom</strong> customer support chat widget</li>
           <li style={S.li}><strong>Sentry</strong> error monitoring (may capture anonymized error traces)</li>
+          <li style={S.li}><strong>PostHog</strong> product analytics (United States): which pages and buttons staff use in the app and on our website, and recordings of app sessions in which every word on screen and everything typed is hidden, so we can see where Steward is hard to use. It never runs on donors' giving or portal pages and receives no donor names, emails or gift amounts.</li>
         </ul>
         <p style={S.p}>We do not sell, rent, or share Your Data with third parties for marketing or advertising purposes.</p>
 

@@ -14,9 +14,10 @@
 // calendar after the form (booking/slots.jsx), as before.
 //
 // /book?partner=<code> shows "Recommended by <partner>" as the eyebrow when the code is known.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API } from "../../api";
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1: the /book funnel, never her answers
 import { SlotPicker, SlotFrame } from "../booking/slots";
 import { showTestimonial, CUSTOMER_QUOTE, FOUNDER_PHOTO } from "../booking/config";
 
@@ -45,7 +46,9 @@ function Card({ code }) {
   const [open, setOpen] = useState("");
   const [err, setErr] = useState("");
   const set = k => e => setF({ ...f, [k]: e.target.value });
-  const booked = useCallback(() => setState("booked"), []);
+  const booked = useCallback(() => { setState("booked"); track("book_submitted", { stage: "booked", has_partner: !!code }); }, [code]);
+  const started = useRef(false);
+  const startedOnce = () => { if (!started.current) { started.current = true; track("book_form_started", { has_partner: !!code }); } };
 
   useEffect(() => {
     let alive = true;
@@ -68,6 +71,7 @@ function Card({ code }) {
       const d = await r.json().catch(() => ({}));
       if (r.status === 409) { setState("idle"); setSlot(null); setErr(d.message || "That time was just taken. Pick another one."); return; }
       if (!r.ok) throw new Error(d.message || BOOK_FALLBACK);
+      track("book_submitted", { stage: d.booked ? "booked" : d.open ? "confirm" : "pick", has_partner: !!code });
       if (d.booked) setState("booked");
       else if (d.open) { setOpen(d.open); setState("open"); }
       else setState("embed");
@@ -88,7 +92,7 @@ function Card({ code }) {
     <p className="bk-fine">{FINE}</p>
   </div>;
 
-  return <form className="bk-card" onSubmit={submit} data-book-card data-book-form data-book-source={t ? t.source : "loading"}>
+  return <form className="bk-card" onSubmit={submit} onFocus={startedOnce} data-book-card data-book-form data-book-source={t ? t.source : "loading"}>
     <h2 className="bk-h2">Pick a time</h2>
     <div className="bk-sub">All times Eastern · Google Meet</div>
     <div className="bk-two">
@@ -107,7 +111,7 @@ function Card({ code }) {
       </div>
       {day && day.slots.length ? <div className="bk-slots" role="radiogroup" aria-label="Time">
         {day.slots.map(s => <button type="button" key={s.start} role="radio" aria-checked={!!slot && slot.start === s.start} data-book-slot={s.start}
-          aria-label={`${s.time} ${s.ampm}`} className={slot && slot.start === s.start ? "on" : ""} onClick={() => setSlot(s)}>{s.time}</button>)}
+          aria-label={`${s.time} ${s.ampm}`} className={slot && slot.start === s.start ? "on" : ""} onClick={() => { setSlot(s); track("book_time_picked", { day_index: dayI }); }}>{s.time}</button>)}
       </div> : <p className="bk-none">No open times this week. Email jonathan@stewardapp.dev and he will find one.</p>}
     </>}
     {err && <p className="form-err" role="alert">{err}</p>}

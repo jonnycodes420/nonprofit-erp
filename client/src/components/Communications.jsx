@@ -11,6 +11,7 @@ import EmailTemplates from "./EmailTemplates";
 import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam, safeBack } from "../lib/appUrls";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { useAuth } from "../main";
 import { T, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
@@ -1569,6 +1570,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     setSending(true); setSendResult(null);
     try {
       const r = await apiFetch(`/campaigns/${id}/send`, { method: "POST" });
+      track("campaign_sent", { via: "communications", recipients: Number(r && (r.sent ?? r.queued ?? r.recipients)) || 0 });
       setSendResult(r); setView("list");
     } catch (e) { alert(errorMessage(e)); }
     setSending(false);
