@@ -430,7 +430,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const jan5 = `${Number(today.slice(0, 4)) + (today.slice(5) > "01-05" ? 1 : 0)}-01-05`;
   const [w12] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id = $1 AND donor_id = 'd_atl9_hugo' AND note LIKE '%will give $5,000%'`, [F9.ORG]);
   ok("§9 \"I called Hugo… he said he will give $5,000 in January. Remind me Jan 5\" proposes a call with her words and a Jan 5 follow-up, writes nothing yet, never \"I can't predict\" (Jarvis)",
-    items12.some(i => i.kind === "call" && i.donorId === "d_atl9_hugo" && /will give \$5,000 in January/.test(i.note || "")) && items12.some(i => i.kind === "follow_up" && i.donorId === "d_atl9_hugo" && i.due === jan5)
+    items12.some(i => i.kind === "call" && i.donorId === "d_atl9_hugo" && /will give \$5,000 in January/.test(i.note || "") && (i.note.match(/I called Hugo Strand/g) || []).length === 1 && !/Remind me/.test(i.note)) && items12.some(i => i.kind === "follow_up" && i.donorId === "d_atl9_hugo" && i.due === jan5)
     && !items12.some(i => /gift|pledge/.test(i.kind)) && !said12(cn12).some(l => /can't predict/.test(l)) && w12.n === 0, { items: items12, lines: said12(cn12) });
   ok("§9 a forecast she asks for is still refused as one", /^I can't predict next year's giving/.test(said12(await ask10("How much will Hugo Strand give next year?"))[0] || ""));
   // Item 5: what Steward can't know, beside what it can.
@@ -455,8 +455,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     /^Ada Lindqvist is a donor since .+, and has given \$150 across 1 gift, most recently \$150 on .+\. No conversation logged yet\. (?:Next: |There is no next step planned for Ada\.)/.test(b12.line || "") && b12.answer && b12.answer.type === "person", b12.line);
   const inc12 = ((await ask10("Brief me on Larkspur Supply Co., Inc.")).lines || [])[0] || {};
   const prep12 = ((await ask10("Prep me for my call with Ada Lindqvist")).lines || [])[0] || {};
+  // Staging re-check (4f21e2b): a name with a code-like suffix ("Marguerite Fallowmere A12") still said "couldn't find".
+  await q(`INSERT INTO donors (id, org_id, name, email, created_by, created_by_name) VALUES ('d_atl12_suf', $1, 'Marguerite Fallowmere A12', 'suf@atl12.test', 'system:test', 'atlas12 fixture')`, [F9.ORG]);
+  const suf12 = ((await ask10("Brief on Marguerite Fallowmere A12")).lines || [])[0] || {};
   ok("§9 a brief never says it can't find someone on file: a comma in the name, \"Prep me for my call with …\"",
-    /^Larkspur Supply Co\., Inc\. is an organization on file/.test(inc12.line || "") && /^Ada Lindqvist is a donor/.test(prep12.line || ""), { inc: inc12.line, prep: prep12.line });
+    /^Larkspur Supply Co\., Inc\. is an organization on file/.test(inc12.line || "") && /^Ada Lindqvist is a donor/.test(prep12.line || "") && /^Marguerite Fallowmere A12 is on file/.test(suf12.line || ""), { inc: inc12.line, prep: prep12.line, suf: suf12.line });
 
   await closeDb();
   summary();
