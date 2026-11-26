@@ -30,7 +30,7 @@ One PR, five items, no new suite (the landing suite gained section 20).
 - **The moments.** `gift_recorded` (the gift dialog, the profile, Finance's routing, a meeting's panel),
   `thank_you_marked_sent`, `draft_opened_in_email` (the thank-you's Open in my email), `atlas_asked` (the Ask rail, with
   the answer's kind), `tell_steward_used` (the Atlas box's POST /atlas, typed or voice, with its status),
-  `campaign_sent`, `import_finished` (numeric fields of the result only), `profile_opened`, `report_opened` (the report
+  `campaign_sent`, `import_finished` (numeric fields of the result only), `profile_opened` (from the profile header, since DonorProfile.jsx is a capped shell), `report_opened` (the report
   id), `connection_connected` (OAuth callback and an API-key giving source), and /book's `book_form_started`,
   `book_time_picked`, `book_submitted` (stage pick, confirm or booked).
 - **Replay masks everything that is words.** Built first as the brief said: `maskAllInputs` and `maskTextSelector:

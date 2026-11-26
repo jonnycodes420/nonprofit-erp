@@ -19,6 +19,7 @@ import { useVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerS
 import { CallScriptModal, ImpactSummaryModal, ExportDoneModal, openJourneyPicker, downloadPersonData } from "./MoreActions";   // ATLAS-3, ATLAS-4
 import { MergedFromBanner } from "./MergedFromBanner";   // HOUSEHOLD-1 item 5
 import { useDonorSince } from "./donorSince";   // PROFILE-4
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -92,6 +93,7 @@ function MoreMenu({groups,onPick,onClose}){
 
 function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen,noGifts}){
   const since=useDonorSince(donor.id,noGifts);   // PROFILE-4: the quiet line under the name
+  useEffect(()=>{ track("profile_opened",{person_type:(Array.isArray(donor.personTypes)&&donor.personTypes[0])||(Array.isArray(donor.person_types)&&donor.person_types[0])||"donor",read_only:!!isReadOnly}); },[donor.id]);   // eslint-disable-line react-hooks/exhaustive-deps -- ANALYTICS-1: once per person opened, by kind only
   const volSt=useVolunteerStatus(donor.id);   // RULES-1 item 7: shared with the role line's Mark as former
   const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
   const [moreOpen,setMoreOpen]=useState(null);   // ATLAS-3: "call" or "impact"
