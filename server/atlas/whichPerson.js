@@ -21,8 +21,8 @@ function givingQuestion(qid, said, options, { more = 0, nearMiss = false } = {})
   const lead = more > 0 ? `${n} people match "${said}". The first ${options.length}: ${listed(who)}.` : `${WORDS[n] || n} people match: ${listed(who)}.`;
   const opts = [...options];
   if (!more && options.length >= 2 && options.length <= 8) {
-    const total = options.reduce((s, o) => s + (Number(o.lifetimeCents) || 0), 0);
-    opts.push({ id: ALL, name: options.length === 2 ? "Both" : `All ${WORDS[options.length].toLowerCase()}`, detail: `Add them together: ${usd(total)} lifetime`, lifetimeCents: total });
+    // No combined figure on the button: nothing is summed before she asks for it (TRUTH-3).
+    opts.push({ id: ALL, name: options.length === 2 ? "Both" : `All ${WORDS[options.length].toLowerCase()}`, detail: "Add their giving together" });
   }
   return { id: qid, kind: "person", said, sentence: `${lead} Which one?`, options: opts, more, nearMiss, sums: true };
 }
