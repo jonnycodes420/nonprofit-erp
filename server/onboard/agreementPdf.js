@@ -13,7 +13,10 @@ function render(sig) {
     doc.on("error", reject);
     const INK = "#0F1A12", GREY = "#5a554f";
     // Paragraphs, not hard-wrapped lines: the template wraps at 80 columns.
-    for (const para of String(sig.rendered_text).split(/\n\s*\n/)) {
+    // SALES-6: the paper signature block is not drawn blank; it is drawn filled in, below.
+    const B = require("./agreementBlock");
+    const { body, hadBlock } = B.bodyOf(sig.rendered_text);
+    for (const para of String(body).split(/\n\s*\n/)) {
       const line = para.replace(/\*\*/g, "").replace(/\s*\n\s*/g, " ").trim();
       if (!line) continue;
       if (/^# /.test(line)) doc.font("Helvetica-Bold").fontSize(18).fillColor(INK).text(line.slice(2)).moveDown(0.4);
@@ -21,12 +24,17 @@ function render(sig) {
       else doc.font("Helvetica").fontSize(10).fillColor(INK).text(line).moveDown(0.5);
     }
     const at = new Date(sig.signed_at);
+    if (hadBlock) {
+      doc.moveDown(0.6);
+      for (const [k, v] of B.filledLines({ orgName: sig.org_name || "", name: sig.signer_name, title: sig.signer_title, signedAt: sig.signed_at }))
+        doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(`${k}: `, { continued: true }).font("Helvetica").text(v);
+    }
     doc.moveDown(1).font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Signed");
     doc.font("Helvetica").fontSize(10).fillColor(INK)
       .text(`${sig.signer_name}, ${sig.signer_title} (${sig.signer_email})`)
       .text(`${at.toUTCString()}`);
     doc.moveDown(0.4).fontSize(8).fillColor(GREY)
-      .text(`Order form version ${sig.agreement_version}. SHA-256 of the text above as shown on screen: ${sig.text_sha256}`);
+      .text(`Order form version ${sig.agreement_version}. SHA-256 of the text she agreed to: ${sig.text_sha256}${hadBlock ? " (the text as kept, including the blank signature block the page no longer shows; the block above is its filled copy)" : ""}`);
     doc.end();
   });
 }

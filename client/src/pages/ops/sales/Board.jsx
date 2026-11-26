@@ -88,6 +88,7 @@ export default function Board({ rows, meta, open, onMoved }) {
               style={{ background: bare ? `${BRASS}33` : WHITE, border: `1px solid ${bare ? BRASS : `${INK}1a`}`, borderRadius: 8, padding: "8px 9px", marginBottom: 6, cursor: "grab" }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: INK, lineHeight: 1.25 }}>{d.primary_org_name || d.displayName}</div>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: EMERALD, marginTop: 3 }} title={d.price_says || ""} data-board-price={d.id}>{usd(priceOf(d))}/mo</div>
+              {d.price_line ? <div style={{ fontSize: 11.5, opacity: 0.8 }} data-board-price-line={d.id}>{d.price_line}</div> : null}
               <div style={{ fontSize: 11.5, opacity: 0.7 }} data-board-touch={days(d.last_touch) ?? ""}>{d.last_touch ? (days(d.last_touch) === 0 ? "Touched today" : `${days(d.last_touch)} ${days(d.last_touch) === 1 ? "day" : "days"} since a touch`) : "No touch yet"}</div>
               <div style={{ fontSize: 11.5, marginTop: 3, borderTop: `1px solid ${CREAM}`, paddingTop: 3 }}>{d.stage_kind === "later" && d.revisit_on ? `Revisit ${dayWords(d.revisit_on)}` : d.stage_kind === "lost" ? (d.lost_reason || "") : d.next_up ? `Next: ${d.next_up}${d.next_up_on ? `, ${dayWords(d.next_up_on).replace(/, \d{4}$/, "")}` : ""}` : bare ? "No next step" : ""}</div>
             </div>;

@@ -57,7 +57,7 @@ function Prep({ dealId }) {
   if (h.failed) return <div style={{ fontSize: 13 }}>The deal could not be read.</div>;
   return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, background: CREAM, borderRadius: 10, padding: "10px 12px", marginTop: 6 }} data-now-prep={dealId}>
     {[["Stage", `${h.stage} · ${h.probability}%`], ["Value", `${usd(h.valueCents)}/mo`], ["Next step", h.nextStep ? `${h.nextStep}${h.nextStepOn ? `, ${dayWords(h.nextStepOn)}` : ""}` : "None"],
-      ["Last touch", h.lastTouch ? `${h.lastTouch.reason}: ${h.lastTouch.says}` : "None yet"]].map(([k, v]) =>
+      ["Last touch", h.lastTouch ? `${h.lastTouch.reason}: ${h.lastTouch.says}` : h.mailbox && !h.mailbox.connected ? `None yet. ${h.mailbox.says}` : "None yet"]].map(([k, v]) =>
       <div key={k}><div style={{ fontSize: 11.5, opacity: 0.65 }}>{k}</div><div style={{ fontSize: 13, fontWeight: 600 }}>{v}</div></div>)}
   </div>;
 }
@@ -125,6 +125,8 @@ export default function NowView({ meta, open, startCalling, startList, refreshKe
       {d.start && d.rows[0] && d.rows[0].action !== "call" ? <button type="button" style={btn} onClick={() => startCalling(null)} data-now-start="1">Start calling · {d.start.orgIds.length}</button> : null}
     </div>
     <WeekBar week={d.week} />
+    {d.mailbox && !d.mailbox.connected ? <p style={{ ...says, opacity: 1, margin: "8px 0 0" }} data-now-no-mailbox="1"><span style={brassTag}>Mailbox</span> {d.mailbox.says.replace(/ Connect it in Sales settings\.$/, "")}{" "}
+      <a href={d.mailbox.settings} style={{ ...link, fontSize: 12.5 }} data-now-connect-mailbox="1">Connect it in Sales settings.</a></p> : null}
     <div style={{ marginTop: 12 }}>{d.moved.map(m => <Moved key={m.id} m={m} onDone={load} />)}</div>
     {d.empty ? <div style={{ padding: "18px 0 6px" }} data-now-empty="1">
       <div style={{ fontSize: 15, fontWeight: 600 }}>{d.empty.says}{d.empty.listId ? <> <button type="button" style={{ ...link, fontSize: 15 }} onClick={() => startList(d.empty.listId)} data-now-empty-list={d.empty.listId}>→</button></> : "."}</div>

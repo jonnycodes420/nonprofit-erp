@@ -26,6 +26,8 @@ const MISSING = new Set(["42P01", "42703"]);
 const safe = p => p.catch(e => { if (e && MISSING.has(e.code)) return []; throw e; });
 const civil = (t, tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t));
 const dayWords = d => { if (!d) return null; const [y, m, dd] = String(d).slice(0, 10).split("-").map(Number); return `${MONTHS[m - 1]} ${dd}, ${y}`; };
+// SALES-6: "Nov 25", the Eastern day of an instant, for the Price tile's short lines.
+const shortDay = ms => { if (!ms) return null; const [, m, dd] = civil(ms, "America/New_York").split("-").map(Number); return `${MONTHS[m - 1]} ${dd}`; };
 
 // ARR is the monthly price times twelve: here, and nowhere else.
 const arrOf = monthlyCents => Math.round(Number(monthlyCents || 0)) * 12;
@@ -40,7 +42,8 @@ const SOURCE_WORDS = {
 const SENTENCE = "A customer's monthly price is what Stripe bills now if it is billing; else the signed order's or accepted quote's price; else the price agreed on the Steward org; else the deal's own value. ARR is that price times 12.";
 
 // facts: { dealValueCents, stripeCents (> 0 only when billing), order: { priceCents, startOn, at } | null,
-//          quote: { priceCents, startOn, at } | null, agreedCents, firstChargeOn (the org's own day), closeDate, stewardOrgId }
+//          quote: { priceCents, startOn, at } | null, agreedCents, firstChargeOn (the org's own day), closeDate, stewardOrgId,
+//          openQuote: { priceCents, sentAt, version } | null  (SALES-6: the newest quote sent and not signed) }
 // A signed order and an accepted quote are one step: whichever was signed last wins it.
 function pick(f) {
   const pos = c => (Number(c) > 0 ? Math.round(Number(c)) : null);
@@ -59,7 +62,17 @@ function pick(f) {
   const startsOn = billing ? null : (signed && f[source].startOn) || f.firstChargeOn || (f.closeDate ? String(f.closeDate).slice(0, 10) : null);
   // A deal with nothing agreed has no billing date to state (its close date is only a guess), so its sentence names none.
   const says = `${usd(cents)}/mo, ${SOURCE_WORDS[source]}${billing || source === "deal" ? "" : startsOn ? `; Stripe starts billing ${dayWords(startsOn)}` : "; no first charge date yet"}`;
-  return { cents, arrCents: arrOf(cents), source, sourceWords: SOURCE_WORDS[source], billing, signed, startsOn, says,
+  // SALES-6 item 3: the Price tile tells the whole story. A signed price says when it was signed; an open
+  // quote whose price differs from the one the tile leads with is named beside it, with the day it was sent.
+  const signedOn = signed ? shortDay(f[source].at) : null;
+  const oq = !billing && !signed && f.openQuote && pos(f.openQuote.priceCents) != null && pos(f.openQuote.priceCents) !== cents
+    ? { cents: pos(f.openQuote.priceCents), sentOn: shortDay(f.openQuote.sentAt), version: f.openQuote.version || null } : null;
+  const oqWords = oq ? `${usd(oq.cents)}/mo quote sent ${oq.sentOn}, not signed` : null;
+  const tile = signed ? { main: `${usd(cents)}/mo, signed ${signedOn}`, sub: startsOn ? `Stripe starts billing ${dayWords(startsOn)}` : "no first charge date yet" }
+    : oq ? { main: `${usd(cents)}/mo ${source === "deal" ? "deal value" : SOURCE_WORDS[source]}`, sub: oqWords }
+    : { main: `${usd(cents)}/mo`, sub: SOURCE_WORDS[source] };
+  const line = signed ? `signed ${signedOn}` : oqWords;
+  return { cents, arrCents: arrOf(cents), source, sourceWords: SOURCE_WORDS[source], billing, signed, startsOn, says, signedOn, openQuote: oq, tile, line,
     dealValueCents: prices.deal, dealDiffers: source !== "deal" && prices.deal !== cents, prices,
     stewardOrgId: f.stewardOrgId || null, sentence: SENTENCE };
 }
@@ -78,10 +91,13 @@ async function forDeals(query, deals) {
   if (!deals || !deals.length) return out;
   const dealIds = deals.map(d => d.id);
   const salesOrgIds = [...new Set(deals.flatMap(d => [d.org_id, ...(d.linked_org_ids || [])]).filter(Boolean))];
-  const [links, quotes] = await Promise.all([
+  const [links, quotes, openQuotes] = await Promise.all([
     salesOrgIds.length ? query(`SELECT id, steward_org_id FROM sales_orgs WHERE id = ANY(?) AND steward_org_id IS NOT NULL AND deleted_at IS NULL`, [salesOrgIds]) : [],
     safe(query(`SELECT DISTINCT ON (deal_id) deal_id, price_cents, start_on::text AS start_on, accepted_at FROM sales_quotes
                  WHERE status = 'accepted' AND deal_id = ANY(?) ORDER BY deal_id, accepted_at DESC NULLS LAST`, [dealIds])),
+    // SALES-6: the newest quote sent (a link or an order made) and still open.
+    safe(query(`SELECT DISTINCT ON (deal_id) deal_id, version, price_cents, link_made_at FROM sales_quotes
+                 WHERE status = 'sent' AND expires_at > NOW() AND deal_id = ANY(?) ORDER BY deal_id, version DESC`, [dealIds])),
   ]);
   const stewardOf = new Map(links.map(r => [r.id, r.steward_org_id]));
   // The deal's Steward org: its primary organization's link, else any linked organization's.
@@ -103,7 +119,9 @@ async function forDeals(query, deals) {
     const ord = orders.find(o => o.deal_id === d.id) || (sid ? orders.find(o => o.org_id === sid && (!o.deal_id || o.deal_id === d.id)) : null);
     const q = quotes.find(x => x.deal_id === d.id);
     const quote = q ? { at: q.accepted_at ? new Date(q.accepted_at).getTime() : 0, priceCents: Number(q.price_cents), startOn: q.start_on } : null;
-    out.set(d.id, pick({ dealValueCents: d.value_cents, stripeCents: f ? f.mrrNowCents : 0, order: ord ? orderOf(ord) : null, quote, agreedCents: f ? f.mrrAgreedCents : 0,
+    const oq = openQuotes.find(x => x.deal_id === d.id);
+    const openQuote = oq ? { priceCents: Number(oq.price_cents), sentAt: oq.link_made_at ? new Date(oq.link_made_at).getTime() : null, version: oq.version } : null;
+    out.set(d.id, pick({ dealValueCents: d.value_cents, stripeCents: f ? f.mrrNowCents : 0, order: ord ? orderOf(ord) : null, quote, openQuote, agreedCents: f ? f.mrrAgreedCents : 0,
       firstChargeOn: f ? f.firstChargeOn : null, closeDate: d.close_date, stewardOrgId: sid }));
   }
   return out;
@@ -132,7 +150,8 @@ async function attach(query, rows) {
     const p = m.get(r.id);
     if (!p) continue;
     Object.assign(r, { price_cents: p.cents, arr_cents: p.arrCents, price_source: p.source, price_says: p.says, price_billing: p.billing,
-      price_signed: p.signed, billing_starts_on: p.startsOn, price_deal_differs: p.dealDiffers });
+      price_signed: p.signed, billing_starts_on: p.startsOn, price_deal_differs: p.dealDiffers,
+      price_line: p.line, price_tile: p.tile, price_open_quote: p.openQuote });
   }
   return rows;
 }

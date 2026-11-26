@@ -111,6 +111,7 @@ async function sign(req, link, b) {
   const who = { id: ACTOR, name: `${name} (order link)` };
   try {
     await DEAL.moveTo(deps, link.deal_id, "signed", who);
+    await DEAL.quoteSigned(deps, link, { signedAt, name, title });   // SALES-6: a quote sent to sign is now signed
     await DEAL.note(deps, link.deal_id, `Order ${link.order_number} signed. ${O.signedStamp(name, signedAt)}, ${title}. ${snapshot.total.label}: ${snapshot.total.amount}. The signed PDF is under Orders.`, who);
   } catch (e) { console.error(`[order] ${link.order_number}: the deal did not move:`, e.message); }
   // The signed copy, to the person who just signed, and nobody else.
@@ -144,6 +145,29 @@ async function nextNumber(year) {
   return Number(r.n) + 1;
 }
 
+// One order row, numbered SW-YYYY-NNNN. `token` may be given (SALES-6: a quote's own link opens its
+// order, so the order takes the quote's token); else a new one is made. `expiresAt` caps the 14 days.
+async function insertOrder({ orgId, order, dealId, who, token = null, expiresAt = null }) {
+  const { run } = deps;
+  const SL = require("./startLink");
+  const tok = token || SL.newToken();
+  const id = newId("stl");
+  const year = etYear(Date.now());
+  for (let i = 0; i < 5; i++) {
+    const candidate = O.orderNumber(year, await nextNumber(year));
+    try {
+      await run(`INSERT INTO start_links (id, org_id, token_hash, contact_name, contact_email, price_cents, price_basis, tier_id,
+                   charge_mode, first_charge_on, note, status, expires_at, created_by, created_by_name,
+                   order_number, order_json, order_version, deal_id)
+                 VALUES (?,?,?,?,?,?,'order',?, 'days', NULL, NULL, 'open', COALESCE(?::timestamptz, NOW() + make_interval(days => ?)), ?, ?, ?, ?::jsonb, 1, ?)`,
+        [id, orgId, SL.sha256("start:" + tok), order.signerName, order.signerEmail, order.priceCents, order.tierId,
+         expiresAt, SL.EXPIRES_DAYS, who.id, who.name, candidate, JSON.stringify(order), dealId || null]);
+      return { ok: true, id, token: tok, number: candidate };
+    } catch (e) { if (e.code !== "23505") throw e; }
+  }
+  return { error: "order_number_busy", message: "Two orders took the same number at once. Press it again." };
+}
+
 async function create(req, res, org, whoName, { subscribed = false } = {}) {
   const { query, run, publicAppUrl, orgTzName } = deps;
   const SL = require("./startLink");
@@ -157,23 +181,9 @@ async function create(req, res, org, whoName, { subscribed = false } = {}) {
   if (open.length) await run(`UPDATE start_links SET status='revoked' WHERE org_id=? AND status IN ('open','signed')`, [org.id]);
   if (subscribed) v.order.subscribed = true;   // signing records the order; Stripe billing is left as it is
   const deal = await DEAL.dealForOrg(query, org.id);
-  const token = SL.newToken();
-  const id = newId("stl");
-  const year = etYear(Date.now());
-  let number = null;
-  for (let i = 0; i < 5 && !number; i++) {
-    const candidate = O.orderNumber(year, await nextNumber(year));
-    try {
-      await run(`INSERT INTO start_links (id, org_id, token_hash, contact_name, contact_email, price_cents, price_basis, tier_id,
-                   charge_mode, first_charge_on, note, status, expires_at, created_by, created_by_name,
-                   order_number, order_json, order_version, deal_id)
-                 VALUES (?,?,?,?,?,?,'order',?, 'days', NULL, NULL, 'open', NOW() + make_interval(days => ?), ?, ?, ?, ?::jsonb, 1, ?)`,
-        [id, org.id, SL.sha256("start:" + token), v.order.signerName, v.order.signerEmail, v.order.priceCents, v.order.tierId,
-         SL.EXPIRES_DAYS, req.user.userId, whoName, candidate, JSON.stringify(v.order), deal ? deal.id : null]);
-      number = candidate;
-    } catch (e) { if (e.code !== "23505") throw e; }
-  }
-  if (!number) return res.status(409).json({ error: "order_number_busy", message: "Two orders took the same number at once. Press it again." });
+  const made = await insertOrder({ orgId: org.id, order: v.order, dealId: deal ? deal.id : null, who: { id: req.user.userId, name: whoName } });
+  if (!made.ok) return res.status(409).json(made);
+  const { id, token, number } = made;
   const [row] = await query(`SELECT * FROM start_links WHERE id=?`, [id]);
   const snap = await snapshotFor(row, Date.now());
   if (req.audit) req.audit.summary = `Order ${number} made for ${org.name}`;
@@ -277,4 +287,4 @@ function mount(ctx) {
   }));
 }
 
-module.exports = { routers, mount, page, sign, create, checkoutPieces, confirmation, signatureOf, ACTOR, PLANT };
+module.exports = { routers, mount, page, sign, create, insertOrder, checkoutPieces, confirmation, signatureOf, snapshotFor, ACTOR, PLANT };

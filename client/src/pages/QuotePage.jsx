@@ -4,6 +4,8 @@
 // optional "Add a card now" through Stripe (setup mode: a card is saved, nothing is charged).
 // The page shows this quote only; a replaced, expired or used link says so and nothing else.
 // The text on screen is the text the server hashed; the signature sends that hash back.
+// SALES-6: a quote whose deal can be ordered offers one step, "Open your order": the same terms as an
+// order (read, sign, card on file, book setup). The POST is hers; the link itself writes nothing.
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { API } from "../api";
@@ -57,6 +59,7 @@ export default function QuotePage() {
     if (b) read();
   };
   const card = async () => { const b = await post("/card"); if (b && b.url) window.location.assign(b.url); };
+  const openOrder = async () => { const b = await post("/order"); if (b && b.path) window.location.assign(b.path); };
 
   return <main style={{ minHeight: "100vh", background: CREAM, color: INK, fontFamily: "'DM Sans',system-ui,sans-serif", padding: "40px 16px", boxSizing: "border-box" }} data-quote-page="1">
     <div style={{ maxWidth: 680, margin: "0 auto" }}>
@@ -74,6 +77,13 @@ export default function QuotePage() {
                 <button type="button" style={{ ...go, marginTop: 10 }} disabled={busy} onClick={card} data-quote-card="1">{busy ? "Opening Stripe…" : "Add a card"}</button></div>
               : <p style={{ fontSize: 14, opacity: 0.8 }}>Jonathan will set up the card with you; nothing is charged before billing starts.</p>}
             {err ? <p style={{ fontSize: 14, background: `${BRASS}33`, padding: "8px 10px", borderRadius: 8, marginTop: 12 }}>{err}</p> : null}
+          </div>
+          : q.orderReady ? <div data-quote-order-ready="1">
+            <h1 style={{ fontSize: 22, margin: "0 0 8px" }}>Your Steward order for {q.orgName}</h1>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 6px" }}><b>{usd(q.priceCents)} a month</b>{q.listCents > q.priceCents ? ` (list ${usd(q.listCents)})` : ""}, billing starts <b>{q.startWords}</b>{q.setupFeeCents ? `, setup fee ${usd(q.setupFeeCents)} with the first charge` : ""}.</p>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: 0 }}>{q.orderSays}</p>
+            <button type="button" style={go} disabled={busy} onClick={openOrder} data-quote-open-order="1">{busy ? "Opening…" : "Open your order"}</button>
+            {err ? <p style={{ fontSize: 14, background: `${BRASS}33`, padding: "8px 10px", borderRadius: 8, marginTop: 12 }} data-quote-err="1">{err}</p> : null}
           </div>
           : <form onSubmit={sign}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, background: CREAM, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }} data-quote-summary="1">

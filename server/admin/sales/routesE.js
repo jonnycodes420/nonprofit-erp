@@ -5,6 +5,7 @@
 //   POST /ops/sales/deals/:id/next-step         { body, due_on } accept a proposed next step (one click)
 //   POST /ops/sales/auto-moves/:id/undo         put a deal back where a calendar meeting moved it from
 //   GET  /ops/sales/deals/:id/header            the deal page's header: stage, value, next step, last touch
+//   POST /ops/sales/deals/:id/use-quote-price   SALES-6: the open quote's price becomes the deal's value (Undo is the value PATCH)
 // Nothing here sends.
 "use strict";
 const LISTS = require("./lists");
@@ -15,6 +16,9 @@ const T = require("./touch");
 const CAL = require("./calendar");
 const SB = require("./scoreboard");
 const CM = require("./callMode");
+// SALES-6 item 4: with no sales mailbox connected, email can't be a touch, and the screens say so.
+const NO_MAILBOX = "Your mailbox isn't connected, so emails don't count as touches. Connect it in Sales settings.";
+const mailboxConnected = async query => (await require("./email").mailboxes(query)).length > 0;
 
 // Today's lines, exactly as /ops/sales/home reads them (one reader for both).
 async function todayFor(query, deals, now, tz) {
@@ -38,6 +42,7 @@ async function nowFor(query, now = Date.now(), tz = "America/New_York") {
   const out = NOW.buildNow({ today, deals, touches, people, noReply, rules, addBusinessDays: CM.addBusinessDays, lists,
     moved: moved.map(m => ({ id: m.id, dealId: m.deal_id, deal: m.deal_name, from: m.from_name, to: m.to_name, why: m.why, at: new Date(m.created_at).toISOString() })) }, now, tz);
   const sb = SB.build(facts, now, tz, facts.goals);
+  out.mailbox = { connected: await mailboxConnected(query), says: NO_MAILBOX, settings: "/ops?tab=sales&panel=settings" };
   const w = sb.weeks[0];
   out.week = { week: w.week, to: w.to, goals: sb.goals,
     numbers: { dials: w.dials.n, connects: w.connects.n, meetingsBooked: w.meetingsBooked.n },
@@ -55,13 +60,31 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
 
   app.post("/ops/sales/auto-moves/:id/undo", salesLimiter, door, wrap(async (req, res) => send(res, await CAL.undo(ctx, req.params.id, whoOf(req)))));
 
+  // SALES-6 item 3: one click puts the open quote's price on the deal (actor-stamped by REC.update; the
+  // audit row is the middleware's). Undo is the value PATCH with the old value, which the answer carries.
+  app.post("/ops/sales/deals/:id/use-quote-price", salesLimiter, door, wrap(async (req, res) => {
+    const p = (await require("./customerPrice").forDealIds(query, [req.params.id])).get(req.params.id);
+    if (!p) return res.status(404).json({ error: "not_found" });
+    if (!p.openQuote) return res.status(400).json({ error: "invalid", message: "There is no open quote with a different price on this deal." });
+    const was = p.prices.deal;
+    const r = await require("./records").update(ctx, "deal", req.params.id, { value_cents: p.openQuote.cents }, whoOf(req), { force: true });
+    if (!r.ok) return send(res, r);
+    const { usd } = require("../../../shared/numbers/orderFigures");
+    if (req.audit) req.audit.label(`sales deal: value set to the quote's ${usd(p.openQuote.cents)}/mo (was ${usd(was)}/mo)`);
+    res.json({ ok: true, valueCents: p.openQuote.cents, undo: { value_cents: was, valueOnly: true },
+      says: `The deal's value is now ${usd(p.openQuote.cents)}/mo, the quote's price (it was ${usd(was)}/mo).` });
+  }));
+
   app.get("/ops/sales/deals/:id/header", salesLimiter, door, wrap(async (req, res) => {
     const now = Date.now();
     const deals = await LISTS.rowsFor(query, "deal");
     const d = deals.find(x => x.id === req.params.id);
     if (!d) return res.status(404).json({ error: "not_found" });
-    const [touches, people, rules, moved] = await Promise.all([T.lastTouches(query, now), NOW.peopleOf(query, [d]), CM.rules(query), CAL.recentMoves(query, d.id, now)]);
+    const [touches, people, rules, moved, connected] = await Promise.all([T.lastTouches(query, now), NOW.peopleOf(query, [d]), CM.rules(query), CAL.recentMoves(query, d.id, now), mailboxConnected(query)]);
     const ps = people.get(d.id) || [];
+    // SALES-6 item 1: the deal's one action, when its newest quote is not signed yet.
+    const newest = (await require("./quotes").forDeal(query, d.id)).find(x => x.status !== "superseded") || null;
+    const can = newest && !["accepted", "ordered"].includes(newest.status) ? await require("./sendToSign").canOrder(query, newest) : null;
     const touch = T.dealTouch(touches, d, ps.map(c => c.id));
     const lead = ps.find(c => c.role === "ED") || ps.find(c => c.role === "Development Director") || ps[0] || null;
     const today = TODAY.civil(now, "America/New_York");
@@ -71,11 +94,15 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
       // SALES-5: the customer's one price (customerPrice.js, on the row the board reads too), its ARR and its sentence.
       valueCents: d.price_cents, arrCents: d.arr_cents, priceSays: d.price_says, priceSource: d.price_source, billing: d.price_billing,
       dealValueCents: d.value_cents, dealDiffers: d.price_deal_differs,
+      // SALES-6 item 3: what the tile leads with, the open quote beside it, and when a price was signed.
+      priceTile: d.price_tile || null, openQuote: d.price_open_quote || null,
+      mailbox: { connected, says: NO_MAILBOX, settings: "/ops?tab=sales&panel=settings" },
+      sendToSign: can ? { ready: can.ok, says: can.ok ? can.says : can.message, version: newest.version, sent: !!newest.start_link_id } : null,
       nextStep: d.next_step || null, nextStepOn: d.next_step_on || null, hasOpenTask: d.has_open_task, nextUp: d.next_up || null, nextUpOn: d.next_up_on || null,
       lastTouch: touch ? { ...touch, reason: T.reasonOf(touch, now), days: T.daysSince(touch.at, now) } : null,
       propose: bare ? NOW.propose(touch, lead ? lead.name.split(" ")[0] : d.primary_org_name, today, rules, CM.addBusinessDays) : null,
       moved: moved.map(m => ({ id: m.id, from: m.from_name, to: m.to_name, why: m.why, at: new Date(m.created_at).toISOString() })),
-      sentences: { lastTouch: NOW.SENTENCES.touch, price: require("./customerPrice").SENTENCE } } });
+      sentences: { lastTouch: connected ? NOW.SENTENCES.touch : NO_MAILBOX, price: require("./customerPrice").SENTENCE } } });
   }));
 }
 
