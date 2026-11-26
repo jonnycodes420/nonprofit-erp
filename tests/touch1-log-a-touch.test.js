@@ -55,6 +55,8 @@ async function reset() {
     await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York') ON CONFLICT (id) DO NOTHING`,
       [org, org === ORG ? "Touch One House" : "Touch One Other", org === ORG ? "touch-one-house" : "touch-one-other"]);
   }
+  // POLISH-12: the Top 100 is off unless an org turns it on; this org uses it.
+  await q(`UPDATE orgs SET top100_enabled=true WHERE id = ANY($1::text[])`, [[ORG, OTHER]]);
   const hash = bcrypt.hashSync(PASSWORD, 4);
   for (const [id, name, org] of [["dir", "Della Ward", ORG], ["mgo", "Milo Grant", ORG], ["oth", "Olga Other", OTHER]])
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,can_major_gifts) VALUES ($1,$2,$3,$4,$5,'admin',true)

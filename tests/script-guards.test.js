@@ -207,6 +207,9 @@ const GUARDED_WRITERS = [
   // Dry run by default; --apply writes through writerDbUrl.
   "atlas8-backfill-question",
   "atlas10-close-already-volunteer",
+  // POLISH-12: turns orgs.top100_enabled on for orgs that already use the Top 100.
+  // Dry run (reads only) by default; --apply writes through writerDbUrl.
+  "polish12-top100-keep",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

@@ -50,8 +50,10 @@ async function portfolioCard(query, req, atInstant = new Date()) {
     scoped: true, empty: false, today: fy.today,
     year: { from: fy.from, to: fy.to, label: fy.label },
     people, givenCents: given.cents, overdue, top,
-    next: await nextOnTop100(query, orgId, visible, fy.today),
-    onTop100: await onTop100(query, orgId, visible),
+    // POLISH-12: the Top 100 part only for an org that has turned it on.
+    top100: !!(org && org.top100_enabled === true),
+    next: org && org.top100_enabled === true ? await nextOnTop100(query, orgId, visible, fy.today) : [],
+    onTop100: org && org.top100_enabled === true ? await onTop100(query, orgId, visible) : 0,
     sentences: SENTENCES,
   };
 }

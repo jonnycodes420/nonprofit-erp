@@ -20,6 +20,7 @@
 //                  gift" read the very routes Home's cards read (item 4).
 "use strict";
 const { claims, factsOf } = require("./grounded");
+const { endOnName } = require("../../shared/endOnName.js");   // POLISH-12: "Start with <a name ending in Inc.>" takes one period
 
 const SHOWN = 25;   // a why answer has five; an appeal's breakdown may have more
 const usd = cents => require("../../money").formatCentsPlain(Math.round(Number(cents) || 0));
@@ -75,7 +76,7 @@ function rowsSentence(ans) {
   const tail = rest.length
     ? ` ${cap(spell(n - 1))} more ${n - 1 === 1 ? "name follows" : "names follow"}; ${ans.more ? `${usd(ans.totalCents)} is at stake across the ${spell(ans.people.length)} shown` : `${usd(ans.totalCents)} is at stake across ${n === 2 ? "both" : `all ${spell(n)}`}`}.`
     : "";
-  return `Start with ${first.name}. ${first.reason}${/[.!?]$/.test(first.reason) ? "" : "."}${tail}`;
+  return `Start with ${endOnName(first.name)} ${first.reason}${/[.!?]$/.test(first.reason) ? "" : "."}${tail}`;
 }
 // Ask's sentence when it foots to the rows; the rows' own sentence when it doesn't.
 function whyLine(said, ans) {

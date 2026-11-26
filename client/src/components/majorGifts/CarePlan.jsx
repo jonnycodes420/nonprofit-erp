@@ -15,6 +15,7 @@ import { T, fmtFull, stageName } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import DateInput from "../inputs/LazyDateInput";
 import { useCanMajorGifts } from "../../lib/majorGifts";
+import { useTop100On } from "../../lib/top100On";   // POLISH-12
 import { touchesFromTemplate, touchKind } from "../../../../shared/careShape.js";
 import { TOUCH_KINDS } from "../../../../shared/touchKinds.js";
 import { InlineCell } from "./InlineCell";   // TOUCH-1: the same click-to-edit cells as the Top 100
@@ -52,6 +53,7 @@ const inp = { padding: "7px 9px", border: "1px solid " + T.bg3, borderRadius: 8,
 const lbl = { fontSize: 10.5, fontWeight: 800, color: T.ink3, display: "block", marginBottom: 3 };
 
 export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, compact = false }) {
+  const top100On = useTop100On();
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
@@ -128,7 +130,8 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
   return (
     <div data-testid="care-plan-panel" style={{ display: "flex", flexDirection: "column", gap: 12, color: T.ink }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {d.onList
+        {/* POLISH-12: the rank and "Add to Top 100" only for an org that has turned the Top 100 on */}
+        {top100On !== true ? null : d.onList
           ? <span data-testid="care-rank" style={{ fontSize: 13, fontWeight: 800 }}>#{d.rank} on {d.list.name}</span>
           : !isReadOnly && <button data-testid="add-to-top100" onClick={addToList} style={btn}>Add to {d.list.name}</button>}
         <HealthChip health={d.health} />
