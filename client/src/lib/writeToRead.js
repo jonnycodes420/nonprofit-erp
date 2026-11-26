@@ -78,6 +78,10 @@ export const WRITE_TO_READ = [
 // fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
 // answers "other") unless it is named here, with why no figure on any screen shows it.
 export const NO_SCREEN_READS = [
+  // SALES-6: Send to sign, and the deal value's Undo on the deal header. Sales data shows only on /ops → Sales,
+  // and the deal header that sends these re-reads itself and tells the record page (onChanged).
+  { method: "POST", re: /^\/ops\/sales\/deals\/[^/]+\/send-to-sign$/, why: "the order is made for the deal page that pressed it, which re-reads its header and Quote panel" },
+  { method: "PATCH", re: /^\/ops\/sales\/rec\/deal\/[^/]+$/, why: "a deal's value shows only on /ops → Sales; the header that saves it re-reads itself and the record page" },
   // HONEST-1: "Tell us you need it" records an ask that shows only on /ops; the line itself says it was noted.
   { method: "POST", re: /^\/connections\/ask$/, why: "the ask shows only on /ops; the line that sent it says it was noted" },
   // ONBOARD-5: the setup page's own progress, its yearly events and the website-colors read are

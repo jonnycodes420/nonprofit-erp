@@ -181,7 +181,6 @@
   "POST /ops/sales/properties",
   "POST /ops/sales/prospects/add",
   "POST /ops/sales/prospects/csv",
-  "POST /ops/sales/quotes/x1/link",
   "POST /ops/sales/quotes/x1/schedule",
   "POST /ops/sales/rec/x1",
   "POST /ops/sales/rec/x1/x1/dnc",
