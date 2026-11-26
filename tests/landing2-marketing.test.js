@@ -98,7 +98,6 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
   const research = await import(path.join(MK, "data", "research.js"));
   const { PHOTOS } = await import(path.join(MK, "data", "photos.js"));
   const { TEAM } = await import(path.join(MK, "data", "team.js"));
-  const { CONNECTIONS } = await import(path.join(MK, "data", "connections.js"));
 
   console.log("\n— 1–4 · the copy rules —");
   {
@@ -161,6 +160,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API routes the audit posts to
         if (v === "/public/book" || v === "/public/book/partner/" || v === "/public/book/times") continue; // ONBOARD-4, BOOK-1: the booking card's own API routes
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
+        if (v === "/public/connections") continue;                   // HONEST-2: the Connections page's list, read from the API
         if (v === "/support/site/" || v === "/handoff") continue; // SUPPORT-1: the help center chat's API route
         linkish.push([f, v]);
       }
@@ -176,7 +176,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("every route's page has a component", ROUTES.every(r => new RegExp("\\b" + r.page + ":").test(pageKeys)), ROUTES.filter(r => !new RegExp("\\b" + r.page + ":").test(pageKeys)).map(r => r.page));
     ok("route paths are unique, and every route has a title and a description",
       new Set(ROUTES.map(r => r.path)).size === ROUTES.length && ROUTES.every(r => r.title && r.description && r.description.length > 30));
-    const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/book", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/privacy", "/legal/terms", "/legal/accessibility"];
+    const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/book", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/privacy", "/legal/accessibility"];
     ok("every page the brief names is routed", brief.every(p => known.has(p)), brief.filter(p => !known.has(p)));
     // HONEST-1 item 6: the draft at /legal/privacy lacked the Google Limited Use
     // disclosure, so Google verification read the wrong page. Every Privacy link is
@@ -187,6 +187,14 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       privacyLinks.length > 0 && privacyLinks.every(h => h === "/privacy"), privacyLinks);
     ok("/legal/privacy is not a marketing page and redirects to /privacy",
       !ROUTES.some(r => r.path === "/legal/privacy") && vjR.some(r => r.source === "/legal/privacy" && r.destination === "/privacy" && r.permanent));
+    // HONEST-2 item 2 (W-1126-Integrations-05): Terms the same way. The footer opened the draft
+    // marked "Not yet in effect"; the terms in effect are /terms (TermsPage.jsx, shared/terms.json).
+    const termsLinks = [...ALL.matchAll(/href=\{?["'`]([^"'`]*)["'`]\}?[^>]*>\s*Terms(?: of Service)?\s*</g)].map(m => m[1]);
+    ok("every Terms link in the marketing source goes to /terms (" + termsLinks.length + " found)",
+      termsLinks.length > 0 && termsLinks.every(h => h === "/terms"), termsLinks);
+    ok("/legal/terms is not a marketing page and redirects to /terms (edge and app)",
+      !ROUTES.some(r => r.path === "/legal/terms") && vjR.some(r => r.source === "/legal/terms" && r.destination === "/terms" && r.permanent)
+      && /path="\/legal\/terms"\s+element=\{<Navigate to="\/terms"/.test(fs.readFileSync(path.join(ROOT, "client", "src", "main.jsx"), "utf8")));
     const count = pre => ROUTES.filter(r => r.path.startsWith(pre)).length;
     // ASK-2 added the Ask feature page and the demo-questions guide.
     ok("15 feature pages, 4 audience pages, 6 guides", count("/features/") === 15 && count("/for/") === 4 && count("/guides/") === 6);
@@ -287,7 +295,9 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       // email they give when they ask for Jonathan. No org, no sign-in.
       "/support/site/",
       // ONBOARD-4 — the booking page: the partner's name, and the form.
-      "/public/book"];
+      "/public/book",
+      // HONEST-2 — the Connections page's list, in Settings' three groups (no org, no sign-in).
+      "/public/connections"];
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
     ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 0, others);
@@ -349,22 +359,22 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("no stock photo on About, Leadership or Contact", stock.length === 0, stock);
     ok("…and Leadership and Contact still show the repo's own portraits", /<People \/>/.test(sliceOf("Leadership")) && /<Portrait\b/.test(sliceOf("Contact")));
 
-    // 14 · a Live label production can honour.
-    const src = fs.readFileSync(path.join(ROOT, "shared", "givingSources.js"), "utf8");
-    const oauth = fs.readFileSync(path.join(ROOT, "shared", "oauth.js"), "utf8");
-    const NEEDS_ADAPTER = { PayPal: "paypal", Givebutter: "givebutter", Square: "square", Stripe: "stripe", Donorbox: "donorbox" };
-    const NEEDS_OAUTH = { Mailchimp: "mailchimp", Xero: "xero", "QuickBooks Online": "intuit" };
-    const lies = [];
-    for (const [name, , state] of CONNECTIONS) {
-      if (state !== "Live") continue;
-      const a = NEEDS_ADAPTER[name];
-      if (a && !new RegExp('key: "' + a + '"').test(src)) lies.push(name + " has no adapter");
-      const o = NEEDS_OAUTH[name];
-      if (o && !new RegExp("^\\s*" + o + ": \\{", "m").test(oauth)) lies.push(name + " has no oauth provider");
-    }
-    ok("no connection is labelled Live that production cannot honour", lies.length === 0, lies);
-    ok("Donorbox is honestly Coming (there is no Donorbox adapter)",
-      CONNECTIONS.some(c => c[0] === "Donorbox" && c[2] === "Coming") && !/key: "donorbox"/.test(src));
+    // 14 · HONEST-2 item 2 (W-1126-Integrations-05): the site's list is the app's. No hand-typed
+    // table: the Connections page reads GET /public/connections, which groups every tool the way
+    // Settings does (Connects, Bring in a file, Not available yet) from the same registries.
+    const PL = require(path.join(ROOT, "server", "connections", "publicList.js"));
+    const saved = {};
+    for (const k of Object.keys(process.env)) if (/^(SQUARE|MAILCHIMP|CONSTANT_CONTACT|INTUIT|XERO|GOOGLE|MICROSOFT)_/.test(k)) { saved[k] = process.env[k]; delete process.env[k]; }
+    const g = await PL.publicConnections();
+    Object.assign(process.env, saved);
+    const where = name => Object.keys(g).filter(k => g[k].some(c => c.name === name));
+    const all = Object.values(g).flat().map(c => c.name);
+    ok("every tool is in exactly one group", new Set(all).size === all.length, all);
+    ok("file-only tools are Bring in a file, never a connection", ["Cash App", "Venmo", "Toast", "Donorbox"].every(n => where(n).join() === "files"), ["Cash App", "Venmo", "Toast", "Donorbox"].map(n => n + ":" + where(n)));
+    ok("with no consent screen set up, Square, Mailchimp and QuickBooks are Not available yet", ["Square", "Mailchimp", "QuickBooks Online", "Xero"].every(n => where(n).join() === "notYet"));
+    ok("the page reads the list and keeps no table of its own",
+      /\/public\/connections/.test(SRC_TEXT["client/src/marketing/pages/product.jsx"]) && !/export const CONNECTIONS\b/.test(SRC_TEXT["client/src/marketing/data/connections.js"])
+      && !/"Live"\]|"Coming"\]/.test(SRC_TEXT["client/src/marketing/pages/product.jsx"]));
     ok("the retired label is gone from every page", !/Set up with you/.test(ALL.replace(/^\s*\/\/.*$/gm, "")));
   }
 

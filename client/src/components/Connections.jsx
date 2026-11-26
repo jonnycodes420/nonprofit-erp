@@ -1006,7 +1006,7 @@ function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
             background: att ? T.gold600 : bucket === "working" ? T.ink : "transparent",
             border: bucket === "waiting" ? "1.5px solid " + T.ink : card.status === "not_connected" ? "1.5px solid " + T.ink3 : "none" }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: att ? T.gold700 : card.status === "not_connected" ? T.ink3 : T.ink }}>
-            {STATUS_WORD[card.status]}</span>
+            {card.flow && card.flow.example ? card.flow.label : STATUS_WORD[card.status]}</span>
           {bucket === "working" && !card.flow && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
         </div>
         {card.flow && card.status !== "not_connected"

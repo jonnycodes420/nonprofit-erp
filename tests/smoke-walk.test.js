@@ -273,7 +273,7 @@ async function eventsAndPledgesSayNothingWrong(browser) {
   }
   const pub = await fetch(`${BASE}/e/${SLUG}`);
   const html = await pub.text();
-  ok("§sweep4 the public event page reads Not open yet while payments aren't connected, with no form", /Not open yet/.test(html) && !/<form/i.test(html), html.slice(0, 160));
+  ok("§sweep4 the public event page reads Opens soon while payments aren't connected, with no form", /Opens soon/.test(html) && !/<form/i.test(html), html.slice(0, 160));
 }
 
 // ── FIX-21 · GROUPS ANSWER IN UNDER HALF A SECOND ─────────────────────────

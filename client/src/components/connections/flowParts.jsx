@@ -10,7 +10,7 @@ import { errorMessage } from "../../lib/domainError";
 // The badge word for a card. `flow` cards (every API connection) use the flow's own label; the
 // page's other cards (inbox, BCC, keys) keep their words.
 export const FLOW_WORD = { working: "Working", waiting: "Connected, nothing flowing yet", needs_you: "Needs you",
-  not_connected: "Not connected", unavailable: "Not available yet",
+  not_connected: "Not connected", unavailable: "Not available yet", example: "Example",   // HONEST-2: a demo's made-up connection
   connected: "Connected", attention: "Needs attention", ready: "Ready" };
 // The summary line's three buckets.
 export const bucketOf = s => s === "needs_you" || s === "attention" ? "needs_you"
@@ -63,6 +63,16 @@ export function UnavailableLine({ card, canPress }) {
           style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.ink, fontWeight: 700,
             textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>Tell us you need it</button>}
     </div>);
+}
+
+// HONEST-2 item 1: a surface outside Connections that names a connection's state (Finance's Money in,
+// the Stripe payments panel) shows the card's own flow word, never a "Connected" of its own.
+export function FlowWord({ kind = null, provider = null, fallback = "", style, testid = "flow-word" }) {
+  const [card, setCard] = useState(undefined);
+  useEffect(() => { apiFetch("/connections").then(r => setCard((r.cards || []).find(c => (kind ? c.kind === kind : c.provider === provider)) || null)).catch(() => setCard(null)); }, [kind, provider]);
+  const word = card && card.flow ? card.flow.label : fallback;
+  if (!word) return null;
+  return <span data-testid={testid} data-state={card && card.flow ? card.flow.state : ""} title={card && card.flow ? card.flow.sentence : undefined} style={style}>{word}</span>;
 }
 
 // Home and Finance: the connections a person has to act on, from the same GET /connections the

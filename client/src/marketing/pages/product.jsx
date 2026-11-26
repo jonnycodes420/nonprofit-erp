@@ -1,15 +1,17 @@
 // LANDING-2 · the Platform menu: the platform overview, the three products,
 // Connections, Onboarding, and the features index plus its one template.
+import { useEffect, useState } from "react";
+import { API } from "../../api";
 import { Hero, Block, Ui, uiOf, Cards, FaqS, Incl, Steps, FinalCta, Related, featureCard , AgentCrew } from "../lib";
 import { FEAT, FEATURE_SLUGS, OPEN_API_HREF } from "../data/features";
-import { CONNECTIONS } from "../data/connections";
+import { GROUP_ORDER } from "../data/connections";   // HONEST-2 item 2: Settings' three groups
 import { PILLAR, FEATURE_PILLAR } from "../data/messaging";
 
 export function Platform() {
   return <>
     <Hero eyebrow="The Steward Platform" pillar={PILLAR[3]} crumbs={[["Platform"]]} h="One calm place for <b>the whole office.</b>"
       lede="Donors, gifts, events, volunteers, email and month end, on one record that watches itself. Steward tells you who needs you each morning, and every number opens to the people behind it."
-      photo="team-pointing" proof={["Every feature on every plan", "Your whole team included", "Month to month"]} />
+      photo="team-pointing" proof={["No platform fee on gifts", "Your move done with you", "Month to month"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">How it fits together</div>
       <h2 className="mix h-l" style={{ marginTop: 22 }}>Keep. Raise. <b>Run.</b></h2>
@@ -44,7 +46,7 @@ export function Crm() {
         sh="No mystery math." sp="If a number is on the screen, you can explain it to your treasurer in one click."
         ui={<Ui t="Retention · this year" k="reports" tots={[["Donors last year", "2025", "1,184"], ["Gave again", "so far", "702"], ["Retention", "to date", "59.3%", 1], ["LYBUNT", "worth a call", "482"]]} />} />
     </div></section>
-    <Cards eb="Everything in Steward CRM" h="Every feature, <b>every plan.</b>" list={["drift", "journeys", "major-gifts", "forms", "events", "p2p", "grants", "memberships", "reports", "receipts", "import", "audit"].map(featureCard)} />
+    <Cards eb="Everything in Steward CRM" h="Everything in <b>Steward CRM.</b>" list={["drift", "journeys", "major-gifts", "forms", "events", "p2p", "grants", "memberships", "reports", "receipts", "import", "audit"].map(featureCard)} />
     <FaqS items={[["Do we pay for each person on our team?", "No. Everyone on your team can sign in, at no extra cost."], ["Can we keep our current giving tools?", "Yes. Steward connects to the giving tools you already use. Our own giving pages are included if you want them."], ["How long does it take to move in?", "About a day of your time for most organizations. We do the move with you and every total is checked to the cent."]]} />
     <FinalCta />
   </>;
@@ -54,7 +56,7 @@ export function Volunteer() {
   return <>
     <Hero eyebrow="Steward Volunteer" crumbs={[["Platform", "/platform"], ["Steward Volunteer"]]} h={PILLAR[3].h}
       lede="Right now your people are scattered: donors in a spreadsheet, volunteers in another app, gala guests on a clipboard. But they're not separate people. Steward keeps one story per person, every gift, every hour, every conversation, so a volunteer who gives and a donor who serves are thanked for both."
-      photo="aprons-produce" proof={["Kiosk and phone check-in", "Waivers on file", "Included on every plan"]} />
+      photo="aprons-produce" proof={["Kiosk and phone check-in", "Waivers on file", "Part of Steward"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="emerald-tint" h="Shifts that fill themselves." p="Post shifts with roles and capacity, open a waitlist when a shift fills, and let groups sign up together. Volunteers pick their own shifts from a simple page."
         ui={<Ui t="Saturday pantry" k="events" rows={[["AM", "Morning sort", "8 of 10 filled", "2 open"], ["PM", "Distribution", "12 of 12 filled", "Waitlist 3", "c"], ["GR", "Grace Church youth", "Group of 9", "Confirmed", "c"]]} />} />
@@ -83,9 +85,26 @@ export function Agent() {
       <Block flip tint="emerald-tint" h="Every action recorded, every action reversible." p="Whatever the Agent does is in the audit log with who approved it. Changed your mind? Undo it from the same screen." photo="team-pointing-wide" />
     </div></section>
     <AgentCrew />
-    <FaqS items={[["Will the Agent email our donors?", "Never on its own. It drafts. Your staff review and send."], ["Can it move money or change a gift?", "No. It prepares a gift you tell it about as one card, and you record it. It never records, changes or refunds a gift itself."], ["What if it cannot do part of what I asked?", "The plan says so in one sentence at the top. It never leaves a note or a tag in place of the thing you asked for."], ["Is the Agent included?", "Yes, on every plan."]]} />
+    <FaqS items={[["Will the Agent email our donors?", "Never on its own. It drafts. Your staff review and send."], ["Can it move money or change a gift?", "No. It prepares a gift you tell it about as one card, and you record it. It never records, changes or refunds a gift itself."], ["What if it cannot do part of what I asked?", "The plan says so in one sentence at the top. It never leaves a note or a tag in place of the thing you asked for."], ["Is the Agent included?", "Yes. It comes with Steward."]]} />
     <FinalCta />
   </>;
+}
+
+// HONEST-2 item 2: the list comes from GET /public/connections (server/connections/publicList.js),
+// built from the registries Settings reads, so a tool is "Connects" here only where it is in the app.
+function ConnectionGroups() {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch(API + "/public/connections").then(r => r.json()).then(setD).catch(() => setD({ groups: {}, words: {} })); }, []);
+  if (!d) return <p className="lede" style={{ marginTop: 18 }}>Reading what connects today…</p>;
+  return GROUP_ORDER.filter(k => (d.groups[k] || []).length).map(k => (
+    <div key={k} data-group={k} style={{ marginTop: 28 }}>
+      <h3 className="h-s">{d.words[k].title}</h3>
+      <p style={{ marginTop: 6 }}>{d.words[k].sentence}</p>
+      <div className="conn">
+        {d.groups[k].map(c => <div className="cn" key={c.key} id={c.key === "api" ? "api" : undefined}><div><b>{c.name}</b><span>{c.line}</span></div>
+          <span className={"chip" + (k === "connects" ? "" : k === "files" ? " soon" : " q")}>{d.words[k].title}</span></div>)}
+      </div>
+    </div>));
 }
 
 export function Connections() {
@@ -95,18 +114,13 @@ export function Connections() {
       photo="desk-notes" />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="cream" h="A quiet connection is a warning." p="If a tool that usually sends four gifts a week sends none for twelve days, Steward flags it on Home. Most lost gifts are a broken connection nobody noticed."
-        ui={<Ui t="Connections" k="link" rows={[["St", "Stripe", "142 gifts · $18,240 this month", "Healthy", "c"], ["Pp", "PayPal", "37 gifts · $2,915", "Healthy", "c"], ["Gb", "Givebutter", "Usually 4 a week · none in 12 days", "Quiet", "q"]]} />} />
+        ui={<Ui t="Connections" k="link" rows={[["St", "Stripe", "142 gifts · $18,240 this month", "Working", "c"], ["Pp", "PayPal", "37 gifts · $2,915", "Working", "c"], ["Gb", "Givebutter", "Usually 4 a week · none in 12 days", "Needs you", "q"]]} />} />
     </div></section>
     <section className="pricing"><div className="wrap">
       <div className="eyebrow">Every connection, honestly labeled</div>
-      <h2 className="mix h-m" style={{ marginTop: 22 }}>What works today, <b>and what is next.</b></h2>
-      <p className="lede" style={{ marginTop: 18 }}>Live means you can connect it yourself from Settings today, and we will do it with you on your onboarding call if you would rather. Coming means it is being built.</p>
-      <div className="conn">
-        {CONNECTIONS.map(c => {
-          const k = c[2] === "Live" ? "" : c[2] === "Coming" ? " soon" : " q";
-          return <div className="cn" key={c[0]} id={c[0] === "Open API" ? "api" : undefined}><div><b>{c[0]}</b><span>{c[1]}</span></div><span className={"chip" + k}>{c[2]}</span></div>;
-        })}
-      </div>
+      <h2 className="mix h-m" style={{ marginTop: 22 }}>What connects today, <b>and what doesn't yet.</b></h2>
+      <p className="lede" style={{ marginTop: 18 }}>The same three groups you see in Settings, Connections: what connects, what comes in as a file, and what isn't available yet.</p>
+      <ConnectionGroups />
     </div></section>
     <FaqS items={[["Do we have to stop using our giving platform?", "No. Keep it. Steward pulls the gifts in and watches the connection."], ["What does Steward read from my inbox?", "Only emails with people who are already in Steward. Everything else is ignored, and you can pause or hide any thread."], ["Can our developer build on Steward?", "Yes. The open API has scoped keys and webhooks. See the developer page."]]} />
     <FinalCta />
@@ -126,7 +140,7 @@ export function Onboarding() {
 
 export function Features() {
   return <>
-    <Hero eyebrow="Features" pillar={PILLAR[3]} crumbs={[["Features"]]} h="Everything included, <b>nothing to unlock.</b>" lede="Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." />
+    <Hero eyebrow="Features" pillar={PILLAR[3]} crumbs={[["Features"]]} h="Everything Steward <b>does.</b>" lede="Each feature, what it does, and where it lives in Steward." />
     <Cards list={FEATURE_SLUGS.map(featureCard).concat([["/volunteer", "Steward Volunteer", "Shifts, hours, waivers and kiosk.", "hand"], ["/agent", "Steward Agent", "Tell it what happened. It does the work, after your yes.", "spark"], [OPEN_API_HREF, "Open API", "Scoped keys and webhooks.", "code"]])} />
     <FinalCta />
   </>;

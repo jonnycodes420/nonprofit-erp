@@ -1,4 +1,5 @@
 import { countLabel } from "../../../../shared/countWords.js";
+import { FlowWord } from "../connections/flowParts";   // HONEST-2 item 1
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
@@ -181,7 +182,8 @@ export function GivingSourceTile({title,logoKey,state,statusLine,note,error,acti
           </span>)}
         <span data-testid="gs-name" style={{fontSize:17,fontWeight:700,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.25}}>{title}</span>
         <span style={{fontSize:11.5,fontWeight:700,color:tone}}>
-          {STATE_LABEL[state]||STATE_LABEL.none}
+          {/* HONEST-2 item 1: a connected source's word is its card's one flow (Working, Connected, nothing flowing yet, Example). */}
+          {state==="connected"?<FlowWord provider={logoKey} fallback={STATE_LABEL.connected} testid="gs-flow"/>:(STATE_LABEL[state]||STATE_LABEL.none)}
         </span>
         <span data-testid="gs-checked" style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>{statusLine}</span>
         {note&&<span style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>{note}</span>}

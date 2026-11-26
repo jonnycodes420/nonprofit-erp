@@ -39,11 +39,10 @@ const PHOTOS = [
   ["client/public/photos/potter-2x.webp", "Hands in the clay", "Close-up of hands centring clay on a potter's wheel"],
   ["client/public/photos/shelter-2x.webp", "The boathouse", "A wooden boathouse at the water's edge"],
 ];
-const VIDEOS = [
-  ["youtube", "aqz-KE-bpKQ", "Sample video: an open film (Big Buck Bunny, Blender Foundation)"],
-  ["youtube", "eRsGyueVLvQ", "Sample video: an open film (Sintel, Blender Foundation)"],
-  ["youtube", "R6MlUcmOul8", "Sample video: an open film (Tears of Steel, Blender Foundation)"],
-];
+// HONEST-2 item 2: no placeholder video ships in the demo. These were open films (Big Buck Bunny,
+// Sintel, Tears of Steel) standing in for the org's own, and a public page showed a cartoon rabbit
+// under "A Saturday on the harbor". A video block appears only for a video the org added.
+const VIDEOS = [];
 
 async function storeJpeg(q, org, file, kind = "media") {
   const sharp = require("sharp");
@@ -97,9 +96,9 @@ function harborlightBlocks(starter, media, i, refs) {
     if (x.type === "image") { const p = photo(k + 1); x.image = p.url; x.alt = p.alt; }
     if (x.type === "photos2") x.images = [photo(k + 2), photo(k + 3)].map(p => ({ src: p.url, alt: p.alt }));
     if (x.type === "signature") { x.name = x.name || "Dana Reyes"; x.title = x.title || "Executive Director"; }
-    if (x.type === "video") { const v = media.videos[i % media.videos.length]; x.provider = v.provider; x.videoId = v.videoId; x.url = `https://www.youtube.com/watch?v=${v.videoId}`; }
+    if (x.type === "video") { const v = media.videos.length ? media.videos[i % media.videos.length] : null; if (!v) return null; x.provider = v.provider; x.videoId = v.videoId; x.url = `https://www.youtube.com/watch?v=${v.videoId}`; }
     return x;
-  });
+  }).filter(Boolean);
 }
 
 async function seedEmail1(q, ORG, { TODAY, dAdd }) {
@@ -138,7 +137,7 @@ async function seedEmail1(q, ORG, { TODAY, dAdd }) {
     const id = "et_" + sha("b72|" + st.key).slice(0, 12);
     const blocks = harborlightBlocks(st, media, i, refs);
     // At least two templates carry a video, whether or not the starter had one.
-    if ((st.key === "year_end_appeal" || st.key === "impact_report") && !blocks.some(b => b.type === "video")) {
+    if (media.videos.length > 1 && (st.key === "year_end_appeal" || st.key === "impact_report") && !blocks.some(b => b.type === "video")) {
       const v = media.videos[st.key === "year_end_appeal" ? 0 : 1];
       const at = Math.max(1, blocks.findIndex(b => b.type === "button"));
       blocks.splice(at, 0, { type: "video", provider: v.provider, videoId: v.videoId, url: `https://www.youtube.com/watch?v=${v.videoId}`, caption: "Two minutes on the water with this year's crew." });
@@ -154,8 +153,9 @@ async function seedEmail1(q, ORG, { TODAY, dAdd }) {
   for (const col of ["published", "draft"]) {
     const [gp] = await q(`SELECT id, ${col} AS w FROM giving_pages WHERE org_id=$1 AND id LIKE 'gp_b72%' AND is_campaign_page = TRUE ORDER BY id LIMIT 1`, [ORG]);
     if (!gp || !Array.isArray(gp.w)) continue;
-    const w = gp.w.map(x => (x.type === "hero" ? { ...x, image: media.photos[0].url, alt: media.photos[0].alt } : x));
-    if (!w.some(x => x.type === "video")) w.splice(2, 0, { type: "video", provider: media.videos[0].provider, videoId: media.videos[0].videoId, caption: "Two minutes on the water with this year's crew." });
+    const w = gp.w.map(x => (x.type === "hero" ? { ...x, image: media.photos[0].url, alt: media.photos[0].alt } : x))
+      .filter(x => x.type !== "video" || media.videos.length);   // HONEST-2: no placeholder video
+    if (media.videos.length && !w.some(x => x.type === "video")) w.splice(2, 0, { type: "video", provider: media.videos[0].provider, videoId: media.videos[0].videoId, caption: "Two minutes on the water with this year's crew." });
     await q(`UPDATE giving_pages SET ${col}=$1::jsonb WHERE id=$2 AND org_id=$3`, [JSON.stringify(w), gp.id, ORG]);
   }
 

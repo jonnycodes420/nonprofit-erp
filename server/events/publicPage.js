@@ -95,12 +95,14 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   // offered "Register" and promised somebody would be in touch about paying.
   // The staff editor's preview (eventPageHtml editable) still draws the page.
   // EVENTS-4: ...or until it has a free ticket, which needs no payments.
-  const [payOrg] = await query("SELECT name FROM orgs WHERE id=?", [e.org_id]);
+  const [payOrg] = await query("SELECT name, mission FROM orgs WHERE id=?", [e.org_id]);
   if (!(await FT.pageState(query, e.org_id, e.id)).open) {
     const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
     const who = String(brand.displayName || "").trim() || payOrg?.name || "This organization";
-    return res.status(404).send(evPage({ title: "Not open yet", brand, body:
-      `<div class="card" data-testid="event-not-open"><h1>Not open yet</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't open yet. Please check back soon.</p></div>` }));
+    // HONEST-2 item 2 (W-1126-Integrations-04): whose event, what they do, and "Opens soon", never a bare notice.
+    const mission = require("../give/notOpenBrand").missionLine(payOrg && payOrg.mission);
+    return res.status(404).send(evPage({ title: "Opens soon", brand, body:
+      `<div class="card" data-testid="event-not-open"><p class="muted" style="margin:0 0 6px;font-weight:700">${PPG.escapeHtml(who)}</p>${mission ? `<p data-testid="event-not-open-mission">${PPG.escapeHtml(mission)}</p>` : ""}<h1>Opens soon</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't open yet. Please check back soon.</p></div>` }));
   }
   res.send(await eventPageHtml(e, req.query || {}));
 }));

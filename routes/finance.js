@@ -627,6 +627,7 @@ const { signState, stateMatches, oauthEnv, mailboxAddress } = require("../server
 // this so a Connect button can say "waiting on Intuit's review" instead of
 // opening a page nobody can complete. It answers with booleans and variable
 // NAMES, never a value, never a prefix of one.
+require("../server/connections/publicList").mount(app, { wrap });   // HONEST-2 item 2: the site's list, in Settings' three groups
 app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
   const O = await oauthMod();
   const out = {};
@@ -723,11 +724,13 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
       sentence: O.providerUnavailableSentence(O.PROVIDERS[key].label) });
   }
   // INT-BUILD-1 Part 0 — a demo org shows the buttons and connects nothing.
-  if (O.PROVIDERS[key].kind === "mailbox") {
+  // HONEST-2 item 1: nothing at all, so a demo card's "connecting is off in the demo" is true of every provider.
+  {
     const ML = await mailboxMod();
     const [org] = await query("SELECT id, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
     if (ML.isDemoMailboxOrg(org))
-      return res.status(409).json({ error: "demo_org", sentence: ML.DEMO_CONNECT_SENTENCE });
+      return res.status(409).json({ error: "demo_org", sentence: O.PROVIDERS[key].kind === "mailbox" ? ML.DEMO_CONNECT_SENTENCE
+        : `In the demo, connecting is turned off. In your own account this connects ${O.PROVIDERS[key].label}.` });
   }
   const nonce = crypto.randomBytes(16).toString("base64url");
   const raw = O.encodeState({ orgId: req.user.orgId, userId: req.user.userId, nonce });

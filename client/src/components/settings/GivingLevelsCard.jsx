@@ -11,13 +11,18 @@ export function GivingLevelsCard({isAdmin,isReadOnly}){
   const [major,setMajor]=useState("");
   const [msg,setMsg]=useState(null);
   const [saving,setSaving]=useState(false);
+  const [fieldErr,setFieldErr]=useState({});   // HONEST-2 item 4: the refusal, under the field it is about
   useEffect(()=>{
     apiFetch("/settings/giving-levels").then(r=>{setLv(r);setMid(String(r.midCents/100));setMajor(String(r.majorCents/100));}).catch(()=>setLv(false));
   },[]);
   async function save(){
-    setSaving(true);setMsg(null);
+    setSaving(true);setMsg(null);setFieldErr({});
     try{ const r=await apiFetch("/settings/giving-levels",{method:"PUT",body:JSON.stringify({mid,major})}); setLv(r); setMsg("Saved. Every donor's tag uses these now."); }
-    catch(e){ setMsg(e?.message||"Those did not save."); }
+    catch(e){
+      const errs=Array.isArray(e?.errors)?e.errors:[];
+      if(errs.length)setFieldErr(Object.fromEntries(errs.map(x=>[x.field,x.message])));
+      else setMsg(e?.message||"Those did not save.");
+    }
     setSaving(false);
   }
   if(lv===null||lv===false)return null;
@@ -28,9 +33,9 @@ export function GivingLevelsCard({isAdmin,isReadOnly}){
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6}}>{lv.sentence}</div>
       <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-end",marginTop:14}}>
         <label style={{fontSize:12,color:T.ink3,display:"grid",gap:4}}>Mid starts at ($)
-          <input aria-label="Mid starts at" style={field} value={mid} onChange={e=>setMid(e.target.value)} disabled={!isAdmin||isReadOnly} inputMode="decimal"/></label>
+          <input aria-label="Mid starts at" aria-invalid={!!fieldErr.mid} style={{...field,borderColor:fieldErr.mid?T.gold500:T.bg3}} value={mid} onChange={e=>setMid(e.target.value)} disabled={!isAdmin||isReadOnly} inputMode="decimal" maxLength={16}/>{fieldErr.mid&&<span role="alert" data-testid="giving-level-error-mid" style={{fontSize:12,color:T.ink,fontWeight:600,maxWidth:220,lineHeight:1.4}}>{fieldErr.mid}</span>}</label>
         <label style={{fontSize:12,color:T.ink3,display:"grid",gap:4}}>Major starts at ($)
-          <input aria-label="Major starts at" style={field} value={major} onChange={e=>setMajor(e.target.value)} disabled={!isAdmin||isReadOnly} inputMode="decimal"/></label>
+          <input aria-label="Major starts at" aria-invalid={!!fieldErr.major} style={{...field,borderColor:fieldErr.major?T.gold500:T.bg3}} value={major} onChange={e=>setMajor(e.target.value)} disabled={!isAdmin||isReadOnly} inputMode="decimal" maxLength={16}/>{fieldErr.major&&<span role="alert" data-testid="giving-level-error-major" style={{fontSize:12,color:T.ink,fontWeight:600,maxWidth:220,lineHeight:1.4}}>{fieldErr.major}</span>}</label>
         {isAdmin&&!isReadOnly&&<button onClick={save} disabled={saving}
           style={{background:T.greenDk,color:T.white,border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{saving?"Saving":"Save"}</button>}
       </div>

@@ -257,7 +257,7 @@ export const HELP_ARTICLES = [
         `Start a giving page with "New giving page" under Giving pages & forms. Each page has "Edit in editor", "Open page", "Copy link" and "QR and embed". Nothing changes for donors until you publish.`,
         `"Propose a recurring gift" under Recurring emails the donor a proposal. Nothing changes until they accept, and the link lasts 14 days.`,
         `When a bank reissues a card, Stripe can update the saved card by itself, and Steward notes it on the donor's timeline and counts it on Recurring under "Cards updated automatically". Whether a card is updated depends on the card network and on your organization's own Stripe account; a card that is not updated still goes to failed-card recovery.`,
-        `Every plan includes the Pipeline. Moving a card asks what happened.`,
+        `The Pipeline is part of Steward. Moving a card asks what happened.`,
         `Proposals are started from a person's record with "+ New proposal". Plans never send anything.`,
         `"Mark as sent" under Acknowledgments records the gifts as thanked by letter. It does not send anything.`,
       ]},
@@ -364,7 +364,7 @@ export const HELP_ARTICLES = [
     summary: `Finance is the ledger: transactions, funds, budgets, payouts, restricted money and the month-end exports.`,
     sections: [
       { h: `Who sees this`, p: [
-        `Every plan includes Finance. It starts hidden for volunteer coordinators, who can show it again by customizing their sidebar.`,
+        `Finance is part of Steward. It starts hidden for volunteer coordinators, who can show it again by customizing their sidebar.`,
       ]},
       { h: `What you see`, p: [
         `The screen is titled "Your money." with a "Year basis" switch for Fiscal Year or Calendar Year. Overview shows money in by month, what needs you, cash on hand, revenue, expenses and surplus, and your fund balances. Funds holds Funds and Budgets. Deposits and payouts holds Payouts and the Deposit sheet, whose "Open the deposit sheet" button opens the slip right there. Grants money holds Restricted. Exports holds Month close, Year-end statements and the Audit log.`,
@@ -533,7 +533,7 @@ export const HELP_ARTICLES = [
         `Read the confirm and agree. They can no longer sign in, records they wrote keep their name, and their donors become unassigned.`,
       ]},
       { h: `Good to know`, p: [
-        `You cannot remove yourself. Every plan lets you add as many people as you need.`,
+        `You cannot remove yourself. Your plan sets how many people can sign in; Settings, Billing shows it.`,
       ]},
     ],
   },

@@ -1893,7 +1893,6 @@ async function main() {
       + `<h2>What you could do</h2><ul><li><strong>Shoreline clean-ups</strong>, three hours on Pier 4 with gloves and a flask.</li>`
       + `<li><strong>After-school tutoring</strong>, an hour a week with the same young person.</li><li><strong>Gala night crew</strong>, once a year, and the best party in town.</li></ul>`
       + `<img src="${hands}" alt="Hands shaping a clay pot">`
-      + `<h3>Hear it from a volunteer</h3><iframe src="https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ"></iframe>`
       + `<p>No experience needed. We train everyone, and tutoring volunteers have a background check, which we arrange and pay for.</p>`;
     const QS = [
       { id: "why", label: "What draws you to Harborlight?", type: "text", required: true, options: [] },
@@ -3504,7 +3503,8 @@ async function main() {
       W(3, { type: "opportunities", heading: "Ways to help", opportunityIds: [] }),
       W(4, { type: "volimpact", heading: "What our volunteers did this year" }),
       W(5, { type: "gallery", images: g.map(p => p.url) }),
-      W(6, { type: "video", provider: video ? video.provider : "youtube", videoId: video ? video.video_id : "aqz-KE-bpKQ", caption: "A Saturday on the harbor" }),
+      // HONEST-2 item 2: the org's own video, or none (never a placeholder film).
+      ...(video ? [W(6, { type: "video", provider: video.provider, videoId: video.video_id, caption: "A Saturday on the harbor" })] : []),
       W(7, { type: "volquote", text: "", name: "", permission: false }),
       W(8, { type: "shiftpicker", heading: "Upcoming shifts", opportunityIds: [] }),
       W(9, { type: "volsignup", heading: "Sign up to help", askPhone: true, askAvailability: true, askInterests: true,
