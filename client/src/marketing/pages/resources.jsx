@@ -316,6 +316,8 @@ function Legal({ t, children }) {
   </>;
 }
 
+// HONEST-1: not routed. /legal/privacy redirects to /privacy, the policy in
+// effect (it carries the Google Limited Use disclosure). Kept for the attorney.
 export function LegalPrivacy() {
   return <Legal t="Privacy policy">
     <h2>Who we are</h2><p>{LEGAL_ENTITY_NAME} ("Steward") provides donor management software to nonprofit organizations. Contact: jonathan@stewardapp.dev.</p>

@@ -25,6 +25,7 @@ import QboRead from "./QboRead";
 import { displayDate } from "../../../shared/displayDate.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
+import QboChecklist from "./qbo/QboChecklist";   // HONEST-1 item 3
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -100,14 +101,14 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
   };
   const money = n => n == null ? "" : "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const openMapping = async () => {
-    setMapOpen(o => !o);
+  const loadLists = async () => {
     if (lists || !can) return;
     try {
       const r = await apiFetch("/qbo/lists", { method: "POST" });
       setLists(r); setListNote(r.sentence || "");
     } catch (e) { setLists(null); setListNote(said(e)); }
   };
+  const openMapping = async () => { setMapOpen(o => !o); await loadLists(); };
   const save = async () => {
     setBusy("save"); setMsg("");
     try { const r = await apiFetch("/qbo/mapping", { method: "PUT", body: JSON.stringify(m) }); setMsg(r.sentence); load(); }
@@ -188,6 +189,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         {d.sent && d.sent.gifts > 0 && <> {d.sent.gifts} {d.sent.gifts === 1 ? "gift has" : "gifts have"} been sent to QuickBooks.</>}
       </div>
       {d.mappingGaps && <div data-testid="qbo-map-gaps" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.mappingGaps.sentence}</div>}
+      <QboChecklist d={d} m={m} can={can} lists={lists} loadLists={loadLists} Pick={Pick} setMap={setMap} setPart={setPart} save={save} busy={busy} />
       {d.companySentence && <div data-testid="qbo-new-company" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 4 }}>{d.companySentence}</div>}
       {d.mappingOtherCompany && <div data-testid="qbo-map-other-company" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>
         The mapping below was chosen in a different QuickBooks company, so nothing is sent until this company's accounts are chosen.</div>}

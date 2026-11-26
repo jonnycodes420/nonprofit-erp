@@ -5,7 +5,10 @@ import { countLabel } from "../../../../shared/countWords";
 import { DonorLink } from "../RecordLink";
 import { surfaceOf, sectionMeta, moveToTop } from "../../lib/homeLayout";
 import { SCOPED_SECTION_IDS, REDUCED_MOTION } from "./homeParts";
-import { Fragment } from "react";
+import { Fragment, lazy, Suspense } from "react";
+// HONEST-1: the connection lines load after Home's first look (perf-app's phone budget), from the
+// same module Settings and Finance use.
+const ConnectionLines = lazy(() => import("../connections/flowParts").then(m => ({ default: m.ConnectionLines })));
 
 export function sectionStack({ agentSection, cPad, cardWrap, dragSectionId, editMode, heroSection, impactSection, isAdmin, layout, layoutLiveMsg, monthlySection, moveSection, moveSectionToTop, myPortfolioSection, onNavigate, onSectionDragEnd, onSectionDragOver, onSectionDragStart, onSectionDrop, recurringHealth, retentionPipelineSection, sHdr, sHdrPad, sLink, sTitle, saveEdit, scopeToggle, sequencesSection, setSectionVisible, setSetupCardState, setupCelebrate, setupStatus, surface, t, thankYouSection, threadHealthLine, threadSection }) {
   return (
@@ -63,7 +66,8 @@ export function sectionStack({ agentSection, cPad, cardWrap, dragSectionId, edit
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        // HONEST-1 item 2: a connection that needs a person (a quiet feed, a broken one) raises its hand here, in brass.
+        const sections={hero:<>{heroSection}<div data-testid="home-connections"><Suspense fallback={null}><ConnectionLines onNavigate={onNavigate}/></Suspense></div></>,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);

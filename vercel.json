@@ -21,6 +21,11 @@
       "source": "/invitation",
       "destination": "/book",
       "permanent": true
+    },
+    {
+      "source": "/legal/privacy",
+      "destination": "/privacy",
+      "permanent": true
     }
   ],
   "headers": [

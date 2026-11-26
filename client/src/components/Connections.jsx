@@ -27,6 +27,7 @@ import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send,
   KeyRound, Webhook, Zap } from "lucide-react";
 import { PrivacyLine, usePrivacy } from "./PrivacyPanel";
 import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
+import { FLOW_WORD, bucketOf, isBrass, FlowSentence, FileRow, UnavailableLine } from "./connections/flowParts";   // HONEST-1
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -40,6 +41,9 @@ const money = cents => {
 // not connected. Never red: nothing here is destructive, and red on a screen
 // somebody opens every morning stops meaning anything by Thursday.
 const DOT = { broken: T.gold700, quiet: T.gold600, healthy: T.greenDk, not_connected: T.ink3 };
+// HONEST-1: the detail's badge is the card's one flow, the same as the Settings card above it.
+const FLOW_DOT = { working: T.greenDk, waiting: T.ink, needs_you: T.gold700, not_connected: T.ink3, unavailable: T.ink3 };
+const dotOf = c => c.flow ? FLOW_DOT[c.flow.state] : DOT[c.status];
 
 const shortDate = v => {
   if (!v) return "never";
@@ -559,9 +563,9 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
         <div style={h}>Connections</div>
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.55, marginTop: 6, maxWidth: 720 }}>{d.definition}</div>
       </div>}
-      {!bare && d.attentionSentence && (
+      {!bare && (d.flowSentence || d.attentionSentence) && (
         <Card data-testid="connections-attention" style={{ padding: "12px 16px", borderLeft: "3px solid " + T.gold600 }}>
-          <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.attentionSentence}</div>
+          <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.flowSentence || d.attentionSentence}</div>
         </Card>)}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{msg}</div>}
 
@@ -571,12 +575,12 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
           card was about sixty per cent down the page. The forms are below now,
           each folded to one line until somebody opens it. */}
       {(d.cards || []).filter(c => !onlyIds || onlyIds.includes(c.id)).map(c => (
-        <Card key={c.id} data-testid="connection-card" data-status={c.status} style={{ padding: "14px 16px" }}>
+        <Card key={c.id} data-testid="connection-card" data-status={c.status} data-flow={c.flow ? c.flow.state : undefined} style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: DOT[c.status] || T.ink3, display: "inline-block" }} />
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: dotOf(c) || T.ink3, display: "inline-block" }} />
             <strong style={{ fontSize: 15, color: T.ink }}>{c.label}</strong>
             <span data-testid="connection-status" style={{ fontSize: 11.5, fontWeight: 800, 
-              color: DOT[c.status] || T.ink3 }}>{(d.statuses?.[c.status]?.label) || c.status}</span>
+              color: dotOf(c) || T.ink3 }}>{c.flow ? c.flow.label : (d.statuses?.[c.status]?.label) || c.status}</span>
             {!isReadOnly && isAdmin && c.connected && c.kind === "source" && (
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>History</button>
@@ -622,7 +626,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               ))}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
-          <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
+          <div data-testid="connection-sentence" style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.flow ? <FlowSentence flow={c.flow} /> : c.sentence}</div>
 
           {/* FIX-10 D — THE TWO THINGS INSIDE THE STRIPE CARD. Stripe used to
               be two cards, both labelled Stripe, both offering "Connect", and
@@ -926,8 +930,10 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
 //
 // This changes the SCREEN only. Every button calls the handshake, route or
 // panel it called before; nothing here connects anything a new way.
+// HONEST-1: file-only tools (no account to connect) sit under "Bring in a file", in ONBOARD-5's words.
 const SECTIONS = [
   { id: "giving", title: "Giving", line: "Where gifts come in." },
+  { id: "files", title: "Bring in a file", line: "These tools have no account Steward can connect to. Upload a statement each month and we match it to donors." },
   { id: "inbox", title: "Email and calendar", line: "Conversations and meetings with people on file, logged for you." },
   { id: "marketing", title: "Email marketing", line: "Your newsletter list, kept in step with Steward." },
   { id: "books", title: "Books", line: "What your bookkeeper and accounting system receive." },
@@ -942,7 +948,7 @@ const CONN_ICON = {
   email_marketing: Send, bookkeeping: BookOpen, bookkeeperFile: FileText, pos: Store,
   apiKeys: KeyRound, webhooks: Webhook, zapier: Zap,
 };
-const STATUS_WORD = { connected: "Connected", not_connected: "Not connected", attention: "Needs attention", ready: "Ready" };
+const STATUS_WORD = FLOW_WORD;   // HONEST-1: one set of words, flowParts.jsx
 const sinceWord = ts => {
   if (!ts) return "";
   const t = new Date(ts);
@@ -953,8 +959,9 @@ const sinceWord = ts => {
   if (days < 30) return `synced ${days} days ago`;
   return "synced " + t.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
-const statusOf = c => c.status === "broken" || c.status === "quiet" ? "attention"
-  : c.connected ? "connected" : "not_connected";
+// HONEST-1: a connection's state is its `flow`, computed once on the server (server/connections/status.js).
+const statusOf = c => c.flow ? c.flow.state : c.status === "broken" || c.status === "quiet" ? "needs_you"
+  : c.connected ? "working" : "not_connected";
 const sectionOf = c => c.kind === "email_marketing" ? "marketing" : c.kind === "bookkeeping" ? "books"
   : c.kind === "pos" ? "pos" : "giving";
 
@@ -964,7 +971,8 @@ const PAGE_CSS = `.conn-grid{display:grid;grid-template-columns:repeat(2,minmax(
 
 function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
   const Icon = CONN_ICON[card.icon] || FileText;
-  const att = card.status === "attention";
+  const att = isBrass(card.status);
+  const bucket = bucketOf(card.status);
   const isConnect = card.button && card.button.kind === "connect" && card.status === "not_connected";
   const canPress = card.button && !(card.button.adminOnly && !isAdmin) && !(card.button.writes && isReadOnly);
   return (
@@ -995,13 +1003,15 @@ function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
         </div>
         <div data-testid="conn-status" style={{ display: "flex", gap: 7, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, flexShrink: 0, boxSizing: "border-box",
-            background: att ? T.gold600 : card.status === "connected" || card.status === "ready" ? T.ink : "transparent",
-            border: card.status === "not_connected" ? "1.5px solid " + T.ink3 : "none" }} />
+            background: att ? T.gold600 : bucket === "working" ? T.ink : "transparent",
+            border: bucket === "waiting" ? "1.5px solid " + T.ink : card.status === "not_connected" ? "1.5px solid " + T.ink3 : "none" }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: att ? T.gold700 : card.status === "not_connected" ? T.ink3 : T.ink }}>
             {STATUS_WORD[card.status]}</span>
-          {card.status === "connected" && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
+          {bucket === "working" && !card.flow && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
         </div>
-        {card.reason && <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink3, lineHeight: 1.5, marginTop: 4 }}>{card.reason}</div>}
+        {card.flow && card.status !== "not_connected"
+          ? <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink, lineHeight: 1.5, marginTop: 4 }}><FlowSentence flow={card.flow} /></div>
+          : card.reason && <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink3, lineHeight: 1.5, marginTop: 4 }}>{card.reason}</div>}
         {card.note}
       </div>
     </div>
@@ -1072,12 +1082,12 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   const giving = (k) => renderGivingSources ? renderGivingSources(k, nonce, reloadCards) : null;
   for (const c of d.cards || []) {
     let status = statusOf(c);
-    let reason = status === "attention" ? c.sentence : "";
+    let reason = "";
     const key = c.kind === "own_stripe" ? "stripe" : c.kind === "statements" ? "statements" : c.provider;
     const isFile = c.action === "import";
     const isSource = c.kind === "source" || c.kind === "statements";
     // Stripe set up but not finished is a thing to fix, in Settings' own words.
-    if (c.kind === "own_stripe" && stripe && stripe.onboardingStarted && !stripe.connected && status !== "connected") {
+    if (c.kind === "own_stripe" && stripe && stripe.onboardingStarted && !stripe.connected && status !== "working") {
       status = "attention";
       reason = stripe.checked ? "Stripe setup isn't finished. Stripe cannot take gifts on it until it is." : "Steward could not check with Stripe just now.";
     }
@@ -1094,8 +1104,11 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
         disabled: oauthNotReady(c), title: oauthNotReady(c) ? oauth[c.oauthProvider].sentence : "", onClick: () => startOauth(c) };
       else if (isFile || c.kind === "statements") button = { kind: "import", label: "Import a file", opens: true, adminOnly: true, onClick: () => toggle(key), detail: () => giving(null) };
       else if (isSource) button = { kind: "connect", label: "Connect", opens: true, adminOnly: true, writes: true, onClick: () => toggle(key, c.provider), detail: () => giving(c.provider) };
-    } else {
-      button = { kind: status === "attention" ? "fix" : "manage", label: status === "attention" ? "Fix" : "Manage", opens: true,
+    } else if (status !== "unavailable") {
+      // HONEST-1: the button is the flow's one step when it names one ("Turn on giving pages", "Map them").
+      const fix = status === "attention" || status === "needs_you";
+      const stepLabel = c.flow && c.flow.step && c.flow.step.to ? c.flow.step.label : null;
+      button = { kind: fix ? "fix" : "manage", label: stepLabel && status !== "working" ? stepLabel : fix ? "Fix" : "Manage", opens: true,
         onClick: () => (status === "attention" && c.kind === "own_stripe" && stripe && stripe.checked && onConnectStripe) ? onConnectStripe() : toggle(key),
         detail: c.kind === "statements" ? () => giving(null) : detail };
     }
@@ -1104,14 +1117,15 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     if (status === "not_connected" && oauthNotReady(c) && oauth[c.oauthProvider].held) button = null;
     // Square is listed only where it is live: an unconnected Square card on a
     // deployment with no Square app is a button that cannot finish.
-    if (c.provider === "square" && status === "not_connected" && oauthNotReady(c)) continue;
-    cards.push({ key, section: sectionOf(c), icon: c.kind === "own_stripe" ? "stripe" : c.kind === "source" || c.kind === "statements" ? key : c.kind,
-      name: c.label, line: c.subtitle, status, reason,
+    if (c.provider === "square" && (status === "not_connected" || status === "unavailable") && oauthNotReady(c)) continue;
+    cards.push({ key, section: isFile || c.kind === "statements" ? "files" : sectionOf(c), provider: c.provider, flow: status === "attention" ? null : c.flow,
+      icon: c.kind === "own_stripe" ? "stripe" : c.kind === "source" || c.kind === "statements" ? key : c.kind,
+      name: c.label, line: c.subtitle, status, reason: reason || (isFile && c.flow && c.connected ? c.flow.sentence : ""),
       synced: sinceWord(c.lastSyncedAt || c.lastSentAt || c.lastGiftDate), button });
   }
   // DONORBOX HAS NO ADAPTER (LANDING-3). It is listed because people ask for
   // it, and it says what is true: its export comes in as a statement.
-  if (!cards.some(c => c.key === "donorbox")) cards.push({ key: "donorbox", section: "giving", icon: "donorbox", name: "Donorbox",
+  if (!cards.some(c => c.key === "donorbox")) cards.push({ key: "donorbox", section: "files", icon: "donorbox", name: "Donorbox",
     line: "Steward has no direct Donorbox connection yet. Its gift export comes in as a statement file.",
     status: "not_connected", button: { kind: "import", label: "Import a file", opens: true, adminOnly: true, onClick: () => toggle("donorbox"), detail: () => giving(null) } });
 
@@ -1191,9 +1205,11 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   }
 
   // ── The summary line ───────────────────────────────────────────────────
-  const nConn = cards.filter(c => c.status === "connected").length;
-  const nAtt = cards.filter(c => c.status === "attention").length;
-  const shown = filter ? cards.filter(c => c.status === filter) : cards;
+  // HONEST-1: three buckets, each counted from the same status the cards show.
+  const nConn = cards.filter(c => bucketOf(c.status) === "working").length;
+  const nWait = cards.filter(c => bucketOf(c.status) === "waiting").length;
+  const nAtt = cards.filter(c => bucketOf(c.status) === "needs_you").length;
+  const shown = filter ? cards.filter(c => bucketOf(c.status) === filter) : cards;
   const order = c => { const i = GIVING_ORDER.indexOf(c.key); return i < 0 ? 99 : i; };
   const sumBtn = (on) => ({ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, cursor: "pointer",
     textDecoration: "underline", textUnderlineOffset: 3, color: on ? T.gold700 : T.ink });
@@ -1202,25 +1218,35 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     <div data-testid="connections-page" style={{ display: "flex", flexDirection: "column", gap: 26 }}>
       <style>{PAGE_CSS}</style>
       <div data-testid="connections-summary" style={{ fontSize: 15, color: T.ink, lineHeight: 1.6 }}>
-        <button type="button" data-testid="summary-connected" aria-pressed={filter === "connected"} style={sumBtn(false)}
-          onClick={() => setFilter(f => f === "connected" ? "" : "connected")}>{nConn} connected</button>
+        <button type="button" data-testid="summary-connected" aria-pressed={filter === "working"} style={sumBtn(false)}
+          onClick={() => setFilter(f => f === "working" ? "" : "working")}>{nConn} working</button>
         {", "}
-        <button type="button" data-testid="summary-attention" aria-pressed={filter === "attention"} style={sumBtn(nAtt > 0)}
-          onClick={() => setFilter(f => f === "attention" ? "" : "attention")}>{nAtt} {nAtt === 1 ? "needs" : "need"} attention</button>
+        {nWait > 0 && <><button type="button" data-testid="summary-waiting" aria-pressed={filter === "waiting"} style={sumBtn(false)}
+          onClick={() => setFilter(f => f === "waiting" ? "" : "waiting")}>{nWait} connected but not flowing yet</button>{", "}</>}
+        <button type="button" data-testid="summary-attention" aria-pressed={filter === "needs_you"} style={sumBtn(nAtt > 0)}
+          onClick={() => setFilter(f => f === "needs_you" ? "" : "needs_you")}>{nAtt} {nAtt === 1 ? "needs" : "need"} you</button>
         .
         {filter && <button type="button" onClick={() => setFilter("")} style={{ ...sumBtn(false), fontWeight: 600, color: T.ink3, marginLeft: 12 }}>Show every connection</button>}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
 
       {SECTIONS.map(sec => {
-        const list = shown.filter(c => c.section === sec.id).sort((a, b) => sec.id === "giving" ? order(a) - order(b) : 0);
-        if (!list.length) return null;
+        const all = shown.filter(c => c.section === sec.id).sort((a, b) => sec.id === "giving" || sec.id === "files" ? order(a) - order(b) : 0);
+        const list = all.filter(c => c.status !== "unavailable");
+        const later = all.filter(c => c.status === "unavailable");
+        if (!all.length) return null;
         return (
           <section key={sec.id} id={"connections-" + sec.id} data-testid="connections-section" data-section={sec.id} style={{ scrollMarginTop: 80 }}>
             <h3 style={{ margin: "0 0 2px", fontSize: 17, fontWeight: 700, color: T.ink }}>{sec.title}</h3>
             <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 12 }}>{sec.line}</div>
             <div className="conn-grid">
-              {list.flatMap(c => {
+              {sec.id === "files" ? list.flatMap(c => {
+                const isOpen = open === c.key && c.button && c.button.detail;
+                const out = [<FileRow key={c.key} card={c} canPress={isAdmin} onUpload={c.button ? c.button.onClick : () => toggle(c.key)} />];
+                if (isOpen) out.push(<div key={c.key + ":detail"} className="conn-detail" data-testid="conn-detail" data-key={c.key}
+                  style={{ minWidth: 0 }}>{c.button.detail()}</div>);
+                return out;
+              }) : list.flatMap(c => {
                 const isOpen = open === c.key && c.button && c.button.detail;
                 const out = [<ConnCard key={c.key} card={c} open={isOpen} isAdmin={isAdmin} isReadOnly={isReadOnly}
                   onButton={c.button ? c.button.onClick : undefined} />];
@@ -1229,6 +1255,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
                 return out;
               })}
             </div>
+            {later.length > 0 && <div style={{ marginTop: 10 }}>{later.map(c => <UnavailableLine key={c.key} card={c} canPress={!isReadOnly} />)}</div>}
           </section>);
       })}
 

@@ -6,7 +6,7 @@ import { Why, Move, MoveSpreadsheet, MoveCrm, MoveGivingPlatform, For, Audience,
 import { Book } from "./book";
 import { Status, Subprocessors, YourData, Dpa } from "./trust";
 import { Tools, ToolLostAndFound, ToolRetention, ToolLapsed, ToolThermometer, ToolLybuntFinder, ToolThankYouLetter } from "./tools";
-import { Resources, Guides, Guide, Templates, Articles, Article, Glossary, GlossaryTerm, Faq, Help, HelpArticle, WhatsNew, Research, LegalPrivacy, LegalTerms, LegalAccessibility } from "./resources";
+import { Resources, Guides, Guide, Templates, Articles, Article, Glossary, GlossaryTerm, Faq, Help, HelpArticle, WhatsNew, Research, LegalTerms, LegalAccessibility } from "./resources";
 
 export const PAGES = {
   home: Home, pricing: Pricing,
@@ -18,5 +18,5 @@ export const PAGES = {
   glossary: Glossary, glossaryTerm: GlossaryTerm, faq: Faq, help: Help, helpArticle: HelpArticle, whatsNew: WhatsNew,
   tools: Tools, toolLostAndFound: ToolLostAndFound, toolRetention: ToolRetention, toolLapsed: ToolLapsed, toolThermometer: ToolThermometer, toolLybunt: ToolLybuntFinder, toolThankYou: ToolThankYouLetter, research: Research,
   status: Status, subprocessors: Subprocessors, yourData: YourData, dpa: Dpa,
-  legalPrivacy: LegalPrivacy, legalTerms: LegalTerms, legalAccessibility: LegalAccessibility,
+  legalTerms: LegalTerms, legalAccessibility: LegalAccessibility,
 };
