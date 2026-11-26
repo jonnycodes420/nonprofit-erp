@@ -25,4 +25,9 @@ export const SURFACES = [
   { name: "event.rows", file: "lib/eventRows.js", read: "an event's guests, the check-in header (N of M), Came", shows: ["event_attendees", "events"] },
   { name: "trash.list", file: "components/settings/TrashList.jsx", read: "Settings → Trash: the rows", shows: ["donors", "deleted_records"] },
   { name: "trash.count", file: "components/settings/TrashLink.jsx", read: "Settings: Trash (n)", shows: ["donors"] },
+  // SALES-5: /ops → Sales. Each reads the customer's one price (server/admin/sales/customerPrice.js).
+  { name: "sales.pipeline", file: "pages/ops/sales/PipelineView.jsx", read: "Pipeline board: column counts and monthly totals, each card's price", shows: ["sales_deals", "sales_quotes", "orgs"] },
+  { name: "sales.deal-header", file: "pages/ops/sales/DealHeader.jsx", read: "the deal page's header: stage, price, ARR, next step", shows: ["sales_deals", "sales_quotes", "orgs"] },
+  { name: "sales.record", file: "pages/ops/sales/RecordPage.jsx", read: "a sales record: its fields, the Steward org's MRR row", shows: ["sales_deals", "sales_orgs", "orgs"] },
+  { name: "sales.home", file: "pages/ops/sales/SalesView.jsx", read: "Forecast: weighted, signed, won billing starts, MRR now and ARR, month by month; Today", shows: ["sales_deals", "sales_quotes", "orgs"] },
 ];

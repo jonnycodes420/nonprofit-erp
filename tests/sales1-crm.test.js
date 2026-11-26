@@ -18,9 +18,10 @@ const { testNow, civilDay, dayOffset, nyNoon } = require("./clock");
 const LISTS = require("../server/admin/sales/lists");
 const FORECAST = require("../server/admin/sales/forecast");
 const TODAY = require("../server/admin/sales/today");
+const PRICE = require("../server/admin/sales/customerPrice");   // SALES-5
 
 const PASS = "loadtest1234";
-const HOME = "org_sales1home", CUST = "org_sales1cust";
+const HOME = "org_sales1home", CUST = "org_sales1cust", PRICED = "org_sales5price";
 const SUPER = "sales1-super@example.org", ADMIN = "sales1-admin@example.org";
 const FX = path.join(__dirname, "fixtures", "sales1");
 const DAY = 86400000;
@@ -43,7 +44,7 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
 
 (async () => {
   await wipeSales();
-  for (const o of [HOME, CUST]) await wipeOrg(o);
+  for (const o of [HOME, CUST, PRICED]) await wipeOrg(o);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Sales1 Home','sales1-home',1,'active','team')`, [HOME]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,trial_ends_at) VALUES ($1,'Juniper Ridge (Steward)','sales1-cust',1,'trialing','team',$2)`,
     // FLAKE-5 (W-DAY-ops-trial): the trial ends at 9 PM New York on the run's day + 10, which is the
@@ -348,8 +349,81 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   const fh = (await S(sup, "GET", "/home")).body.forecast;
   ok("§13 the goal is Jonathan's to set, and the card reads it", goal.status === 200 && fh.goal.says === "$15,000 MRR by Sep 30 2027" && fh.months.at(-1).label === "Sep 2027" && typeof fh.sentences.weighted === "string");
 
+  // ── §15 · SALES-5: ONE PRICE PER CUSTOMER, AND THE FORECAST COUNTS WON-NOT-BILLING ──
+  // (a) The rule: Stripe if billing, then the signed order or quote (the newer), then the agreed price, then the deal's value.
+  const base = { dealValueCents: 50000, closeDate: "2027-02-01" };
+  const pStripe = PRICE.pick({ ...base, stripeCents: 31000, order: { priceCents: 29900, startOn: "2027-01-01", at: 2 }, agreedCents: 28000 });
+  const pOrder = PRICE.pick({ ...base, order: { priceCents: 29900, startOn: "2027-01-01", at: 2 }, quote: { priceCents: 25000, startOn: "2026-12-15", at: 1 }, agreedCents: 28000 });
+  const pQuote = PRICE.pick({ ...base, order: { priceCents: 29900, startOn: "2027-01-01", at: 1 }, quote: { priceCents: 25000, startOn: "2026-12-15", at: 2 }, agreedCents: 28000 });
+  const pAgreed = PRICE.pick({ ...base, agreedCents: 28000, firstChargeOn: "2027-01-10" });
+  const pDeal = PRICE.pick({ ...base });
+  ok("§15 the four-price rule picks Stripe, then the order (or the newer quote), then agreed, then the deal's value",
+    pStripe.source === "stripe" && pStripe.cents === 31000 && pStripe.billing && pStripe.startsOn === null
+    && pOrder.source === "order" && pOrder.cents === 29900 && pOrder.startsOn === "2027-01-01" && pOrder.says === "$299/mo, from the signed order; Stripe starts billing Jan 1, 2027"
+    && pQuote.source === "quote" && pQuote.cents === 25000 && pAgreed.source === "agreed" && pAgreed.startsOn === "2027-01-10"
+    && pDeal.source === "deal" && pDeal.cents === 50000 && pDeal.startsOn === "2027-02-01" && pOrder.arrCents === 358800 && PRICE.arrOf(29900) === 358800,
+    { pStripe: pStripe.source, pOrder: pOrder.says, pQuote: pQuote.source, pAgreed: pAgreed.source, pDeal: pDeal.source });
+  ok("§15 the record page's MRR row says not billing yet, with the agreed price and the first charge",
+    PRICE.mrrRow(pOrder) === "Not billing yet · $299/mo agreed, first charge Jan 1, 2027" && PRICE.mrrRow(pStripe) === "$310/mo");
+
+  // (b) Jonathan's January, 25 Nov: CKRH won at $299 from Jan 1, and three open deals closing in January at 90%, 80% and 35%.
+  const ckNow = Date.parse("2026-11-26T01:10:00Z");   // 25 Nov, 8:10 PM New York
+  const ck = (billing, mrr) => FORECAST.forecast({ deals: [
+    { id: "ckrh", stage_kind: "won", value_cents: 29900, price_cents: 29900, price_billing: billing, price_signed: !billing, billing_starts_on: billing ? null : "2027-01-01", close_date: "2027-01-01", probability: 100 },
+    { id: "o90", stage_kind: "open", value_cents: 29900, probability: 90, close_date: "2027-01-12" },
+    { id: "o80", stage_kind: "open", value_cents: 29900, probability: 80, close_date: "2027-01-20" },
+    { id: "o35", stage_kind: "open", value_cents: 29900, probability: 35, close_date: "2027-01-28" },
+  ], history: [], stages: new Map(), mrrNowCents: mrr, goal: { cents: 1000000, by: "2027-06-30", says: "x" } }, ckNow);
+  const ckBefore = ck(false, 120000), jan = ckBefore.months.find(m => m.month === "2027-01");
+  ok("§15 January reads MRR now + $299 won + $612.95 weighted", jan.wonStartingCents === 29900 && jan.weightedClosingCents === 61295
+    && jan.projectedCents === 120000 + 29900 + 61295 && ckBefore.wonStartingCents === 29900 && ckBefore.months.find(m => m.month === "2026-12").wonStartingCents === 0,
+    { jan, won: ckBefore.wonStartingCents });
+  const ckAfter = ck(true, 120000 + 29900), jan2 = ckAfter.months.find(m => m.month === "2027-01");
+  ok("§15 once Stripe bills it, it is in MRR now and not counted twice (the hand-off month)", ckAfter.wonStartingCents === 0 && jan2.wonStartingCents === 0
+    && jan2.projectedCents === jan.projectedCents && ckAfter.billingDeals === 1 && ckAfter.mrrNowArrCents === (120000 + 29900) * 12, { jan2 });
+
+  // (c) The screens: a won deal with a signed order reads the order's price on the board and the header, from one read;
+  // a value edit asks first, and a deal with no order shows its saved value at once on both.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,trial_ends_at,timezone) VALUES ($1,'Kestrel Ridge (Steward)','sales5-price',1,'trialing','team',$2,'America/New_York')`,
+    [PRICED, new Date(nyNoon(dayOffset(40))).toISOString()]);
+  const pOrg = await S(sup, "POST", "/rec/org", { name: "Kestrel Ridge Hall" });
+  await S(sup, "POST", `/orgs/${pOrg.body.id}/steward`, { stewardOrgId: PRICED });
+  const pDealR = await S(sup, "POST", "/rec/deal", { name: "Kestrel Ridge – Paying", stage_id: ST.Paying, value_cents: 50000, close_date: dayOffset(40), links: [{ type: "org", id: pOrg.body.id, primary: true }] });
+  await q(`INSERT INTO start_links (id, org_id, token_hash, contact_name, contact_email, price_cents, price_basis, charge_mode, status, expires_at, signed_at, first_charge_at, deal_id, order_json, created_by, created_by_name)
+           VALUES ('sl_sales5', $1, 'h_sales5', 'Made Up', 'made.up@example.org', 29900, 'custom', 'fixed', 'signed', NOW() + interval '30 days', NOW(), $2, $3, '{"interval":"month"}'::jsonb, 'u_sales1_super', 'Sales Super')`,
+    [PRICED, new Date(nyNoon(dayOffset(40))).toISOString(), pDealR.body.id]);
+  const rowOf = async id => (await S(sup, "GET", `/list/deal?view=${view({})}`)).body.rows.find(r => r.id === id);
+  const headOf = async id => (await S(sup, "GET", `/deals/${id}/header`)).body.header;
+  const pr = await rowOf(pDealR.body.id), ph = await headOf(pDealR.body.id);
+  ok("§15 the board's card and the deal header read one price: the signed order's $299, not the deal's $500",
+    pr.price_cents === 29900 && pr.price_source === "order" && ph.valueCents === 29900 && ph.arrCents === 358800 && ph.dealValueCents === 50000 && /from the signed order/.test(ph.priceSays), { pr: pr && pr.price_cents, ph });
+  const warn = await S(sup, "PATCH", `/rec/deal/${pDealR.body.id}`, { value_cents: 40000 });
+  const keptVal = (await q(`SELECT value_cents FROM sales_deals WHERE id = $1`, [pDealR.body.id]))[0];
+  ok("§15 editing the value on a deal with a signed order asks first, and saves nothing until told", warn.status === 409 && warn.body.error === "price_differs"
+    && /This changes the pipeline value only\. The signed order says \$299\/mo/.test(warn.body.says) && Number(keptVal.value_cents) === 50000, warn.body);
+  const only = await S(sup, "PATCH", `/rec/deal/${pDealR.body.id}`, { value_cents: 40000, valueOnly: true });
+  ok("§15 \"Change the pipeline value only\" saves the value; every screen still shows the order's price", only.status === 200
+    && (await rowOf(pDealR.body.id)).price_cents === 29900 && (await headOf(pDealR.body.id)).valueCents === 29900);
+  const fMonth = dayOffset(40).slice(0, 7);
+  const wonBefore = (await S(sup, "GET", "/home")).body.forecast.months.find(m => m.month === fMonth);
+  await q(`UPDATE orgs SET subscription_status = 'active', stripe_subscription_id = 'sub_sales5_madeup', billing_mrr_cents = 31000 WHERE id = $1`, [PRICED]);
+  const billed = await rowOf(pDealR.body.id);
+  const wonAfter = (await S(sup, "GET", "/home")).body.forecast.months.find(m => m.month === fMonth);
+  ok("§15 the forecast counts the won deal from its first charge month, and drops it there once Stripe bills it", wonBefore && wonBefore.wonStartingCents >= 29900
+    && billed.price_billing === true && billed.price_cents === 31000 && wonAfter.wonStartingCents === wonBefore.wonStartingCents - 29900, { wonBefore, wonAfter, billed: billed.price_cents });
+  const plain = await S(sup, "POST", "/rec/deal", { name: "Kestrel Ridge – Add-on", stage_id: ST["Demo done"], value_cents: 10000 });
+  const saved = await S(sup, "PATCH", `/rec/deal/${plain.body.id}`, { value_cents: 12300 });
+  const [plainRow, plainHead, board] = await Promise.all([rowOf(plain.body.id), headOf(plain.body.id), S(sup, "GET", `/list/deal?view=${view({})}`)]);
+  const colTotal = board.body.rows.filter(r => r.stage_id === ST["Demo done"]).reduce((n, r) => n + r.price_cents, 0);
+  ok("§15 a deal with no order: the saved value is the board card, the column total and the header, from one read", saved.status === 200
+    && plainRow.price_cents === 12300 && plainRow.price_source === "deal" && plainHead.valueCents === 12300 && colTotal >= 12300, { plainRow: plainRow.price_cents, head: plainHead.valueCents });
+  const qq = (sql, p) => { let i = 0; return q(sql.replace(/\?/g, () => `$${++i}`), p); };   // the server's ? placeholders
+  const disagree = await require("../scripts/ops/sales5-price-check").find(qq);
+  ok("§15 the price check lists the won deal whose prices disagree, by id (dry run, no names)", disagree.some(x => x.id === pDealR.body.id && x.p.cents === 31000 && x.p.prices.deal === 40000),
+    disagree.map(x => ({ id: x.id, cents: x.p.cents, deal: x.p.prices.deal })));
+
   await wipeSales();
-  for (const o of [HOME, CUST]) await wipeOrg(o);
+  for (const o of [HOME, CUST, PRICED]) await wipeOrg(o);
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); try { await closeDb(); } catch { /* */ } process.exit(1); });

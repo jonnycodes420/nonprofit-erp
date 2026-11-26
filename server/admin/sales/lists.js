@@ -101,6 +101,8 @@ async function rowsFor(query, type, { scan = true } = {}) {
     }
     return out;
   });
+  // SALES-5: every deal row carries its customer's one price (customerPrice.js), which the board, the header and the forecast read.
+  if (type === "deal") await require("./customerPrice").attach(query, out);
   // SALES-4: last touch, next step and fit on every row (scanRows.js).
   return scan ? require("./scanRows").add(query, type, out) : out;
 }

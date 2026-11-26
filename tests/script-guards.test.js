@@ -56,6 +56,9 @@ const GUARDED_WRITERS = [
   // SALES-4 — moves Steward's own planning notes off prospects to "Steward (us)". Dry run by
   // default; --apply writes through writerDbUrl. Jonathan runs it; never at deploy.
   "sales-misfiled-notes",
+  // SALES-5 — lists won deals whose four prices disagree (ids and cents only). Dry run by default;
+  // --deal <id> --apply sets that one deal's value through writerDbUrl, stamped. Jonathan runs it; never at deploy.
+  "sales5-price-check",
   // DEPLOY-1: gives back queue jobs whose lease ran out and stops the ones no
   // worker can run. Dry run by default; --apply writes through writerDbUrl.
   // Jonathan runs it; never at deploy.
