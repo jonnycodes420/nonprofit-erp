@@ -65,9 +65,10 @@ async function fixture() {
   await q(`INSERT INTO households (id,org_id,name,primary_donor_id) VALUES ('hh_ev_halv',$1,'The Halvorsens','d_ev_ih')`, [ORG]);
   await q(`UPDATE donors SET household_id='hh_ev_halv' WHERE id IN ('d_ev_ih','d_ev_hh') AND org_id=$1`, [ORG]);
   await q(`INSERT INTO events (id,org_id,name,event_type,date,location) VALUES ('ev_ev_run',$1,'Harbor Run','5k',$2,'North Shore Path'),('ev_ev_gala',$1,'Spring Gala','gala',$3,'The Boathouse')`, [ORG, plus(-2), plus(40)]);
-  await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps) VALUES
-    ('ct_ev_major',$1,'Major donor','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb),
-    ('ct_ev_new',$1,'New donor, first year','by_hand','[{"type":"thank","draft":null,"label":"Call them","offsetDays":3}]'::jsonb)`, [ORG]);
+  // ATLAS-12 (off-3): both journeys are on; a Draft journey can't be started (FLOWS-3), which is not what these cases test.
+  await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps,journey_enabled) VALUES
+    ('ct_ev_major',$1,'Major donor','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb,true),
+    ('ct_ev_new',$1,'New donor, first year','by_hand','[{"type":"thank","draft":null,"label":"Call them","offsetDays":3}]'::jsonb,true)`, [ORG]);
   const tok = await login(ADMIN);
   const g = await api("POST", "/groups", tok, { name: "Board prospects", kind: "static" });
   if (g.status >= 300) throw new Error("fixture group: " + JSON.stringify(g.body));
@@ -184,7 +185,16 @@ function standIn() {
   const off = [];
   for (const c of CASES.AI_OFF) {
     const got = await say(tok, c, ctx);
-    const s = score(c, got, ctx, true);
+    // ATLAS-12 item 1: a population case passes only when its count is Reports' own (the registry's builder for lapsed).
+    let popOk = true;
+    if (c.population) {
+      const want = c.population === "lapsed" ? await require("../../shared/numbers/populations").population("lapsed").count({ query: require("../../db").query, orgId: ORG })
+        : ((await api("GET", `/reports/${c.population}`, tok)).body.rows || []).length;
+      const line = (got.lines[0] || {}).line || "";
+      const name = require("../../shared/numbers/populations").population(c.population).name;
+      popOk = want === 0 ? line.startsWith(`Nobody is ${name}`) : line.startsWith(`${want.toLocaleString("en-US")} ${want === 1 ? "person is" : "people are"} ${name}`);
+    }
+    const s = score(c, got, ctx, popOk);
     off.push({ id: c.id, text: c.text, did: got.lines.map(l => `${l.state} · ${l.line}`), pass: s.exact });
     console.log(`${s.exact ? "PASS" : "FAIL"}  ${c.id}. AI off: ${c.text}`);
     if (!s.exact) console.log("      want", s.want, "\n      got ", s.have, got.lines.map(l => l.line));

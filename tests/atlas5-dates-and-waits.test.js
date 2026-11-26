@@ -202,7 +202,7 @@ function expected(phrase, today) {
   console.log("\n§7 what Steward can't know, plainly");
   rq = await say("What is Sterling's favorite color?");
   const cl = ((rq.lines || [])[0] || {}).line || "";
-  ok("§7 one plain sentence, with what she can do about it", cl === "I don't have Sterling's favorite color. I can add it as a note if you tell me.", cl);
+  ok("§7 one plain sentence, with what she can do about it", cl === "Steward doesn't know Sterling's favorite color. I can add it as a note if you tell me.", cl);
   ok("§7 no quoted fragment", !/["“”]/.test(cl), cl);
 
   console.log("\n§8 speed");
