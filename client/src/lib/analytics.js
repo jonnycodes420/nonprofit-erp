@@ -137,6 +137,8 @@ export function start() {
       mask_all_element_attributes: false,   // scrubEvent keeps class, id, data-testid, role, type only
       disable_surveys: true,
       capture_exceptions: false,            // Sentry has errors
+      enable_recording_console_log: false,  // a console line can carry what a screen showed
+      capture_performance: false,           // network timing records request URLs, a search's words among them
       disable_session_recording: NO_REPLAY.test(h.pathname),
       session_recording: { maskAllInputs: true, maskTextSelector: "*", maskAttributeFn: replayAttr, blockSelector: "[data-ph-block]" },
       before_send: scrubEvent,
