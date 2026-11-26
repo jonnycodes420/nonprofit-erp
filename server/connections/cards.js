@@ -192,10 +192,13 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
   // 3 · Statement imports. Not a connection anybody can break: a file arrives
   // or it does not, and the card says when the last one did.
   {
+    // HONEST-2: the org's own day of the last file. String(a Date).slice(0, 10) was "Tue Nov 24",
+    // which no day count reads, so the card said "The last file was brought in ." on staging.
+    const OT = require("../../orgTime");
     const [imp] = await query(
-      `SELECT MAX(committed_at) AS last, COUNT(*)::int AS n FROM imports
+      `SELECT MAX(committed_at) AS last, MAX(${OT.orgDateOfSql("committed_at", OT.orgTzSql("org_id"))})::text AS last_day, COUNT(*)::int AS n FROM imports
         WHERE org_id=? AND shape <> 'source' AND committed_at IS NOT NULL`, [orgId]);
-    const last = imp && imp.last ? String(imp.last).slice(0, 10) : null;
+    const last = imp && imp.last_day ? String(imp.last_day).slice(0, 10) : null;
     cards.push({
       id: "statements", kind: "statements", provider: "statements", label: "Statement imports",
       subtitle: "Files somebody drops in: a bank statement, a spreadsheet, a report from somewhere with no API.",

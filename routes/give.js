@@ -2256,7 +2256,7 @@ app.post("/giving-pages/:id/page/revert", requireAuth, requireAdmin, checkWriteA
 // the page id 'org_form'.
 const ORG_FORM = "org_form";
 const ladderOf = (raw, dflt) => {
-  try { const a = typeof raw === "string" ? JSON.parse(raw) : raw; return Array.isArray(a) && a.length ? a.map(Number) : [...dflt]; }
+  try { const a = typeof raw === "string" ? JSON.parse(raw) : raw; return Array.isArray(a) && a.length ? a.map(Number).sort((x, y) => x - y) : [...dflt]; }   // HONEST-2 item 5
   catch { return [...dflt]; }
 };
 async function orgFormRow(orgId) {
@@ -6685,7 +6685,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     if (!Array.isArray(b[key])) return res.status(400).json({ error: "bad_ladder", message: `${key} must be an array of dollar amounts.` });
     const clean = b[key].map(n => Math.round(Number(n))).filter(n => Number.isFinite(n) && n >= 1 && n <= 1000000);
     if (clean.length < 3 || clean.length > 6 || clean.length !== b[key].length) return res.status(400).json({ error: "bad_ladder", message: `${key} must be 3–6 whole-dollar amounts between $1 and $1,000,000.` });
-    updates.push(`${col} = ?`); params.push(JSON.stringify(clean));
+    updates.push(`${col} = ?`); params.push(JSON.stringify([...clean].sort((x, y) => x - y)));   // HONEST-2 item 5: ascending, always
     void dflt;
   }
   if (b.minRecurringCents !== undefined) {

@@ -190,7 +190,8 @@ function validateLadder(raw, label) {
   if (!Array.isArray(raw)) return { error: `${label} are a list of dollar amounts.` };
   const clean = raw.map(n => Math.round(Number(n))).filter(n => Number.isFinite(n) && n >= 1 && n <= 1000000);
   if (clean.length < 3 || clean.length > 6 || clean.length !== raw.length) return { error: `${label} are 3 to 6 whole-dollar amounts between $1 and $1,000,000.` };
-  return { ladder: clean };
+  // HONEST-2 item 5 (W-1126-Fundraising-02): a ladder typed 25, 50, 999, 250, 500 is kept and shown ascending.
+  return { ladder: [...clean].sort((a, b) => a - b) };
 }
 function validateOrgForm(base, patch) {
   const p = patch && typeof patch === "object" ? patch : {};

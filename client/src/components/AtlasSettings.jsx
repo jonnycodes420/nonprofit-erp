@@ -39,7 +39,11 @@ export function AtlasSettings({ isReadOnly, isAdmin, onNavigate }) {
               : `${name} logs, adds to journeys and groups, sets reminders and drafts emails when you ask, each with Undo. Money and sending wait for your tap.`}
           </div>
           {status && status.ai === "off" && <div data-testid="settings-atlas-ai-off" style={{ fontSize: 13, color: T.ink, marginTop: 8, lineHeight: 1.5 }}><span data-testid="settings-atlas-reading-off">{READING_OFF}</span>{" "}
-            {onNavigate && <button type="button" onClick={() => onNavigate("settings", { section: "data" })} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>The AI switch is in Your Data.</button>}</div>}
+            {/* HONEST-2 item 4 (W-1126-Atlas-03): the switch is in Your Data only when this Steward has AI to switch
+                (Settings shows it only when a key is configured). With no key there is no switch anywhere, so say that. */}
+            {status.reason === "ai_disabled"
+              ? onNavigate && <button type="button" data-testid="settings-atlas-ai-switch" onClick={() => onNavigate("settings", { section: "data" })} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Turn reading on in Your Data.</button>
+              : status.reason === "agent_unavailable" && <span data-testid="settings-atlas-no-switch">AI isn&rsquo;t set up on this Steward, so there is no switch to turn it on.</span>}</div>}
         </div>
         {isAdmin && paused !== null && <button type="button" data-testid="settings-atlas-pause" disabled={isReadOnly || busy} onClick={toggle}
           style={{ background: paused ? T.greenDk : T.white, color: paused ? T.white : T.ink, border: "1px solid " + (paused ? T.greenDk : T.ink), borderRadius: 9, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>

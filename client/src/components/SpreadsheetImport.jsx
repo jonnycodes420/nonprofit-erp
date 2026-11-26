@@ -400,7 +400,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
           <div role="alert" data-testid="sheet-read-only" style={{ ...box, fontSize: 14 }}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Your account is read-only, so nothing can be imported. Reactivate to continue.</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" data-testid="sheet-reactivate" style={btn(true)} onClick={() => { if (onClose) onClose(); navigate("/app/settings?section=account"); }}>Reactivate</button>
+              <button type="button" data-testid="sheet-reactivate" style={btn(true)} onClick={() => { if (onClose) onClose(); navigate("/app/settings?section=billing"); }}>Reactivate</button>
               <button type="button" style={btn(false)} onClick={() => { if (onClose) onClose(); }}>Close</button>
             </div>
           </div>

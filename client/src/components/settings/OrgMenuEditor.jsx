@@ -90,7 +90,7 @@ export function MajorGiftsTabsCard({ load, save, canEdit = true, announce = fals
             {top100 ? "On: Major Gifts has a Top 100 tab, and a profile shows the person's place on it."
               : "Off: no Top 100 tab, and no Top 100 on profiles or in Atlas. Major Gifts opens on Pipeline. Nobody on the list is removed."}</span></span>
       </label>
-      <p style={note}>The tabs on the Major Gifts page. With one on, the page is just that view, with no tabs. The sidebar still says Major Gifts.</p>
+      <p style={note}>Choose which tabs the Major Gifts page shows. With only one on, the page is just that view, with no tabs. The sidebar still says Major Gifts.</p>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         {views.map(v => (
           <label key={v.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5, color: T.ink, minHeight: 36 }}>

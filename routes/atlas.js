@@ -311,7 +311,7 @@ async function writeDraft(orgId, { firstName, opening, words, month, thanks, mee
   const [AT_, voice, gate, DA] = await Promise.all([AT(), c.voice || (c.voice = orgVoice(orgId)), c.gate || (c.gate = agentGate(orgId)), import("../shared/draftAbout.js")]);   // ATLAS-3: in the org's voice
   // FLOWS-10 item 5 / FLOWS-18 (W-1113-Donors-26): the template names one real fact from their record
   // and opens with the About note's detail (shared/draftAbout.js draftTemplate).
-  const template = DA.draftTemplate({ firstName, opening, fact, thanks, meet, month, aboutThem, voice });
+  const template = DA.draftTemplate({ firstName, fullName, opening, fact, thanks, meet, month, aboutThem, voice });
   if (!gate.ok) return template;
   try {
     const prompt = AT_.buildDraftPrompt({ firstName, words, month, aboutThem, facts, signoff: voice.signoff || "" });
@@ -326,7 +326,9 @@ async function writeDraft(orgId, { firstName, opening, words, month, thanks, mee
     const out = use && use.input;
     // The month she asked to meet in must be in it; otherwise the template is.
     // FLOWS-18: and a draft whose opening lines leave out the About note's detail is not used.
-    if (out && out.body && out.subject && (!meet || !month || out.body.includes(month)) && DA.opensWithAbout(out.body, aboutThem, { name: fullName || firstName })) return { subject: String(out.subject).slice(0, 200), body: String(out.body).replace(/\s+—\s+|—/g, ", ").slice(0, 4000) };
+    // HONEST-2 item 6: and one carrying a note's label ("QA", "About:") or naming nobody is not used.
+    if (out && out.body && out.subject && (!meet || !month || out.body.includes(month)) && DA.opensWithAbout(out.body, aboutThem, { name: fullName || firstName })
+      && (await import("../shared/suggestionGuard.js")).guardDraft(`${out.subject}\n${out.body}`, { donor: { name: fullName || firstName } }).ok) return { subject: String(out.subject).slice(0, 200), body: String(out.body).replace(/\s+—\s+|—/g, ", ").slice(0, 4000) };
   } catch (e) {
     console.error("[atlas] draft failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 160));
     await recordAiFallback(orgId, "atlas.draft", e).catch(() => {});

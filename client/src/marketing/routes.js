@@ -14,6 +14,8 @@
 //   /privacy, /terms the live legal pages; /legal/* are the attorney drafts.
 //                   HONEST-1: /legal/privacy redirects to /privacy (vercel.json):
 //                   the draft lacked the Google Limited Use disclosure
+//                   HONEST-2: /legal/terms redirects to /terms the same way: the draft
+//                   was marked "Not yet in effect"
 import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
 import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
@@ -44,13 +46,13 @@ export const ROUTES = [
   { path: "/connections", page: "connections", title: P("Steward Connections", 5), description: "Steward connects to the tools you already use, your payments and your email, and quietly watches them, so nothing slips through the cracks between systems." },
   { path: "/onboarding", page: "onboarding", title: T("Your move, done with you."), description: "Every new organization gets a real person for the move, the setup and the first month. You will know their name and their email address." },
 
-  { path: "/features", page: "features", title: T("Everything included, nothing to unlock."), description: "Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." },
+  { path: "/features", page: "features", title: T("Everything Steward does."), description: "Each feature, what it does, and where it lives in Steward: donors, giving, events, volunteers, grants, reports and the agent." },
   ...FEATURE_SLUGS.map(s => ({ path: "/features/" + s, page: "feature", slug: s, title: T(FEAT[s].h), description: FEAT[s].lede })),
 
   // LANDING-3 part 1: /pricing moved here from the app router. The page
   // still carries the signed-in Stripe checkout, so the upgrade path from
   // UpgradeModal and Settings is unchanged.
-  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Pricing depends on the size of your donor file and comes with hands-on setup. Everything is included, no platform fee on gifts, month to month. We walk you through it on a call." },
+  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Pricing depends on the size of your donor file and comes with hands-on setup. No platform fee on gifts, month to month. We walk you through it on a call." },
 
   { path: "/why", page: "why", title: T("Imagine never losing track of a single person who believes in what you do."), description: VISION },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
@@ -97,13 +99,12 @@ export const ROUTES = [
   { path: "/tools/lybunt-sybunt", page: "toolLybunt", title: T("Find your LYBUNT and SYBUNT donors."), description: "Drop in a gifts CSV and see who gave last year but not this year, and who gave in an earlier year. Totals foot to your file. Nothing leaves your browser." },
   { path: "/tools/thank-you-letter", page: "toolThankYou", title: "Steward · Donor thank-you letter builder", description: "Pick the gift: a first gift, monthly, major, in memory or year-end. Fill in a few details and copy a warm, specific thank-you letter. Free, no signup." },
 
-  { path: "/legal/terms", page: "legalTerms", title: "Steward · Terms of service", description: "The terms for using Steward, the donor management service. Draft for attorney review." },
   { path: "/legal/accessibility", page: "legalAccessibility", title: "Steward · Accessibility", description: "We design Steward to WCAG 2.1 AA, test with keyboards and screen readers, and fix what we find." },
 ];
 
 // App routes the marketing pages link to. They are real pages, just not
 // marketing ones; the link guard accepts them alongside ROUTES.
-export const APP_LINK_TARGETS = ["/login", "/lost-and-found", "/app/settings", "/privacy"];   // ONBOARD-4: no /signup. HONEST-1: /privacy is the policy in effect
+export const APP_LINK_TARGETS = ["/login", "/lost-and-found", "/app/settings", "/privacy", "/terms"];   // ONBOARD-4: no /signup. HONEST-1: /privacy is the policy in effect. HONEST-2: /terms, the terms in effect
 // CONTENT-1 · files the pages link to: the articles feed (written by the
 // prerender) and the move page's starter template (client/public).
 export const FILE_LINK_TARGETS = ["/rss.xml", "/marketing/steward-starter-template.csv"];

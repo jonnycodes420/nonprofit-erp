@@ -3,6 +3,7 @@
 // make it look so good, logos are good, I love this Stripe screen").
 // The four colours only: ink, white (cream its shade), emerald, brass.
 import { useState } from "react";
+import { FlowWord } from "../../components/connections/flowParts";   // HONEST-2 item 1: the card's own state word
 import { T } from "../../components/shared";
 import { countLabel } from "../../../../shared/countWords.js";
 
@@ -95,13 +96,13 @@ export function TrustLine({ scopes }) {
 }
 
 // One connection, the mockup's Stripe page: logo, what it takes, one Connect, four things it does.
-export function Connection({ name, logo, minutes, connectedAs, onConnect, onManage, busy, gets, children, scopes, testid, note }) {
+export function Connection({ name, logo, minutes, connectedAs, onConnect, onManage, busy, gets, children, scopes, testid, note, flowProvider = null }) {
   return <div data-testid={testid} style={card}>
     <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
       <Logo name={name} src={logo} />
       <div style={{ flex: "1 1 220px", minWidth: 0 }}>
         <h3 style={{ margin: 0, fontSize: 17, color: C.ink }}>{name}</h3>
-        <p style={{ margin: "2px 0 0", color: C.dim, fontSize: 14 }}>{connectedAs ? <Status>Connected as {connectedAs}</Status>
+        <p style={{ margin: "2px 0 0", color: C.dim, fontSize: 14 }}>{connectedAs ? <Status>{flowProvider ? <>{connectedAs} · <FlowWord provider={flowProvider} fallback="Connected" /></> : <>Connected as {connectedAs}</>}</Status>
           : `Takes about ${countLabel(minutes, "minute")}. You sign in on ${name}'s own page.`}</p>
       </div>
       <div className="setup-act">{connectedAs

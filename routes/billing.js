@@ -49,6 +49,7 @@ const {
   checkRecordBand, countRecords, applyAgreedBandMoves,
 } = ctx;
 let app = routers.r0;
+require("../server/billing/invoices").mount(app, ctx);   // HONEST-2 item 3: Settings → Billing's invoices
 // BUILD-38 Part 1 — kill all of a user's live sessions: stamp sessions_valid_after
 // (auth.js rejects any token issued before it) and evict this instance's cache
 // entry so revocation is immediate locally (other instances expire within TTL).

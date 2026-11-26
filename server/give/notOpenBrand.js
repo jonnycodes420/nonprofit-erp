@@ -14,4 +14,19 @@ function notOpenBrand(org, giveThemePayload) {
   return { brand: { name: th.displayName || (org && org.name) || "", logo: th.logo || null, primary: th.primary || null, primaryFg: th.primaryFg || null } };
 }
 
-module.exports = { notOpenBrand };
+// HONEST-2 item 2 (W-1126-Integrations-04): "a public page that is Not open yet shows a bare
+// notice". It shows the org's name, its mission line and "Opens soon". The mission is read here when
+// the caller's row didn't select it.
+const OPENS_SOON = "Opens soon";
+const missionLine = m => { const s = String(m || "").replace(/\s+/g, " ").trim(); if (!s) return null;
+  const first = (s.match(/^.{20,240}?[.!?](?=\s|$)/) || [s.slice(0, 240)])[0]; return first.length < s.length && !/[.!?]$/.test(first) ? first.replace(/\s+\S*$/, "") + "…" : first; };
+async function notOpenBrandFull(query, org, giveThemePayload) {
+  const out = notOpenBrand(org, giveThemePayload);
+  let mission = org && org.mission;
+  if (mission === undefined && org && org.id) mission = ((await query("SELECT mission FROM orgs WHERE id=?", [org.id]).catch(() => []))[0] || {}).mission;
+  out.brand.mission = missionLine(mission);
+  out.brand.opensSoon = OPENS_SOON;
+  return out;
+}
+
+module.exports = { notOpenBrand, notOpenBrandFull, missionLine, OPENS_SOON };

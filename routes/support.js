@@ -81,6 +81,17 @@ async function orgFacts(orgId, role) {
     if (key === "stripe" && org && org.stripe_connected && org.stripe_account_id) continue;
     if (!connections.some(c => c.provider === key)) connections.push({ name: p.label, provider: key, status: "not_connected", lastSyncedAt: null, lastError: null });
   }
+  // HONEST-2 item 1 (W-1126-Integrations-01): what the assistant says about a connection is its one
+  // status (server/connections/status.js), the same words as the Settings badge, never its own "healthy".
+  try {
+    const OT = require("../orgTime");
+    const orgTz = async id => OT.normalizeTimezone(((await query("SELECT timezone FROM orgs WHERE id=?", [id]))[0] || {}).timezone);
+    const body = await require("../server/connections/honest").connectionsFor({ query, orgTz, orgToday: OT.orgToday, orgTime: OT }, orgId);
+    for (const c of connections) {
+      const card = (body.cards || []).find(x => x.provider === c.provider || (c.provider === "quickbooks" && x.provider === "quickbooks"));
+      if (card && card.flow) c.flow = { state: card.flow.state, label: card.flow.label, sentence: card.flow.sentence };
+    }
+  } catch (e) { console.error("[support] connection flow:", String(e && e.message || e).slice(0, 120)); }
   return {
     role,
     connections,

@@ -25,6 +25,11 @@ const STATES = {
   not_connected: { label: "Not connected", definition: "Steward is not reading this one." },
   unavailable: { label: "Not available yet", definition: "Steward cannot connect to this one yet." },
 };
+// HONEST-2 item 1 (W-1126-Integrations-01): in the demo, a connection is a made-up example and
+// connecting is off, so its badge says that, never "Connected" or "Working". Its line still tells the
+// example's story (the demo shows what a real account would see), after the word Example.
+const EXAMPLE = { label: "Example", sentence: "Example: connecting is off in the demo.",
+  definition: "A made-up connection in the demo. Connecting is off in the demo, so nothing real comes through it." };
 
 const plural = (n, one, many = one + "s") => `${Number(n).toLocaleString("en-US")} ${n === 1 ? one : many}`;
 const money = cents => "$" + (Math.round(Number(cents) || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -59,6 +64,12 @@ const out = (state, sentence, extra = {}) => ({ state, label: STATES[state].labe
  * @param facts { today, oauthReady?: boolean|null, qbo?: { pendingCount, pendingCents, gapFunds, noDeposit, sentEver, lastSentAt, figureSource } }
  */
 function flowOf(card, facts = {}) {
+  const f = flowOfReal(card, facts);
+  if (!facts.demo || !card.connected || card.kind === "statements") return f;
+  return { ...f, example: true, label: EXAMPLE.label, definition: EXAMPLE.definition,
+    sentence: `${EXAMPLE.sentence} ${f.sentence || ""}`.trim() };
+}
+function flowOfReal(card, facts = {}) {
   const { today = null } = facts;
   const focus = card.kind === "own_stripe" ? "stripe" : card.kind === "statements" ? "statements" : card.provider;
   const check = label => step(label, { section: "connections", focus });
@@ -147,4 +158,4 @@ function summarize(cards) {
     sentence: needs.length ? `${needs.length} ${needs.length === 1 ? "connection needs" : "connections need"} you: ${needs.map(c => c.label).join(", ")}.` : null };
 }
 
-module.exports = { STATES, flowOf, summarize, quietSentence, usualWords };
+module.exports = { STATES, EXAMPLE, flowOf, summarize, quietSentence, usualWords };

@@ -70,6 +70,9 @@ export const SETTINGS_TABS=[
   // FIX-57 — how each person signs what is drafted for them.
   {id:"profile",label:"My profile"},
   {id:"account",label:"Account"},
+  // HONEST-2 item 3 — the plan, its price, the next charge, the card and the invoices. Every
+  // "Choose a plan" or "Upgrade" in the app lands here, never on the public pricing page.
+  {id:"billing",label:"Billing",viewerHidden:true},
   // STAFF-MAIL-1 — the morning email (what is in it, when) and every other
   // staff email, each off until the person turns it on.
   {id:"myemail",label:"Your email"},
