@@ -39,7 +39,7 @@ function makeUnsend({ query, run, withTransaction, runTx }) {
       }
       // Only what this send set goes back: a gift acknowledged before it stays acknowledged.
       if (prev) await exec("UPDATE gifts SET acknowledgement_sent=?, acknowledgement_sent_at=?, thanked_at=? WHERE id=? AND org_id=?",
-        [!!prev.acknowledgement_sent, prev.acknowledgement_sent_at || null, prev.thanked_at || null, d.gift_id, orgId]);
+        [!!prev.acknowledgement_sent, prev.acknowledgement_sent_at || null, prev.thanked_at || null, d.gift_id, orgId]);   // ACK-READ-OK: Undo restores the mark the send changed, to its value before
       await exec("UPDATE thank_you_drafts SET sent_at=NULL WHERE id=? AND org_id=?", [d.id, orgId]);
     };
     if (withTransaction) await withTransaction(client => body((sql, args) => runTx(client, sql, args)));

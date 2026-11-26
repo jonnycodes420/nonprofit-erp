@@ -62,6 +62,8 @@ const RULES = [
   // LETTERS-1: "Mark these as sent" stamps each printed gift's acknowledgment (and its thank-you when she says so).
   [/^\/letters\/giving\/mark\b/, ["gift", "person", "task", "draft"]],
   [/^\/fundraising\/(campaigns?|appeals?|goals?)\b/, ["totals", "gift", "pledge"]],
+  // COMMS-3: "Set stages for your top 40" gives people a stage and puts them on her board.
+  [/^\/pipeline\/stage-top\b/, ["person", "totals"]],
   [/^\/(atlas|tell|voice|memos?|requests)\b/, ALL],
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],
   [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b|^\/offline-plans?\b/, GIFT],   // FLOWS-13: a staff-recorded plan's payment or cancel

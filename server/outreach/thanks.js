@@ -103,7 +103,7 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
   const actorName = (me && me.name) || act.name;
   const intId = newId("int");
   // COMMS-3: what the gift said before, so Undo puts back only what this changed (thankYouUnsend.js).
-  const [prevGift] = await query("SELECT acknowledgement_sent, acknowledgement_sent_at, thanked_at FROM gifts WHERE id=? AND org_id=?", [d.gift_id, orgId]);
+  const [prevGift] = await query("SELECT acknowledgement_sent, acknowledgement_sent_at, thanked_at FROM gifts WHERE id=? AND org_id=?", [d.gift_id, orgId]);   // ACK-READ-OK: kept only so Undo can put the mark back exactly as it was
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
