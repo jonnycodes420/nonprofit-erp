@@ -36,7 +36,10 @@ function read(text, all) {
     if (n.length < 3) continue;
     if ((f === n || f.startsWith(n + " ")) && (!best || n.length > flat(best.name).length)) best = p;
   }
-  return best ? [{ kind: "about", who: best.name, target: "", amountWords: "", whenWords: "", how: "", words: text }] : null;
+  if (!best) return null;
+  // The record her words name, whole: one record with that name is that person (no second reading of the name).
+  const same = (all || []).filter(p => flat(p && p.name) === flat(best.name));
+  return [{ kind: "about", who: best.name, ...(same.length === 1 ? { exactId: same[0].id } : {}), target: "", amountWords: "", whenWords: "", how: "", words: text }];
 }
 
 // The opening sentences. `p`: what personAnswer read.

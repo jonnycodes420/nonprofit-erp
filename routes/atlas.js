@@ -395,7 +395,8 @@ async function resolveAll(orgId, steps, { today, onPage, talkedAbout = null, ans
       const key = String(st.who || "").toLowerCase();
       if (key && !PRONOUN.test(key)) {
         if (!whoCache.has(key)) {
-          let r = onPage && (key === onPage.name.toLowerCase() || key === first(onPage.name).toLowerCase()) ? { state: "matched", id: onPage.id } : await resolvePerson(orgId, st.who, all);
+          let r = st.exactId && all.some(p => p.id === st.exactId) ? { state: "matched", id: st.exactId }   // ATLAS-12 item 6: briefAsk matched the whole name
+            : onPage && (key === onPage.name.toLowerCase() || key === first(onPage.name).toLowerCase()) ? { state: "matched", id: onPage.id } : await resolvePerson(orgId, st.who, all);
           // The person she is on answers "which Margaret?" for the name that matches them.
           if (r.state === "choices" && onPage && r.options.some(o => o.id === onPage.id)) r = { state: "matched", id: onPage.id };
           whoCache.set(key, r);
