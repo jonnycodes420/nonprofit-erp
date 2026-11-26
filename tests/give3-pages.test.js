@@ -281,6 +281,23 @@ async function reset() {
     await page.click(`${PREV_PHONE} [data-edit="amounts"]`);
     await page.waitForTimeout(400);
     ok("§5 clicking the preview's amounts opens The gift", await page.evaluate(() => !!document.querySelector('[data-rail-section="gift"] [data-testid="details-amounts"]')));
+    // INPUT-1 item 2: words typed at a person's pace through several autosaves keep their spaces.
+    // The amount's line used to be drawn from the normalized design, which trimmed each line on
+    // every render, so a space typed at the end of a word vanished: "Everygifthelps" was saved.
+    const impactBox = page.locator('[data-testid^="details-impact-"]').first();
+    if (await impactBox.count()) {
+      const cents = (await impactBox.getAttribute("data-testid")).replace("details-impact-", "");
+      await impactBox.click(); await page.keyboard.press("ControlOrMeta+A"); await page.keyboard.press("Backspace");
+      for (const w of ["Every", "gift", "helps"]) {   // a pause after each space, longer than the autosave's wait
+        await page.keyboard.type(w, { delay: 110 });
+        if (w !== "helps") { await page.keyboard.type(" ", { delay: 110 }); await page.waitForTimeout(1500); }
+      }
+      await page.waitForTimeout(1800);
+      const shown = await impactBox.inputValue();
+      const imp = (((await api("GET", `/giving-pages/${PAGES.story}/page`, TOK)).body.draftSettings || {}).design || {}).impact || {};
+      ok("§5 INPUT-1: \"Every gift helps\" typed through autosaves stays in the box", shown === "Every gift helps", shown);
+      ok("§5 INPUT-1: and saves exactly that", imp[cents] === "Every gift helps", imp);
+    } else ok("§5 INPUT-1: the gift section shows a line per amount", false, "no details-impact box");
 
     // §6 the logo, whole, in the Design thumbnail and on the page.
     await page.click('[data-testid="editor-device-desktop"]');

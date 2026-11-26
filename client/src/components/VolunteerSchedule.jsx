@@ -36,6 +36,7 @@ const lbl = { display: "block", fontSize: 12, fontWeight: 700, color: T.ink3, ma
 const COLOUR_NAMES = { "#0d5c3a": "Emerald", "#c9a84c": "Brass", "#0f1a12": "Ink" };
 const VIEWS = [{ id: "day", label: "Day" }, { id: "week", label: "Week" }, { id: "month", label: "Month" }, { id: "list", label: "List" }];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const nextDay = iso => addDaysCivil(iso, 1);   // INPUT-1: an overnight shift ends the next day
 
 // FIX-41: a volunteer role's optional small picture, through the one picture control.
 function RolePicture({ role, onSaved }) {
@@ -421,7 +422,7 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
     opportunityId: shift ? shift.opportunityId : (opportunities[0] && opportunities[0].id) || "",
     name: shift ? shift.ownName || shift.name || "" : "", color: shift ? shift.color || "" : "",
     date: shift ? shift.date : date, startTime: shift ? shift.startTime : (startTime || "09:00"), endTime: shift ? shift.endTime : (endTime || "12:00"),
-    allDay: !!wasAllDay, repeat: false, until: "",
+    allDay: !!wasAllDay, repeat: false, until: "", overnight: !!(shift && shift.endDate),   // INPUT-1: an overnight shift ends the next day
     venue: shift ? shift.ownVenue || shift.venue || "" : "", locationDetail: shift ? shift.locationDetail || "" : "",
     published: shift ? shift.published !== false : true, capacity: shift && shift.capacity != null ? String(shift.capacity) : "",
     notes: shift ? shift.notes || "" : "",
@@ -436,7 +437,8 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
   const save = async () => {
     setBusy(true); setErr("");
     const times = f.allDay ? { startTime: "00:00", endTime: "23:59" } : { startTime: f.startTime, endTime: f.endTime };
-    const body = { opportunityId: f.opportunityId, name: f.name, color: f.color, date: f.date, ...times, venue: f.venue, locationDetail: f.locationDetail,
+    const endDate = !f.allDay && f.overnight && f.date ? nextDay(f.date) : "";   // INPUT-1: "" clears it
+    const body = { opportunityId: f.opportunityId, name: f.name, color: f.color, date: f.date, ...times, endDate, venue: f.venue, locationDetail: f.locationDetail,
       published: f.published, notes: f.notes, capacity: f.roles.length ? null : f.capacity,
       roles: f.roles.map(r => ({ ...(r.id ? { id: r.id } : {}), name: r.name, needed: Number(r.needed) })),
       ...(!editing && f.repeat && f.until ? { repeat: { weeklyUntil: f.until } } : {}) };
@@ -475,6 +477,10 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
             <TimeInput aria-label="Ends" id="se-end" value={f.endTime} onChange={set("endTime")} style={{ ...inp, flex: "0 1 110px" }} />
           </>}
         </div>
+        {!f.allDay && f.startTime && f.endTime && <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6, fontSize: 13 }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" data-testid="shift-overnight" checked={f.overnight} onChange={set("overnight")} /> Ends the next day{f.overnight && f.date ? `, ${shortDay(nextDay(f.date))}` : ""} (overnight)</label>
+          {!f.overnight && f.endTime <= f.startTime && <span data-testid="shift-ends-before" role="status" style={{ color: T.ink }}>The shift ends before it starts. Tick Ends the next day for an overnight shift.</span>}
+        </div>}
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
           <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" data-testid="shift-all-day" checked={f.allDay} onChange={set("allDay")} /> All day</label>
           {!editing && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" data-testid="shift-repeat" checked={f.repeat} onChange={set("repeat")} /> Repeat weekly on {weekday || "this day"}</label>}

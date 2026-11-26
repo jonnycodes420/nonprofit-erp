@@ -74,6 +74,7 @@ app.patch("/volunteer-shifts/:id", requireAuth, checkWriteAccess, wrap(async (re
     role: opp ? opp.name : b.role !== undefined ? String(b.role || "").trim().slice(0, 200) : cur.role, note: b.note !== undefined ? b.note : cur.note,
   });
   if (!v.ok) return res.status(400).json({ error: `A shift needs ${v.errors.join("; ")}.` });
+  if (timed) { const ask = require("../server/volunteers/longHours").longHoursQuestion(v.shift.hundredths, b); if (ask) return res.status(409).json(ask); }   // INPUT-1
   if (req.audit) req.audit.before({ date: cur.date, hours: Number(cur.hours), role: cur.role, opportunityId: cur.opportunity_id, note: cur.note });
   await run(`UPDATE volunteer_shifts SET date=?, hours=?, role=?, note=?, opportunity_id=?, start_time=?, end_time=?, updated_at=NOW()
               WHERE id=? AND org_id=?`,

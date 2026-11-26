@@ -332,6 +332,7 @@ async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
 async function recordGift(o) {
   const orgId = o.orgId;
   const amount = round2(Number(o.amount) || 0);
+  require("../money/negativeGift").assertGiftAmount(amount, o);   // INPUT-1: a negative is a refund, and only a refund
   // IMPORT-4: a gift with no date is written only when the caller says the
   // file gave none (`undated: true`, the import). Every other door needs a day.
   const undated = o.undated === true && (o.date == null || o.date === "");

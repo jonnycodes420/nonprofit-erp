@@ -329,7 +329,7 @@ async function agentDraftsLeg() {
   const reg = await api("POST", `/events/${evId}/attendees`, dana, { name: "Wren Wirefield", email: WREN });
   const [att] = await q(`SELECT id, donor_id FROM event_attendees WHERE org_id=$1 AND event_id=$2`, [ORG, evId]);
   ok("3 registered by email, on Wren's record", reg.status < 300 && att && att.donor_id === W, { reg: reg.body, att });
-  const ci = await api("POST", `/events/${evId}/check-in`, dana, { attendeeId: att && att.id });
+  const ci = await api("POST", `/events/${evId}/check-in`, dana, { attendeeId: att && att.id, forShiftDate: true });
   ok("3 checked in at the door", ci.status < 300, ci.body);
 
   // 4. three volunteer hours

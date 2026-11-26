@@ -4350,6 +4350,7 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
   if (!date || !description || !amount || !type) {
     return res.status(400).json({ error: "date, description, amount, and type required" });
   }
+  { const neg = require("../server/money/negativeGift").ledgerAmountRefusal(parseFloat(amount), type); if (neg) return res.status(400).json(neg); }   // INPUT-1
   // §1 tenant isolation: a foreign account/fund/donor id must not be accepted
   // (would echo another org's label back in the response JOIN and pin a
   // cross-org reference into this org's ledger).

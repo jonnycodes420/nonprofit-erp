@@ -328,7 +328,7 @@ AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftF
 // SPLIT-2 server.js piece 196
 // JOBS-1 — what the handlers call, handed over once; then the handlers, one file each.
 OUTBOX.configure({ query, queueThankYouDraft, enrollInSequences, maybeStartJourneyFromServer, recomputeScoresForOrg, openGiftThread,
-  afterChangeNow: AFTER.afterChangeNow });
+  afterChangeNow: AFTER.afterChangeNow, orgToday, orgTz });   // INPUT-1: giftDay.js reads the org's day
 // SPLIT-2 end
 // SPLIT-2 server.js piece 197
 for (const h of ["outreach/handlers/thankYouDraft", "outreach/handlers/sequences", "outreach/handlers/journeys",
@@ -643,6 +643,8 @@ require("../../numberCheck").defineJobs(require("../../jobQueue"), () => require
 if (!backgroundTicksDisabled()) {
   // NUMBERS-6: a scheduled gift whose day came moves its person's stored totals (server/numbers/cameDue.js).
   bootGate.everyAfterMigrations(() => require("../numbers/cameDue").recomputeCameDue(query).catch(e => console.error("[numbers] came due:", e.message)), 60 * 60 * 1000, { name: "came-due totals" });
+  // INPUT-1: what follows a future-dated gift (its thank-you draft and task) runs on its day (server/outreach/giftDay.js).
+  bootGate.everyAfterMigrations(() => require("../outreach/giftDay").releaseDueHolds({ query, orgToday, orgTz }).catch(e => console.error("[gift-day] release:", e.message)), 60 * 60 * 1000, { name: "gift-day holds" });
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 266
