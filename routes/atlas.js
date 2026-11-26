@@ -65,6 +65,8 @@ const ATLAS_TOTAL_MS = () => Number(process.env.ATLAS_TOTAL_MS) || 20000;
 const NS = require("../server/atlas/noSource");   // FLOWS-13 item 6: a question nothing in Steward answers
 const WR = require("../server/atlas/whyRows");   // ATLAS-8: a why answer's rows, drawn and footed; a figure is its person's
 const RS = require("../server/atlas/rowsSteps");
+const WP = require("../server/atlas/whichPerson"), GQ = require("../server/atlas/goalAsk");   // ATLAS-12 items 2, 3
+const BA = require("../server/atlas/briefAsk"), CN = require("../server/atlas/callNote");   // ATLAS-12 items 6, 4
 const CA = require("../server/atlas/campaignAsk");   // ATLAS-11 item 1: a campaign, appeal or fund by any part of its name   // ATLAS-8: "list them", LYBUNT, Home's figures; the question kept
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
@@ -295,9 +297,9 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
       console.error("[atlas] read failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 160));
       await recordAiFallback(orgId, "atlas", e).catch(() => {});
     }
-    return { ai: "failed", steps: AT_.readInCode(text) };
+    return { ai: "failed", steps: CN.read(text) || AT_.readInCode(text) };   // ATLAS-12 item 4: a call she reports, read in code
   }
-  return { ai: "off", steps: AT_.readInCode(text) };
+  return { ai: "off", steps: CN.read(text) || AT_.readInCode(text) };
 }
 
 // The email's words: the model when AI is on, else the template. Never a
@@ -368,10 +370,10 @@ async function resolveAll(orgId, steps, { today, onPage, talkedAbout = null, ans
         if (!whoCache.has(key)) whoCache.set(key, onPage && (key === onPage.name.toLowerCase() || key === first(onPage.name).toLowerCase()) ? { state: "matched", id: onPage.id } : await resolvePerson(orgId, who, all));
         const r = whoCache.get(key), qid = `p:${key}`;
         if (r.state === "matched") st.donorIds.push(r.id);
-        else if (r.state === "choices") {
-          if (answers[qid] && r.options.some(o => o.id === answers[qid])) st.donorIds.push(answers[qid]);
-          else ask({ id: qid, kind: "person", said: who, sentence: `Which ${who}?`, options: await personOptions(orgId, r.options, today),
-            more: Math.max(0, r.options.length - 8), nearMiss: !!r.near });
+        else if (r.state === "choices") {   // ATLAS-12 item 2: "Two people match: A ($X) and B ($Y). Which one?", Both sums
+          const got = WP.picked(answers[qid], r.options.slice(0, 8));
+          if (got) { st.donorIds.push(...got); if (got.length > 1) st.together = true; }
+          else ask(WP.givingQuestion(qid, who, await personOptions(orgId, r.options, today), { more: Math.max(0, r.options.length - 8), nearMiss: !!r.near }));
         } else st.missing.push(who);
       }
       st.donorIds = [...new Set(st.donorIds)];
@@ -658,7 +660,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         if (id) label = label.replace(/\b(him|her|them)\b/i, first(nm(id)));
         // FLOWS-16 item 3: a follow-up with nobody to attach it to is a question, never a Save that writes 0 things.
         else { await log({ kind: "not_found", state: "refused", line: RQ.NO_PERSON_LINE }); break; }
-        const lbl = label[0].toUpperCase() + label.slice(1);
+        const lbl = st.title || label[0].toUpperCase() + label.slice(1);   // ATLAS-12 item 4: a call note's follow-up keeps what they said
         propose.push({ pid: newId("pi"), kind: "follow_up", donorId: id || null, name: id ? nm(id) : null, title: lbl, due: when.date });   // SENDS-1
         break;
       }
@@ -726,7 +728,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         // TRUTH-3: every figure from shared/numbers, the sum in code.
         const ppl = await GT.figuresFor(query, orgId, st.donorIds || []);
         const miss = (st.missing || []).length ? ` I couldn't find ${st.missing.join(" or ")} in Steward, so ${st.missing.length === 1 ? "that name is" : "those names are"} not in it.` : "";
-        const ans = ppl.length ? GT.answerFor(ppl, { together: /\btogether|combined|between them\b/i.test(st.words || "") }) : null;
+        const ans = ppl.length ? GT.answerFor(ppl, { together: !!st.together || /\btogether|combined|between them\b/i.test(st.words || "") }) : null;
         const aidT = await log({ kind: "answer", state: "done", line: ans ? ans.sentence + miss : `I couldn't find ${(st.whos || []).join(" or ") || "them"} in Steward.`,
           ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
         if (ppl.length) await saveAnswer(orgId, m.id, aidT, { type: "giving_total", donorIds: ppl.map(p => p.id), totalCents: ans.totalCents });   // ATLAS-11 item 3: Tell me more goes on from it
@@ -766,6 +768,9 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         await RS.run(st, { log, save: (aid, ans) => saveAnswer(orgId, m.id, aid, ans), get: p => asHer(req, "GET", p), query, orgId, parse: j });
         break;
       case "question": {
+        // ATLAS-12 item 1: a part of her question that names a population or Home's figure reads the registry, never Ask.
+        const reg12 = RS.read(st.target || st.words, null);
+        if (reg12) { for (const s12 of reg12) await RS.run(s12, { log, save: (aid, ans) => saveAnswer(orgId, m.id, aid, ans), get: p => asHer(req, "GET", p), query, orgId, parse: j }); break; }
         // ATLAS-5: something Steward does not keep is said plainly, at once, with no lookup.
         const ck = AT_.cantKnow(st.target || st.words);
         if (ck) { await log({ kind: "answer", state: "done", line: ck }); break; }
@@ -917,7 +922,9 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // asked. ATLAS-6's shapes (a setting, a thing not kept, a forecast, an amount) and a question that
   // names nothing Steward keeps (server/atlas/noSource.js) skip the model's read and the lookup loop.
   // ATLAS-8: "list them" after an answer, LYBUNT, Home's figures: rows a screen already holds.
-  const early = group ? null : (RS.read(text, prior) || await CA.read(text, { query, orgId }) || await answeredInCode(orgId, text, { today, all }));
+  // ATLAS-12: "and the Gala?" after a goal answer (goalAsk.followUp); a brief by any wording, on any name on file (briefAsk).
+  const early = group ? null : (RS.read(text, prior) || await CA.read(text, { query, orgId }) || await CA.read(GQ.followUp(text, prior) || "", { query, orgId })
+    || BA.read(text, await all.catch(() => [])) || await answeredInCode(orgId, text, { today, all }));
   const read = group ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: [group], code: true }
     : early ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: early, code: true }
     : await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });

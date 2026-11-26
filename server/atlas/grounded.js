@@ -196,7 +196,17 @@ function splitQuestion(words) {
 }
 // "how much will she give next year", "what will Ada give in 2027": a forecast.
 const PREDICT = /\b(?:will|going to|gonna|expect(?:ed)? to|predict|forecast)\b.*\b(?:give|donate|gift|giving)\b|\bnext (?:year|month|quarter|fiscal year)\b.*\b(?:give|giving|donate)\b/i;
-const isPrediction = words => PREDICT.test(String(words || ""));
+// ATLAS-12 item 4 (Jarvis: "'She said she will give $5,000 in January' got 'I can't predict future giving'"): only HER
+// asking Atlas to predict is a forecast. What someone said they will give is reported, and is logged.
+const REPORTED = /\b(?:said|says|told (?:me|us)|tells (?:me|us)|mentioned|promised|plans? to|planning to|wants? to|intends? to|committed|pledged|let me know)\b/i;
+const ASKS_FORECAST = /\b(?:predict|forecast|estimate|project)\b/i;
+function isPrediction(words) {
+  const t = String(words || "").trim();
+  if (!PREDICT.test(t)) return false;
+  if (ASKS_FORECAST.test(t)) return true;
+  if (REPORTED.test(t)) return false;
+  return /\?\s*$/.test(t) || Q_START.test(t);
+}
 
 // The window a period names, in days: a named fiscal year through shared/numbers/fiscalYear.
 function resolvePeriod(p, org, today) {
@@ -236,7 +246,8 @@ function questionSteps(text, { today, org, A, D }) {
   for (const part of list) {
     const fact = orgFactAsked(part);
     if (fact) { steps.push({ kind: "setting_fact", fact, words: part }); continue; }
-    const ck = A.cantKnow(part, { anyCase: true });
+    // ATLAS-12 item 5: "and what's her favorite color" is about the person the question already named.
+    const ck = A.cantKnow(part, { anyCase: true, name: nameIn(part) || lastName || (parts ? list.map(nameIn).find(Boolean) : null) });
     if (ck) {
       lastName = nameIn(part) || lastName;
       // In a compound, the plain fact alone ("I don't have Renee's favorite color."); alone, with the offer to note it.
