@@ -156,7 +156,7 @@ function contextFacts(question, ctx, today) {
     for (const c of list.slice(0, 3)) {
       const when = ago(c.lastSyncedAt, today);
       const parts = [];
-      if (c.flow && c.flow.sentence && c.status !== "not_connected") parts.push(`${c.name}: ${c.flow.label}. ${c.flow.sentence}`);   // HONEST-2: the card's own status
+      if (c.flow && c.flow.sentence && c.status === "healthy") parts.push(`${c.name}: ${c.flow.label}. ${c.flow.sentence}`);   // HONEST-2: "healthy" said nothing about flowing; the card's own status does
       else if (c.status === "not_connected") parts.push(`${c.name} is not connected in your organization yet.`);
       else parts.push(`${c.name} ${when ? "last synced " + when : "has not synced yet"}${c.status === "broken" ? " and its last check failed" : c.status === "quiet" ? ", and it has been quieter than usual" : ""}.`);
       if (c.lastError) parts.push(`It says: "${String(c.lastError).slice(0, 220)}"`);

@@ -31,6 +31,7 @@ import * as GivingSourcesManager from "../../client/src/components/settings/Givi
 import * as ImpactUpdatesManager from "../../client/src/components/settings/ImpactUpdatesManager.jsx";
 import * as ImportsDrop from "../../client/src/components/settings/ImportsDrop.jsx";
 import * as InvitedList from "../../client/src/components/settings/InvitedList.jsx";   // WALKB-2
+import * as BillingMore from "../../client/src/components/settings/BillingMore.jsx";   // HONEST-2
 import * as ViewerExports from "../../client/src/components/settings/ViewerExports.jsx";   // ACCESS-1
 import * as ImportsHistory from "../../client/src/components/settings/ImportsHistory.jsx";
 import * as importsWords from "../../client/src/components/settings/importsWords.js";
@@ -122,6 +123,7 @@ export const CASES = [
   ["settings/GivingPagesManager", () => <GivingPagesManager.GivingPagesManager orgSlug="fake-org" isAdmin isReadOnly={false}/>, /Giving Pages[\s\S]*New Giving Page/],
   ["settings/GivingSourcesManager", () => <GivingSourcesManager.GivingSourcesManager isReadOnly={false} isAdmin onChanged={noop}/>, /Where giving comes in/],
   ["settings/ImpactUpdatesManager", () => <ImpactUpdatesManager.ImpactUpdatesManager isAdmin isReadOnly={false}/>, /Impact Updates/],
+  ["settings/BillingMore", () => <><BillingMore.BillingInvoices isAdmin/><BillingMore.PlanTalkLink/></>, /Invoices[\s\S]*No invoices yet[\s\S]*Talk to Jonathan about changing plans/],   // HONEST-2
   ["settings/InvitedList", () => <InvitedList.InvitedList isAdmin/>, /Invited[\s\S]*wren\.halloway@example\.org[\s\S]*Revoke/],
   ["settings/ViewerExports", () => <ViewerExports.ViewerExports/>, /Viewers can export/],
   ["settings/ImportsDrop", () => <ImportsDrop.ImportsDrop isReadOnly={false}><div>Bring in a spreadsheet</div></ImportsDrop.ImportsDrop>, /Bring in a spreadsheet/],
