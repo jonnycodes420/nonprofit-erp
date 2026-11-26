@@ -13,6 +13,10 @@
 //   §4 the year still running is "so far" and its same point last year runs
 //      from last year's first day to the same day of last fiscal year.
 //   §5 every figure on both views opens rows that foot to it.
+//   §6 POLISH-12: the chart's year labels never overlap (11 years at 1024
+//      wide; 3, 11 and 20 at three widths); "$24,000 to $50" is "99.8%"; a name
+//      ending in "Inc." takes one period; Top 100 is off until the org turns
+//      it on, and Major Gifts opens on Pipeline without it.
 // HOW IT GOES RED ON MAIN: /donors/:id/by-year and /reports/year-over-year do
 // not exist (404), so every section fails.
 // PLANTED: add each year's soft credit to its total in shared/numbers/byYear.js
@@ -199,6 +203,61 @@ async function freshOrg(id, name) {
   const num = parts.find(p => p.role === "numerator"), den = parts.find(p => p.role === "denominator");
   ok("§5 retention opens its two lists: retained (2) over last year's donors (3)", rr.status === 200 && num && den && num.value === 2 && den.value === 3, { status: rr.status, parts: parts.map(p => [p.role, p.value]) });
   ok("§5 every figure on By year and Year over year opens rows that foot to it", bad.length === 0, bad);
+
+  // ── §6 POLISH-12: the chart's years, the change sentence, a name's period, the Top 100 switch ──
+  // RED ON MAIN: shared/yearAxis.js and shared/endOnName.js do not exist; "$24,000 to $50" says
+  // "(100%)"; /org/menu has no top100 and Major Gifts opens on Top 100.
+  const path = require("path"), ROOT = path.join(__dirname, "..");
+  const esm = rel => import(path.join(ROOT, rel));
+  const AX = await esm("shared/yearAxis.js");
+  const eleven = [...Array(11)].map((_, i) => ({ chartLabel: `FY ${2016 + i}–${String(2017 + i).slice(2)}`, current: i === 10 }));
+  // The chart is 640 wide with 580 for bars; its labels draw at 11px at least (ByYear.jsx YearBars).
+  const drawn = (years, chartPx) => {
+    const slot = 580 / years.length, fs = Math.min(22, Math.max(10, 11 / (chartPx / 640)));
+    const fit = AX.fitYearLabels(years, slot, t => AX.estimateWidth(t, fs));
+    const boxes = fit.labels.map((t, i) => { const w = AX.estimateWidth(t, fs), c = i * slot + slot / 2; return t ? { left: c - w / 2, right: c + w / 2, width: w } : null; });
+    return { fit, boxes, fullBoxes: years.map((y, i) => { const w = AX.estimateWidth(y.chartLabel, fs), c = i * slot + slot / 2; return { left: c - w / 2, right: c + w / 2, width: w }; }) };
+  };
+  // the profile's main column draws the chart about 880, 600 and 340 wide at 1440, 1024 and 390
+  const at1024 = drawn(eleven, 600);
+  ok("§6 the guard can fail: every full label under 11 bars at 1024 wide overlaps (main's chart)", AX.labelsOverlap(at1024.fullBoxes));
+  ok("§6 11 fiscal years at 1024 wide: no two labels overlap", !AX.labelsOverlap(at1024.boxes), at1024.fit);
+  const bad6 = [];
+  for (const n of [3, 11, 20]) for (const px of [880, 600, 340]) {
+    const yrs6 = [...Array(n)].map((_, i) => ({ chartLabel: `FY ${2006 + i}–${String(2007 + i).slice(2)}`, current: i === n - 1 })).slice(-12);
+    const d6 = drawn(yrs6, px);
+    const kept = [0, yrs6.length - 1].every(i => d6.fit.labels[i]);
+    if (AX.labelsOverlap(d6.boxes) || !kept) bad6.push({ n, px, mode: d6.fit.mode, labels: d6.fit.labels });
+  }
+  ok("§6 3, 11 and 20 years at three widths: none overlap, and the first and last year are always named", bad6.length === 0, bad6);
+  ok("§6 the short label: FY 2016–17 is FY17, a calendar fiscal year FY 2016 is 2016", AX.shortYearLabel("FY 2016–17") === "FY17" && AX.shortYearLabel("FY 2016") === "2016");
+
+  const fen = "d_p12fenwick";
+  await q(`INSERT INTO donors (id, org_id, name, kind, created_by, created_by_name) VALUES ($1,$2,'Fenwick Holdings, Inc.','organization',$3,'POLISH-12 test')`, [fen, ORG, ACTOR]);
+  for (const [date, amount] of [[inFy(FY3, 20), 24000], [inFy(FY2, 20), 50]])
+    await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, type, created_by, created_by_name) VALUES ($1,$2,$3,$4,$5,'one-time',$6,'POLISH-12 test')`,
+      [`g_p12_${date}`, ORG, fen, amount, date, ACTOR]);
+  const fy6 = await api("GET", `/donors/${fen}/by-year`, tok);
+  const row2 = ((fy6.body && fy6.body.years) || []).find(y => y.from === FY2.from);
+  ok("§6 $24,000 to $50 says down $23,950 (99.8%), never (100%)", row2 && row2.change === "down $23,950 (99.8%)", row2 && row2.change);
+  const BY = require("../shared/numbers/byYear");
+  ok("§6 a change under 1% says (less than 1%)", BY.changeWords(100000, 100050, { gifts: 1 }) === "down $0.50 (less than 1%)", BY.changeWords(100000, 100050, { gifts: 1 }));
+
+  const EN = await esm("shared/endOnName.js");
+  ok("§6 a name ending in Inc. gets one period, any other name gets one", `Nothing is open for ${EN.endOnName("Fenwick Holdings, Inc.")}` === "Nothing is open for Fenwick Holdings, Inc."
+    && `Nothing is open for ${EN.endOnName("Wren")}` === "Nothing is open for Wren.");
+
+  const MG = await esm("client/src/lib/majorGiftsTab.js");
+  const opens = views => MG.mgViewIn(MG.mgView(undefined), MG.mgShownViews(views));
+  const off = await api("GET", "/org/menu", tok);
+  ok("§6 Top 100 off by default: no Top 100 tab, and Major Gifts opens on Pipeline",
+    off.status === 200 && off.body.top100 === false && !off.body.mgViews.includes("top100") && opens(off.body.mgViews) === "pipeline", off.body);
+  const on = await api("PUT", "/org/menu", tok, { top100: true });
+  ok("§6 turned on: the Top 100 tab is back, first", on.status === 200 && on.body.top100 === true && on.body.mgViews[0] === "top100" && opens(on.body.mgViews) === "top100", on.body);
+  const [orow] = await q(`SELECT top100_enabled FROM orgs WHERE id=$1`, [ORG]);
+  ok("§6 …as the org's setting", orow && orow.top100_enabled === true, orow);
+  const off2 = await api("PUT", "/org/menu", tok, { top100: false });
+  ok("§6 turned off again: Pipeline, nothing else changed", off2.status === 200 && off2.body.top100 === false && opens(off2.body.mgViews) === "pipeline" && off2.body.mgViews.length === 3, off2.body);
 
   await closeDb();
   summary();

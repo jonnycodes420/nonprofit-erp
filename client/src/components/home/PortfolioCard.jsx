@@ -82,7 +82,7 @@ export function PortfolioCard({ onNavigate, openProfile }) {
           : <div style={{ fontSize: 13.5, color: T.ink2 }}>None of your people has given yet this fiscal year.</div>}
       </div>
 
-      <div data-testid="portfolio-next" title={S.next}>
+      {p.top100 !== false && <div data-testid="portfolio-next" title={S.next}>
         <div style={eyebrow}>Next on your Top 100</div>
         {p.next && p.next.length
           ? <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -96,7 +96,7 @@ export function PortfolioCard({ onNavigate, openProfile }) {
               ))}
             </ul>
           : <div style={{ fontSize: 13.5, color: T.ink2 }}>{p.onTop100 ? "Nothing is planned for your people on the Top 100." : "None of your people is on the Top 100."}</div>}
-      </div>
+      </div>}
     </section>
   );
 }

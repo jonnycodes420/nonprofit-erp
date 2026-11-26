@@ -22,6 +22,7 @@ import { coachDrafts, coachMailto } from "../../../shared/p2p.js";
 import { displayDate } from "../../../shared/displayDate";
 import { offerUndo } from "./EditHistory";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { endOnName } from "../../../shared/endOnName.js";   // POLISH-12
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -304,7 +305,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
   const fundraiserMade = (r, name) => {
     setAddingF(false); setMsg(r.sentence || `${name}'s page is live.`); setManage({ name, url: r.manageUrl });
     load();
-    offerUndo({ message: `Added ${name}.`, undoAction: async () => {
+    offerUndo({ message: `Added ${endOnName(name)}`, undoAction: async () => {
       const x = await apiFetch(`/peer-fundraisers/${r.id}`, { method: "PUT", body: JSON.stringify({ status: "archived" }) });
       setManage(null); load(); return x;
     } }, "fundraiser");

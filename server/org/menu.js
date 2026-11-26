@@ -11,9 +11,13 @@
 //                    what the org hid. Hiding is the menu only; every route and
 //                    link still works and nothing is deleted.
 //   orgs.mg_views    which Major Gifts tabs show. NULL means all four.
+//   orgs.top100_enabled  POLISH-12: the Top 100 at all, off unless the org
+//                    turns it on. Off, Top 100 is never one of the tabs shown
+//                    (mgViews leaves it out; the saved list keeps it), and the
+//                    page opens on Pipeline (client/src/lib/majorGiftsTab.js).
 //
 //   GET  /org/menu                 anyone signed in (the shell reads it)
-//   PUT  /org/menu                 admins: { layout?: [...] | null, mgViews?: [...] | null }
+//   PUT  /org/menu                 admins: { layout?: [...] | null, mgViews?: [...] | null, top100?: boolean }
 //   GET  /admin/orgs/:id/menu      super admin
 //   POST /admin/orgs/:id/menu      super admin; audited in THAT org's log as Steward support
 //
@@ -51,22 +55,37 @@ function normalizeViews(views) {
 
 const parse = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 
+// POLISH-12: the tabs shown, from the saved list and the Top 100 switch. With
+// the Top 100 off it is never shown; when that leaves nothing (an org that
+// chose Top 100 alone), the other three show.
+function shownViews(saved, top100) {
+  const all = saved || MG_VIEW_IDS.slice();
+  if (top100) return all;
+  const rest = all.filter(v => v !== "top100");
+  return rest.length ? rest : MG_VIEW_IDS.filter(v => v !== "top100");
+}
+
 // What the shell needs: the org's layout (null = defaults), its Major Gifts
-// tabs (always a list), and whether it has a peer-to-peer page (Fundraising
-// shows that part only then).
+// tabs (always a list), whether the Top 100 is on, and whether it has a
+// peer-to-peer page (Fundraising shows that part only then).
 async function orgMenu(query, orgId) {
-  const [o] = await query("SELECT nav_layout, mg_views FROM orgs WHERE id=?", [orgId]);
+  const [o] = await query("SELECT nav_layout, mg_views, top100_enabled FROM orgs WHERE id=?", [orgId]);
   if (!o) return null;
   const [p] = await query("SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id=? AND p2p_enabled=true", [orgId]);
+  const top100 = o.top100_enabled === true;
   return {
     layout: normalizeLayout(parse(o.nav_layout)),
-    mgViews: normalizeViews(parse(o.mg_views)) || MG_VIEW_IDS.slice(),
+    mgViews: shownViews(normalizeViews(parse(o.mg_views)), top100),
+    top100,
     hasP2p: !!(p && p.n > 0),
   };
 }
 
-// The body's two optional fields → the SET clause, or an error sentence.
-function changesFrom(body) {
+// The body's optional fields → the SET clause, or an error sentence. `saved`
+// is the org's row as it is (mg_views, top100_enabled): with the Top 100 off,
+// a new tab list keeps whether Top 100 was in the saved one, and turning the
+// Top 100 on puts its tab back in the list.
+function changesFrom(body, saved = {}) {
   const sets = [], vals = [];
   if (body && "layout" in body) {
     if (body.layout === null) { sets.push("nav_layout = NULL"); }
@@ -76,17 +95,32 @@ function changesFrom(body) {
       sets.push("nav_layout = ?"); vals.push(JSON.stringify(l));
     }
   }
+  if (body && "top100" in body && typeof body.top100 !== "boolean") return { error: "top100 is true or false" };
+  const top100 = body && typeof body.top100 === "boolean" ? body.top100 : saved.top100_enabled === true;
+  const savedViews = normalizeViews(parse(saved.mg_views));
+  let views;   // undefined: mg_views is left as it is
   if (body && "mgViews" in body) {
-    if (body.mgViews === null) { sets.push("mg_views = NULL"); }
+    if (body.mgViews === null) views = null;
     else {
       const v = normalizeViews(body.mgViews);
       if (!v) return { error: "Major Gifts needs at least one of Top 100, Portfolios, Pipeline and Plans" };
-      // All four is stored as NULL, so a fifth tab added later reaches everybody.
-      if (v.length === MG_VIEW_IDS.length) sets.push("mg_views = NULL");
-      else { sets.push("mg_views = ?"); vals.push(JSON.stringify(v)); }
+      // the Top 100 is off, so it was not on the screen: its place in the saved list is kept as it was
+      const keepTop = !top100 && (!savedViews || savedViews.includes("top100"));
+      views = !top100 ? normalizeViews([...v, ...(keepTop ? ["top100"] : [])]) : v;
     }
   }
-  if (!sets.length) return { error: "nothing to change: send layout or mgViews" };
+  if (body && body.top100 === true && saved.top100_enabled !== true) {
+    // turned on: its tab is one of those shown
+    const base = views !== undefined ? views : savedViews;
+    if (base && !base.includes("top100")) views = normalizeViews([...base, "top100"]);
+  }
+  if (views !== undefined) {
+    // All four is stored as NULL, so a fifth tab added later reaches everybody.
+    if (views === null || views.length === MG_VIEW_IDS.length) sets.push("mg_views = NULL");
+    else { sets.push("mg_views = ?"); vals.push(JSON.stringify(views)); }
+  }
+  if (body && typeof body.top100 === "boolean") { sets.push("top100_enabled = ?"); vals.push(body.top100); }
+  if (!sets.length) return { error: "nothing to change: send layout, mgViews or top100" };
   return { sets, vals };
 }
 
@@ -102,6 +136,7 @@ function mount(ctx) {
   if (!requireAdmin || !requireSuperAdmin || !checkWriteAccess) throw new Error("server/org/menu.js: a guard is missing at mount");
   const app = routers.r1;
   const save = (orgId, ch) => run(`UPDATE orgs SET ${ch.sets.join(", ")} WHERE id=?`, [...ch.vals, orgId]);
+  const savedRow = async orgId => (await query("SELECT mg_views, top100_enabled FROM orgs WHERE id=?", [orgId]))[0] || {};
 
   app.get("/org/menu", requireAuth, wrap(async (req, res) => {
     const m = await orgMenu(query, req.user.orgId);
@@ -110,7 +145,7 @@ function mount(ctx) {
   }));
 
   app.put("/org/menu", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-    const ch = changesFrom(req.body);
+    const ch = changesFrom(req.body, await savedRow(req.user.orgId));
     if (ch.error) return res.status(400).json({ error: ch.error });
     await save(req.user.orgId, ch);
     req.audit.entity("org setting", req.user.orgId, "Menu");
@@ -126,7 +161,7 @@ function mount(ctx) {
   app.post("/admin/orgs/:id/menu", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
     const [o] = await query("SELECT id FROM orgs WHERE id=?", [req.params.id]);
     if (!o) return res.status(404).json({ error: "Org not found" });
-    const ch = changesFrom(req.body);
+    const ch = changesFrom(req.body, await savedRow(o.id));
     if (ch.error) return res.status(400).json({ error: ch.error });
     await save(o.id, ch);
     const { SUPPORT_ACTOR } = await import("../../shared/clientSafe.js");
@@ -137,4 +172,4 @@ function mount(ctx) {
   }));
 }
 
-module.exports = { routers, mount, orgMenu, normalizeLayout, normalizeViews, MG_VIEW_IDS };
+module.exports = { routers, mount, orgMenu, normalizeLayout, normalizeViews, shownViews, changesFrom, MG_VIEW_IDS };
