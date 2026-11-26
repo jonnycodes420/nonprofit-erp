@@ -28,7 +28,7 @@ const PEOPLE = [
 const LAPSED_ASKABLE = ["d_atl9_corwin", "d_atl9_mirela", "d_atl9_teodor"];   // by lifetime: 40,000 · 12,000 · 250
 
 async function seed(q, today) {
-  for (const t of ["interactions", "tasks", "threads", "gifts", "voice_memos", "atlas_actions", "opportunities", "calendar_events", "recurring_subscriptions"])
+  for (const t of ["interactions", "tasks", "threads", "fin_transactions", "gifts", "voice_memos", "atlas_actions", "opportunities", "calendar_events", "recurring_subscriptions"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM donors WHERE org_id=$1`, [ORG]);
   await q(`INSERT INTO orgs (id,name,legal_name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,vocabulary_json,ai_enabled)

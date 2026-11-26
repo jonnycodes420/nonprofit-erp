@@ -23,7 +23,7 @@ function read(text, prior) {
   // ATLAS-9 items 2 and 3: any phrasing the registry's words name; a call question lists that population.
   const pop = require("./populationAsk").readPopulation(text);
   if (pop && pop.call) return pop.ids.map(key => ({ kind: "population_call", key, words: text }));
-  if (pop) return pop.ids.map((key, i) => ({ kind: "population", key, words: text, ...(pop.ambiguous ? { both: pop.ids, first: i === 0 } : {}) }));
+  if (pop) return pop.ids.map((key, i) => ({ kind: "population", key, words: text, ...(pop.calendar ? { calendar: true } : {}), ...(pop.ambiguous ? { both: pop.ids, first: i === 0 } : {}) }));
   return null;
 }
 
@@ -58,14 +58,23 @@ async function run(st, { log, save, get, query, orgId, parse }) {
       if (since) out = { ...out, line: `${out.line} ${since}` };
     }
   } else if (st.kind === "population") {
-    out = await POP.populationAnswer(st.key, { get, query, orgId });
+    out = await POP.populationAnswer(st.key, { get, query, orgId, calendar: !!st.calendar });
     // "Lapsed this year" could be either list: both answer, each named, and the first says so.
     if (out && st.both && st.first) out.line = `That can mean two different lists, so here are both: ${st.both.map(k => (POP.populationOf(k) || {}).word).join(" and ")}. ${out.line}`;
   } else if (st.kind === "population_call") {
     out = await POP.populationCallAnswer(st.key, { query, orgId });
   } else if (st.kind === "home_figure") {
     const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
-    out = await WR.homeAnswer(st.which, get, o || null);
+    // ATLAS-12 item 5: stopped monthly is Home's Drifting and Recurring read together (stoppedMonthly.js).
+    const OT = require("../../orgTime");
+    out = st.which === "stopped_monthly"
+      ? await require("./stoppedMonthly").stoppedMonthly({ get, query, orgId, today: OT.orgToday(o || {}), orgDay: w => OT.orgToday(o || {}, new Date(w)) })   // ORG_TZ_SEAM_OK
+      : await WR.homeAnswer(st.which, get, o || null);
+    // ATLAS-12 item 3: no goal bar and one goal running: that goal's own card, as campaignAsk says it.
+    if (!out && st.which === "goal_left") {
+      const one = (((await get("/home/annual-goal")).body || {}).running || [])[0];
+      if (one) out = await require("./campaignAsk").run({ id: one.id, of: "campaign", name: one.name }, { query, orgId, get });
+    }
   }
   if (!out) out = { line: "I couldn't read that just now." };
   const id = await log({ kind: "answer", state: "done", line: out.line, ...(out.link ? { link: out.link } : {}) });
@@ -96,7 +105,7 @@ function readingOffLine(ai, lines) {
 // The header over a request whose every answer says it could not answer is
 // that, not a claim that something was found (staging, 22 Nov: "Here's what I
 // found." over "I can't answer that from what Steward keeps.").
-const CANT = /^(?:I can['’]t|I couldn['’]t|Steward can['’]t|I don['’]t have)\b/;
+const CANT = /^(?:I can['’]t|I couldn['’]t|Steward can['’]t|Steward doesn['’]t know|I don['’]t have)\b/;
 function spokeOver(spoke, lines) {
   const ans = (lines || []).filter(l => l.kind === "answer");
   if (spoke !== "Here's what I found." || !ans.length || ans.length !== (lines || []).length) return spoke;

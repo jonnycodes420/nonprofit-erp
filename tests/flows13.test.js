@@ -212,7 +212,7 @@ const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
     ok("§6 a question nothing in Steward answers: \"I can't see that in your data\" in under 5 s, with a model that takes 8 s",
       u.status < 300 && u.ms < 5000 && u.lines.some(l => /^I can't see that in your data\./.test(l)), u);
     const ck = await atlas("What's Fenwick Ashdown's favorite color?");
-    ok("§6 a thing Steward doesn't keep, named: answered in code, under 5 s", ck.status < 300 && ck.ms < 5000 && ck.lines.some(l => /I don't have Fenwick Ashdown's favorite color/.test(l)), ck);
+    ok("§6 a thing Steward doesn't keep, named: answered in code, under 5 s", ck.status < 300 && ck.ms < 5000 && ck.lines.some(l => /Steward doesn't know Fenwick Ashdown's favorite color/.test(l)), ck);
     const slow = await atlas("Which of my donors gave the most?");
     ok("§6 a question that needs the slow lookup stops at its limit and says so (ATLAS_TOTAL_MS 6 s: under 12 s, never the old 12 + 20)",
       slow.status < 300 && slow.ms < 12000 && slow.lines.length > 0, slow);
