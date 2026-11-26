@@ -21,3 +21,8 @@ a shared browser profile flipping between two orgs for 25 minutes.
   she is a live member there (server/auth/tabOrg.js). Another person's sign-in is still refused 409.
 - **Small ones.** An active volunteer re-applying is told so and listed; a written-off pledge says why it
   can't be deleted; an import's own gift line no longer holds its people back from Undo.
+- **Follow-up after the staging re-check (d6903a8).** Pledges and Recurring giving, open in another tab,
+  still waited for the bell's minute: a write was only ever announced in the tab that made it. It is now
+  posted to the browser's other tabs on the same org (lib/changes.js, BroadcastChannel). And the import
+  undo had two rules for "activity since": the confirm's (undoPeople.js) and the move's (undo.js), which
+  counted the import's own gift line. One rule now, `ACTIVITY_LINE_SQL`.

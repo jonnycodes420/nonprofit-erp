@@ -19,6 +19,9 @@
 7. **Needs a write.** A pledge with one payment, written off. Delete this pledge → Delete pledge: a message says the pledge stays because its payments are real gifts and it is already written off.
 8. One browser, one person who belongs to two organizations, two tabs. Switch organization in tab B. Tab A shows "You switched to <Org> in another tab. Reload to follow, or stay here." with two buttons, and is still signed in. Stay here → keep working in tab A: it stays in its organization. Reload to follow → it opens the other organization. Nobody is sent to sign in.
 
+9. **Needs a write.** Two tabs in one browser: Fundraising → Pledges in tab 1; in tab 2 record a payment on a pledge, then Write Off the rest. Tab 1 moves within a few seconds each time, no reload (it used to wait up to a minute). Same with Finance → Recurring giving in tab 1 and a staff plan cancelled in tab 2.
+10. **Needs a write.** Import two made-up people with a gift each; delete one of the imported gifts by hand; Undo the import: both people go to the trash, and the confirm names nobody as having activity since.
+
 ## What could have broken nearby
 - Anything that reads `/finance/overview`, `/fundraising/pledges`, `/recurring/roster` (Fundraising's Recurring tab is the same view).
 - The Volunteers hub header's "conflicts this week" tile still counts this week (it was always this week); only the Schedule's card follows the dates on screen.

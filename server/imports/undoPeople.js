@@ -22,6 +22,12 @@
 // before the undo) said "a line on their timeline" and kept the people the import made.
 "use strict";
 
+// FRESH-3: one timeline line that is her activity since the import, as SQL on alias `a`, with ONE
+// `?` (this run's id). A note, a call, or any other line that is not a gift's: a gift counts as a gift.
+// Used here and by undo.js's list of the people it moves, so the confirm and the move agree.
+const ACTIVITY_LINE_SQL = a => `(${a}.import_id IS DISTINCT FROM ? AND COALESCE(${a}.created_by, '') NOT LIKE 'system:%'
+  AND (${a}.type IN ('note', 'call') OR (${a}.type NOT IN ('note', 'call', 'gift') AND ${a}.gift_id IS NULL)))`;
+
 // What was added to each person since, by a person. Rows the run itself wrote
 // (import_id = this run) never count; the undo removes those first anyway.
 async function activityOf(query, orgId, ids, imp) {
@@ -62,4 +68,4 @@ async function peopleWithActivity(query, orgId, imp, restoredIds = []) {
     .map(r => ({ id: r.id, name: r.name, why: whyWords(r), movable: !r.older_gifts, ...(r.created ? {} : { restored: true }) }));
 }
 
-module.exports = { activityOf, whyWords, hasActivity, peopleWithActivity };
+module.exports = { activityOf, whyWords, hasActivity, peopleWithActivity, ACTIVITY_LINE_SQL };
