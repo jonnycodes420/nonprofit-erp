@@ -369,7 +369,7 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   // (b) Jonathan's January, 25 Nov: CKRH won at $299 from Jan 1, and three open deals closing in January at 90%, 80% and 35%.
   const ckNow = Date.parse("2026-11-26T01:10:00Z");   // 25 Nov, 8:10 PM New York
   const ck = (billing, mrr) => FORECAST.forecast({ deals: [
-    { id: "ckrh", stage_kind: "won", value_cents: 29900, price_cents: 29900, price_billing: billing, price_signed: !billing, billing_starts_on: billing ? null : "2027-01-01", close_date: "2027-01-01", probability: 100 },
+    { id: "ckrh", stage_kind: "won", value_cents: 29900, price_cents: 29900, price_billing: billing, price_signed: !billing, billing_starts_on: "2027-01-01", close_date: "2027-01-01", probability: 100 },
     { id: "o90", stage_kind: "open", value_cents: 29900, probability: 90, close_date: "2027-01-12" },
     { id: "o80", stage_kind: "open", value_cents: 29900, probability: 80, close_date: "2027-01-20" },
     { id: "o35", stage_kind: "open", value_cents: 29900, probability: 35, close_date: "2027-01-28" },
