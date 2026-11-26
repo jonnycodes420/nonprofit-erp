@@ -118,6 +118,16 @@ async function run({ ok, login, api, q }) {
   ok("§3 a feed past its usual gap opens exactly one task, in the one quiet sentence, however often the sweep runs",
     s1.status === 200 && s2.status === 200 && tasks.length === 1 && tasks[0].title === gb.flow.sentence, tasks);
   ok("§3 …and nothing is emailed", s1.body && s1.body.emailed === 0 && s2.body && s2.body.emailed === 0, [s1.body, s2.body]);
+  // HONEST-1 walk: on staging every tick failed "sweepQuietConnections is not a function": jobs.js read
+  // a name its mount (server/boot/steps-4.js) never handed it. Every name jobs.js reads must be handed over.
+  const jobsSrc = src("routes/jobs.js");
+  const wants = (jobsSrc.match(/const \{([\s\S]*?)\} = ctx/) || [])[1] || "";
+  const steps4 = src("server/boot/steps-4.js");
+  const given = (steps4.match(/require\("\.\.\/\.\.\/routes\/jobs"\)\.mount\(\{([\s\S]*?)\}\);/) || [])[1] || "";
+  const names = t => new Set(t.replace(/\/\/[^\n]*/g, "").split(/[\s,]+/).map(x => x.trim()).filter(x => /^[A-Za-z_$][\w$]*$/.test(x)));
+  const missing = [...names(wants)].filter(n => !names(given).has(n));
+  ok("§3 every name routes/jobs.js reads is handed to it by its mount (the sweep included)",
+    names(wants).has("sweepQuietConnections") && missing.length === 0, missing);
   ok("§3 the sweep is scheduled, for live orgs, with no email",
     /every\("sweepQuietConnections"[^\n]*sweepQuietConnections\(\{ live: true, notify: false \}\)/.test(src("routes/jobs.js")));
 
