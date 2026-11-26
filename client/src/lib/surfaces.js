@@ -25,8 +25,24 @@ export const SURFACES = [
   { name: "comms.thank-yous", file: "components/ThankYouDrafts.jsx", read: "Thank-yous waiting to send, and their count", shows: ["thank_you_drafts"] },
   { name: "volunteers.roster", file: "components/VolunteersHub.jsx", read: "Volunteers header sentence, the counts card, the list", shows: ["donors", "volunteer_shifts"] },
   { name: "volunteers.shifts", file: "components/VolunteersHub.jsx", read: "Records → Recent shifts", shows: ["volunteer_shifts", "donors"] },
+  // FRESH-3 item 1 (W-1112-Volunteers-01X, Area 3 F1): every Finance panel, so a money write that reaches none fails.
+  { name: "finance.ledger", file: "components/Finance.jsx", read: "Finance: transactions, accounts, budgets, the period tiles and cash on hand", shows: ["fin_transactions", "gifts", "fin_funds", "budgets"] },
+  { name: "finance.this-month", file: "components/Finance.jsx", read: "Overview → This month: the four figures, the months, gifts with no fund", shows: ["gifts", "fin_transactions", "pledges"] },
+  { name: "finance.month-close", file: "components/Finance.jsx", read: "Exports → Month close: the bookkeeper's file and the deposits for the month", shows: ["gifts", "deposits"] },
+  { name: "finance.fund-cards", file: "components/finance/FundCards.jsx", read: "Funds: each fund's card, its balance and the dialog it opens", shows: ["gifts", "fin_funds", "pledges"] },
+  { name: "finance.post-to-books", file: "components/finance/PostToBooks.jsx", read: "Transactions: gifts waiting to post to the books", shows: ["gifts", "fin_transactions"] },
+  { name: "finance.restricted", file: "components/RestrictedView.jsx", read: "Grants money → Restricted: each grant's balance, the totals and the sentence", shows: ["grants", "gifts", "pledges"] },
+  { name: "finance.recurring", file: "components/RecurringGiving.jsx", read: "Recurring giving: the roster, its counts and this month's movement", shows: ["giving_recurring", "offline_recurring_plans", "gifts"] },
+  { name: "fundraising.pledges", file: "components/Pledges.jsx", read: "Pledges: every open pledge, what is paid and what is left", shows: ["pledges", "gifts"] },
   { name: "events.list", file: "components/Events.jsx", read: "Events list, its cards' Raised and the stats strip", shows: ["events", "event_attendees", "gifts"] },
   { name: "event.rows", file: "lib/eventRows.js", read: "an event's guests, the check-in header (N of M), Came", shows: ["event_attendees", "events"] },
+  // FRESH-3 item 2 (W-1112-Volunteers-01X Area 4, W-1126-Volunteers-01): the Schedule, the Applications list, the
+  // profile's volunteer panel and the Events desk (guests, waitlist, each card's counts).
+  { name: "volunteers.schedule", file: "components/VolunteerSchedule.jsx", read: "Schedule: Day, Week, Month and List, each shift's people, short and conflict tags, Schedule conflicts", shows: ["volunteer_slots", "volunteer_signups", "donors"] },
+  { name: "volunteers.applications", file: "components/VolunteerRecruit.jsx", read: "Applications: the list and the pending count on the hub", shows: ["volunteer_applications", "donors"] },
+  { name: "profile.volunteer", file: "components/VolunteerPanel.jsx", read: "a profile's Volunteer tab: hours, shifts, can give, status", shows: ["volunteer_shifts", "volunteer_records", "volunteer_signups"] },
+  { name: "events.desk-guests", file: "components/EventsDesk.jsx", read: "an event on the desk: guests, the waitlist, seats and Came", shows: ["event_attendees", "events", "donors"] },
+  { name: "events.desk-cards", file: "components/EventsDesk.jsx", read: "the desk's event cards: Invited, Going, Came and Raised", shows: ["events", "event_attendees", "gifts"] },
   { name: "trash.list", file: "components/settings/TrashList.jsx", read: "Settings → Trash: the rows", shows: ["donors", "deleted_records"] },
   { name: "trash.count", file: "components/settings/TrashLink.jsx", read: "Settings: Trash (n)", shows: ["donors"] },
   // SALES-5: /ops → Sales. Each reads the customer's one price (server/admin/sales/customerPrice.js).

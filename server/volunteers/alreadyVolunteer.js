@@ -20,6 +20,17 @@ const VOLUNTEER_OF = (a = "a") => `(SELECT av.id FROM donors av WHERE av.org_id 
 // SQL: application `a` is waiting for a person's Approve or Decline.
 const WAITING = (a = "a") => `(${a}.status = 'pending' AND ${VOLUNTEER_OF(a)} IS NULL)`;
 
+// FRESH-3 item 5 (W-1126-Volunteers-02): what the applicant reads when the application closed as it
+// arrived. "You're in." told an active volunteer they had just joined; and the coordinator's list showed
+// only applications still pending, so one closed on arrival was listed nowhere. It is listed for
+// RECENT_DAYS under Already a volunteer (routes/volunteerScheduling.js), with the person it went to.
+const RECENT_DAYS = 30;
+function alreadyBody(orgName, slug, esc) {
+  return `<div class="card" data-testid="vol-apply-already"><h1>You're already one of our volunteers.</h1>
+    <p>${esc(orgName)} has you on the team now, so there is nothing more to fill in. Your application is with your volunteer record, and the coordinator can see it.</p>
+    <p class="small"><a href="/volunteer-with/${esc(slug)}">Back to the volunteer page</a></p></div>`;
+}
+
 const SENTENCE = "Already a volunteer: the email on this application belongs to someone who volunteers with you now, so there is nothing for you to approve.";
 
-module.exports = { ACTOR, VOLUNTEER_OF, WAITING, SENTENCE };
+module.exports = { ACTOR, VOLUNTEER_OF, WAITING, SENTENCE, RECENT_DAYS, alreadyBody };
