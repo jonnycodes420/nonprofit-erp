@@ -5,6 +5,7 @@
 // (a read key, verified before it is kept), /oauth/:provider/start, and
 // /org/sending-domain. No email-marketing step (Jonathan, 24 Nov).
 import { useEffect, useState } from "react";
+import { FlowWord } from "../../components/connections/flowParts";   // HONEST-2 item 1
 import { apiFetch } from "../../api";
 import { C, Card, Connection, Logo, Message, Status, TrustLine, label, side, input, why, btn, link, count } from "./ui";
 
@@ -49,7 +50,7 @@ function SourceRow({ p, connected, onDone }) {
       <Logo name={p.label} src={LOGO[p.key]} />
       <div style={{ flex: "1 1 220px", minWidth: 0 }}>
         <h3 style={{ margin: 0, fontSize: 17, color: C.ink }}>{p.label}</h3>
-        <p style={{ margin: "2px 0 0", color: C.dim, fontSize: 14 }}>{connected ? <Status>Connected as {connected.as}</Status> : BRINGS[p.key]}</p>
+        <p style={{ margin: "2px 0 0", color: C.dim, fontSize: 14 }}>{connected ? <Status>{connected.as} · <FlowWord provider={p.key} fallback="Connected" /></Status> : BRINGS[p.key]}</p>
       </div>
       <div className="setup-act">{connected ? <button type="button" style={btn("quiet")} onClick={() => manage("connections")}>Manage</button>
         : <button type="button" data-testid={`setup-source-${p.key}-connect`} style={btn("primary")} aria-expanded={open} onClick={() => setOpen(o => !o)}>Connect {p.label}</button>}</div>
@@ -104,7 +105,7 @@ export function QuickBooks({ status }) {
   useEffect(() => { apiFetch("/onboarding/setup/connections").then(setC).catch(() => setC({ quickbooks: {}, email: { mine: [] } })); }, []);
   const qb = (c && c.quickbooks) || {};
   const scopes = status && status.providers && status.providers.intuit ? status.providers.intuit.scopes : null;
-  return <Connection testid="setup-qb" name="QuickBooks" logo="/logos/quickbooks.svg" minutes={2} busy={busy}
+  return <Connection testid="setup-qb" flowProvider="quickbooks" name="QuickBooks" logo="/logos/quickbooks.svg" minutes={2} busy={busy}
     connectedAs={qb.connected ? qb.connected.as : null} onManage={() => manage("connections")}
     onConnect={() => startOAuth("intuit", "quickbooks", setBusy, setMsg, {
       qbo_not_enabled: "QuickBooks opens for your organization once Jonathan switches it on for you. Book 30 minutes below, or skip this for now.",

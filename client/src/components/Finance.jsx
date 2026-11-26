@@ -30,7 +30,7 @@ import PostToBooks from "./finance/PostToBooks";   // LEDGER-3: a waiting gift c
 import { FinFundCards, Definitions4 } from "./finance/FundCards";   // NUMBERS-8: the fund cards and their dialog, one module
 import { Figure } from "./Figure";   // TRUTH-3: the ledger's three figures open their gifts
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
-import { ConnectionLines } from "./connections/flowParts";   // HONEST-1
+import { ConnectionLines, FlowWord } from "./connections/flowParts";   // HONEST-1, HONEST-2
 import { ledgerAmountProblem } from "../lib/amountCheck";   // INPUT-1
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -429,7 +429,7 @@ function MoneyInStrip({ onNavigate, onOpenPayout, cashOnHand }) {
     <Card>
       <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", gap:10, marginBottom:12, flexWrap:"wrap" }}>
         <SectionLabel>Money in · Stripe</SectionLabel>
-        <span style={{ fontSize:11, color:IN, fontWeight:700 }}>Connected</span>
+        <FlowWord kind="own_stripe" testid="finance-stripe-flow" style={{ fontSize:11, color:IN, fontWeight:700 }} />
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12 }}>
         <div>

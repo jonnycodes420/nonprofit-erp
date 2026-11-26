@@ -119,8 +119,9 @@ function resolveTheme(theme) {
     headerCrop: t.headerCrop || null,   // POLISH-3: the zoom she set in Design (BUILD-61's crop rect)
     footerText: t.footerText || null,
     poweredBy: t.poweredBy === true,
-    onetimeAmounts: Array.isArray(t.onetimeAmounts) && t.onetimeAmounts.length ? t.onetimeAmounts : ONETIME_FALLBACK,
-    monthlyAmounts: Array.isArray(t.monthlyAmounts) && t.monthlyAmounts.length ? t.monthlyAmounts : MONTHLY_FALLBACK,
+    // HONEST-2 item 5: a ladder saved out of order before the fix still shows ascending.
+    onetimeAmounts: Array.isArray(t.onetimeAmounts) && t.onetimeAmounts.length ? [...t.onetimeAmounts].sort((a, b) => a - b) : ONETIME_FALLBACK,
+    monthlyAmounts: Array.isArray(t.monthlyAmounts) && t.monthlyAmounts.length ? [...t.monthlyAmounts].sort((a, b) => a - b) : MONTHLY_FALLBACK,
   };
 }
 

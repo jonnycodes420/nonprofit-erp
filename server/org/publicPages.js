@@ -83,7 +83,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   const org = orgs[0];
   if (req.query.memberships !== "1" && !orgTakesGifts(org)) {
     const name = String(org.display_name || "").trim() || org.name;
-    return res.status(404).json({ notOpen: true, orgName: name, ...NOB.notOpenBrand(org, giveThemePayload), error: `${name}'s giving page isn't open yet. Please check back soon.` });
+    return res.status(404).json({ notOpen: true, orgName: name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)), error: `${name}'s giving page isn't open yet. Please check back soon.` });
   }
   res.json(await orgPagePublicPayload(org, req.params.orgSlug));
 }));
@@ -183,13 +183,13 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   if (!pageRows.length) {
     // POLISH-8: an unpublished page (back to Draft) says so; it is not "not found".
     const [draft] = await query(`SELECT id FROM giving_pages WHERE org_id = ? AND slug = ? AND status = 'draft' AND COALESCE(page_kind,'give') = 'give'`, [org.id, req.params.pageSlug]);
-    if (draft) return res.status(404).json({ notOpen: true, paused: true, orgName: org.name, ...NOB.notOpenBrand(org, giveThemePayload), error: "This page isn't taking gifts right now." });
+    if (draft) return res.status(404).json({ notOpen: true, paused: true, orgName: org.name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)), error: "This page isn't taking gifts right now." });
     return res.status(404).json({ error: "This giving page could not be found." });
   }
   // FUNDRAISING-2: a page is not open to the public until the org can take
   // money through it. Until payments are connected it is a draft, and its
   // address says so kindly instead of showing a form that cannot work.
-  if (!orgTakesGifts(org)) return res.status(404).json({ notOpen: true, orgName: org.name, ...NOB.notOpenBrand(org, giveThemePayload),   // FLOWS-13 item 2
+  if (!orgTakesGifts(org)) return res.status(404).json({ notOpen: true, orgName: org.name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)),   // FLOWS-13 item 2
     error: `${org.name}'s giving page isn't open yet. Please check back soon.` });
   res.json(await givingPagePublicPayload(org, pageRows[0], req.query));
 }));

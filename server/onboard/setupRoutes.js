@@ -40,7 +40,7 @@ function stepsFor(row) {
   steps.push({ id: "gift", stage: "first_month", done: !!gift.ok, words: "Record your first gift in Steward", button: "Add a gift", go: ["donors", undefined] });
   steps.push({ id: "charge", stage: "first_month", done: !!paid.ok,
     words: row.gates.first_month.parts[1].says === "The payment failed" ? "Your Steward payment didn't go through: update your card" : row.firstChargeOn ? `Your first Steward charge is ${row.firstChargeOn}` : "Your first Steward charge",
-    button: "Open billing", go: ["settings", { section: "account" }] });
+    button: "Open billing", go: ["settings", { section: "billing" }] });   // HONEST-2 item 3: Billing is its own section
   return steps;
 }
 

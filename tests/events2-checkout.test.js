@@ -152,7 +152,7 @@ async function events4FreeNoStripe() {
   // 2. The public page opens for the free ticket; the paid one says it is not on sale.
   const pageRes = await fetch(`${BASE}/e/${SLUG4}`);
   const html = await pageRes.text();
-  ok("§EVENTS-4 the public page opens with a free ticket and no payments", pageRes.status === 200 && !/Not open yet/.test(html), pageRes.status);
+  ok("§EVENTS-4 the public page opens with a free ticket and no payments", pageRes.status === 200 && !/Opens soon|Not open yet/.test(html), pageRes.status);
   ok("§EVENTS-4 the paid ticket alone says it goes on sale once payments are connected",
     (html.match(/Tickets go on sale once payments are connected\./g) || []).length === 1 && /Supper seat/.test(html), html.length);
   const reg = await fetch(`${BASE}/e/${SLUG4}/register`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },

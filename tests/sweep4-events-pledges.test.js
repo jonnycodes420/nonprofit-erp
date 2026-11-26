@@ -230,7 +230,7 @@ async function fix60(tok) {
     // ── §4 the public page while payments aren't connected
     const page = await fetch(`${BASE}/e/${SLUG}`);
     const html = await page.text();
-    ok("§4 the event page reads Not open yet and offers no form", page.status === 404 && /Not open yet/.test(html) && !/<form/i.test(html),
+    ok("§4 the event page reads Opens soon (HONEST-2) and offers no form", page.status === 404 && /Opens soon/.test(html) && !/<form/i.test(html),
        { status: page.status, head: html.slice(0, 200) });
     await q(`UPDATE events SET status='upcoming', date=$2 WHERE id=$1`, [EVENT, "2099-06-06"]);
     const reg = await fetch(`${BASE}/e/${SLUG}/register`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded" },

@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { T, Modal } from "./shared";
+import { tabHref } from "../lib/appUrls";
 
 const PLAN_NAME = { seed: "Seed", growth: "Growth", impact: "Impact", trial: "Trial" };
 
@@ -30,10 +31,11 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
         </div>
         <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
           <button
-            onClick={() => { onClose(); navigate("/pricing"); }}
+            onClick={() => { onClose(); navigate(tabHref("settings", { section: "billing" })); }}   /* HONEST-2 item 3: Settings → Billing, never the public pricing page */
+            data-testid="upgrade-to-billing"
             style={{ flex:1,background:T.greenDk,border:"none",borderRadius:10,padding:"11px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer" }}
           >
-            Upgrade plan →
+            See your plan →
           </button>
           <button
             onClick={onClose}

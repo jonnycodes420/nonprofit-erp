@@ -208,7 +208,7 @@ function Footer() {
         </div>
         <div className="legal">
           <span>{copyrightLine()} · {LEGAL_ENTITY_ADDRESS.city}, {LEGAL_ENTITY_STATE}</span>
-          <span><A href="/security">Security</A> / <A href="/legal/terms">Terms</A> / <A href="/privacy">Privacy</A> / <A href="/legal/accessibility">Accessibility</A></span>
+          <span><A href="/security">Security</A> / <A href="/terms">Terms</A> / <A href="/privacy">Privacy</A> / <A href="/legal/accessibility">Accessibility</A></span>
         </div>
       </div>
     </footer>

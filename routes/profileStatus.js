@@ -337,14 +337,24 @@ app.get("/settings/giving-levels", requireAuth, wrap(async (req, res) => {
 }));
 
 app.put("/settings/giving-levels", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const toCents = v => {
-    const n = Number(String(v ?? "").replace(/[$,\s]/g, ""));
-    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+  // HONEST-2 item 4 (W-1126-Settings-01): a blank or over-long value is refused with a sentence for
+  // the field it is in. A 40-digit value used to reach the integer column and answer a 500.
+  const LEVEL_MAX_CENTS = 100000000000;   // $1,000,000,000: past any giving level
+  const fieldError = (v, label) => {
+    const t = String(v ?? "").replace(/[$,\s]/g, "");
+    if (!t) return `${label} can't be blank. Type a dollar amount, like 1,000.`;
+    if (t.length > 13 || !/^\d+(\.\d{1,2})?$/.test(t)) return `${label} has to be a dollar amount, like 1,000.`;
+    const c = Math.round(Number(t) * 100);
+    if (!(c > 0)) return `${label} has to be above zero.`;
+    if (c > LEVEL_MAX_CENTS) return `${label} has to be under $1,000,000,000.`;
+    return null;
   };
-  const mid = toCents(req.body && req.body.mid);
-  const major = toCents(req.body && req.body.major);
-  if (!mid || !major) return res.status(400).json({ error: "invalid_levels", message: "Both cut points are dollar amounts above zero." });
-  if (major <= mid) return res.status(400).json({ error: "invalid_levels", message: "Major has to start above Mid." });
+  const b = req.body || {};
+  const errors = [["mid", "Mid starts at"], ["major", "Major starts at"]].map(([field, label]) => ({ field, message: fieldError(b[field], label) })).filter(e => e.message);
+  if (errors.length) return res.status(400).json({ error: "invalid_levels", message: errors[0].message, errors });
+  const mid = Math.round(Number(String(b.mid).replace(/[$,\s]/g, "")) * 100);
+  const major = Math.round(Number(String(b.major).replace(/[$,\s]/g, "")) * 100);
+  if (major <= mid) return res.status(400).json({ error: "invalid_levels", message: "Major has to start above Mid.", errors: [{ field: "major", message: "Major has to start above Mid." }] });
   await run(`UPDATE orgs SET giving_level_mid_cents = ?, giving_level_major_cents = ? WHERE id = ?`, [mid, major, req.user.orgId]);
   // FLOWS-4 (W-1109-Atlas-11X): what is derived from the levels is rebuilt now (the
   // tags are live; the stored Insights, which Atlas and the Major rung read, are not).

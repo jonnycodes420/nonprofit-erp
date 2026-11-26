@@ -8,6 +8,8 @@ import { MoveCard } from "./MoveIn";
 import { YourWords } from "./YourWords";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
+import { BillingInvoices, PlanTalkLink } from "./settings/BillingMore";   // HONEST-2 item 3
+import { FlowWord } from "./connections/flowParts";   // HONEST-2 item 1
 import { confirmIfDirty } from "../lib/dirtyGuard";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
@@ -610,7 +612,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
           <div style={{background:T.ground,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.ink3,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
             <span>You're using all {countLabel(billing.limits.seats, "seat")}.</span>
-            <a href="/pricing" style={{color:T.greenDk,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Upgrade your plan →</a>
+            <button type="button" data-testid="team-plan-link" onClick={()=>setSection("billing")} style={{background:"none",border:"none",padding:0,fontFamily:"inherit",fontSize:12,color:T.greenDk,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>See your plan →</button>
           </div>
         )}
         {team.map((m,i)=>(
@@ -662,11 +664,11 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,background:T.green100,border:"1px solid "+T.green200,borderRadius:10,padding:"10px 16px"}}>
               <div>
-                <div style={{fontSize:13,fontWeight:700,color:T.greenDk}}>Stripe Connected</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.greenDk}}>Stripe: <FlowWord kind="own_stripe" testid="settings-stripe-flow" fallback="connected"/></div>
                 <div style={{fontSize:11,color:T.greenDk,marginTop:1}}>Account: {stripe.accountId}</div>
               </div>
             </div>
-            <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?displayOrgDate(stripe.connectedAt):""}</div>
+            <div style={{fontSize:12,color:T.ink3}}>{stripe.connectedAt?`Linked ${displayOrgDate(stripe.connectedAt)}`:""}</div>
           </div>
         ):stripe?.onboardingStarted?(
           <div data-testid="stripe-unfinished" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
@@ -1016,7 +1018,11 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           already comes here, which makes this the profile menu's destination
           and the right home for a thing that is personal to how you work. */}
       <BccAddressCard/>
-      <div hidden={userRole===VIEWER} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginTop:16}}>
+      </>}
+      {/* HONEST-2 item 3 (W-1126-Integrations-03): Billing is its own section. "Choose a plan" sent her to
+          the public pricing page and back to Organization; every plan link in the app comes here now. */}
+      {section==="billing"&&<>
+      <div data-testid="settings-billing" hidden={userRole===VIEWER} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Billing</SectionLabel>
         {billing ? (
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -1137,16 +1143,15 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               // band was told to "Start a subscription".
               const isSubscriber=!!billing.plan&&billing.plan!=="trial"&&billing.plan!=="seed";
               const hasSub=!!billing.hasSubscription;
-              const isUpgradable=billing.plan==="trial"||billing.plan==="seed";
               const planLabel=planDisplayName(billing.plan)||billing.plan;
               return (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>
                   {isSubscriber&&hasSub
-                    ? "Change your plan, update your payment method, download invoices, or cancel, all in Stripe's secure billing portal. Opens in a new tab; plan changes are prorated automatically."
+                    ? "Update your payment method, download invoices, or cancel, in Stripe's secure billing portal (it opens in a new tab). To change plans, talk to Jonathan."
                     : isSubscriber&&!hasSub
-                      ? <>You're on <strong style={{color:T.ink}}>{planLabel}</strong> via a manual grant from Steward, there's <strong style={{color:T.ink}}>no active subscription</strong> to manage, and nothing to pay. To move to self-serve billing, choose a plan.</>
-                      : "Start a subscription any time, opens Stripe's secure checkout."}
+                      ? <>You're on <strong style={{color:T.ink}}>{planLabel}</strong> via a manual grant from Steward, there's <strong style={{color:T.ink}}>no active subscription</strong> to manage, and nothing to pay. To change plans, talk to Jonathan.</>
+                      : "Steward's prices depend on the size of your donor file, so a plan is set up with you. Talk to Jonathan to start or change one."}
                 </div>
                 <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                   {isSubscriber&&hasSub&&(
@@ -1154,10 +1159,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                       {portalLoading?"Opening…":"Manage billing →"}
                     </button>
                   )}
-                  {!billing.trialCanceled&&(isUpgradable||(isSubscriber&&!hasSub))&&(
-                    <a href="/pricing" style={{display:"inline-block",background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
-                      Choose a plan →
-                    </a>
+                  {!billing.trialCanceled&&(
+                    <PlanTalkLink/>
                   )}
                   {/* BUILD-90 90b — cancelling takes a click, here, and does
                       not require finding the Stripe portal or ringing anybody.
@@ -1187,6 +1190,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <div style={{fontSize:13,color:T.ink3}}>Loading billing information…</div>
         )}
       </div>
+      <BillingInvoices isAdmin={isAdmin}/>
+      </>}
+      {section==="account"&&<>
 
       {/* The organisation's own email settings, admins only. The per-person
           email list that lived here moved to Settings → My email (STAFF-MAIL-1). */}

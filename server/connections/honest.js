@@ -52,8 +52,10 @@ async function connectionsFor(deps, orgId) {
   const ready = await oauthReadiness();
   const needsQbo = body.cards.some(c => c.kind === "bookkeeping" && c.provider === "quickbooks" && c.connected);
   const qbo = needsQbo ? await qboFacts(deps.query, orgId) : null;
+  const [org] = await deps.query("SELECT org_kind FROM orgs WHERE id=?", [orgId]);
+  const demo = require("../../orgKind").isDemoOrg(org);   // HONEST-2 item 1: a demo's connections are examples
   for (const card of body.cards) {
-    card.flow = flowOf(card, { today, qbo, oauthReady: card.oauthProvider ? ready[card.oauthProvider] !== false : null });
+    card.flow = flowOf(card, { today, qbo, demo, oauthReady: card.oauthProvider ? ready[card.oauthProvider] !== false : null });
   }
   const sum = summarize(body.cards);
   return { ...body, flowCounts: sum.counts, flowSentence: sum.sentence };

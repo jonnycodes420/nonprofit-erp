@@ -329,6 +329,7 @@ export function LegalPrivacy() {
   </Legal>;
 }
 
+// HONEST-2: not routed. /legal/terms redirects to /terms, the terms in effect. Kept for the attorney.
 export function LegalTerms() {
   return <Legal t="Terms of service">
     <h2>The service</h2><p>Steward provides donor management software on a subscription basis, month to month or yearly.</p>

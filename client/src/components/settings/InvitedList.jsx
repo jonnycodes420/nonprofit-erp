@@ -5,7 +5,7 @@
 // who had accepted, so the invite showed nowhere but the Audit log. Each
 // pending invite is a row here with its role and date, and Resend, Copy link
 // and Revoke (server/org/invites.js).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../api";
 import { useChanged } from "../../lib/changes";   // FLOWS-13 item 1: an invite made or revoked anywhere re-reads the list
 import { T, Pill, SectionLabel } from "../shared";
@@ -21,7 +21,14 @@ export function InvitedList({ isAdmin, version = 0 }) {
   const [invites, setInvites] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
-  const load = () => apiFetch("/org/invites").then(r => setInvites((r && r.invites) || [])).catch(() => setInvites([]));
+  // HONEST-2 item 4 (W-1126-Settings-01): a revoked invite stayed on screen with greyed buttons. The
+  // row goes the moment the revoke answers, and a read that started before it can't put it back: only
+  // the latest read lands, and a revoked id stays gone for the life of the list.
+  const seq = useRef(0);
+  const gone = useRef(new Set());
+  const load = () => { const n = ++seq.current;
+    return apiFetch("/org/invites").then(r => { if (n === seq.current) setInvites(((r && r.invites) || []).filter(x => !gone.current.has(x.id))); })
+      .catch(() => { if (n === seq.current) setInvites([]); }); };
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, version]);
   useChanged(["org"], () => { if (isAdmin) load(); });
   if (!isAdmin || !invites || !invites.length) return null;
@@ -39,7 +46,8 @@ export function InvitedList({ isAdmin, version = 0 }) {
   const revoke = async i => {
     if (!(await askConfirm({ title: `Revoke the invite to ${i.email}?`, body: "The link stops working at once. You can invite them again later.", yes: "Revoke", danger: true }))) return;
     setBusy(i.id); setMsg("");
-    try { const r = await apiFetch(`/org/invites/${encodeURIComponent(i.id)}`, { method: "DELETE" }); setMsg(r.message || ""); await load(); }
+    try { const r = await apiFetch(`/org/invites/${encodeURIComponent(i.id)}`, { method: "DELETE" });
+      gone.current.add(i.id); setInvites(list => (list || []).filter(x => x.id !== i.id)); setBusy(""); setMsg(r.message || ""); await load(); }
     catch (e) { setMsg(errorMessage(e, "The invite was not revoked.")); }
     setBusy("");
   };

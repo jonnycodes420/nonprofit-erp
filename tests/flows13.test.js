@@ -149,7 +149,7 @@ const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
       await p2.goto(`${APP}/give/${SLUG}`, { waitUntil: "networkidle", timeout: 60000 });
       const notOpenLogo = await p2.locator('[data-testid="org-brand-logo"]').count();
       const notOpenText = await p2.locator('[data-testid="give-not-open"]').innerText().catch(() => "");
-      ok("§2 the public giving page's \"Not open yet\" has the saved logo and the org's name above it", notOpenLogo === 1 && /Not open yet/.test(notOpenText), { notOpenLogo, notOpenText });
+      ok("§2 the public giving page's \"Not open yet\" has the saved logo and the org's name above it", notOpenLogo === 1 && /Opens soon/.test(notOpenText), { notOpenLogo, notOpenText });
       if (pageId) {
         await p2.goto(`${APP}/embed/${pageId}`, { waitUntil: "networkidle", timeout: 60000 });
         const embLogo = await p2.locator('[data-testid="org-brand-logo"]').count();

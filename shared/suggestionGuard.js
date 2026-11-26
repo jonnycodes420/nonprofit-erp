@@ -343,10 +343,30 @@ const MERGE_TAG = /\{\{\s*[a-z_]+\s*\}\}/gi;
 // A sum is a claim about THEIR money when the sentence is about giving.
 const GIFT_WORDS = /\b(gift|gifts|gave|give|given|giving|donat\w*|contribut\w*|pledg\w*|support(ed)? us with)\b/i;
 
+// HONEST-2 item 6 (W-1126-Fundraising-03): an Atlas thank-you copied "QA A1 About:" from a note into a
+// donor's email and named nobody. A test marker or a field label at the start of a line or sentence is
+// the team's bookkeeping, never words for a donor; and a draft to a person says who it is to.
+export const LABEL_PREFIX = /(?:^|\n|[.!?:]\s+)\s*(?:(?:QA|TEST|TESTING|TODO|FIXME|XXX)\b|\[(?:qa|test|internal|note)[^\]]{0,20}\]|(?:About|Note|Notes|Background|Internal)\s*:)/;
+export function labelIn(text) {
+  const m = LABEL_PREFIX.exec(String(text || ""));
+  return m ? m[0].replace(/^[\s.!?:]+/, "").trim() : null;
+}
+function namesThePerson(raw, bare, donor) {
+  const name = String((donor && (donor.name || donor.first_name || donor.firstName)) || "").trim();
+  if (!name) return true;                                  // nobody to name: nothing to check
+  if (MERGE_TAG.test(raw)) { MERGE_TAG.lastIndex = 0; return true; }   // {{first_name}} names them at send
+  const words = tokens(name).filter(w => w.length > 1);
+  const said = new Set(tokens(bare));
+  return words.some(w => said.has(w));
+}
+
 export function guardDraft(text, record = {}) {
   const raw = String(text == null ? "" : text);
   const bare = plainText(raw.replace(/<[^>]+>/g, " ")).replace(MERGE_TAG, " ");
   const reasons = [];
+  const label = labelIn(bare);
+  if (label) reasons.push(`carries a label from a note ("${label}"), not words for a donor`);
+  if (record.donor && !namesThePerson(raw, bare, record.donor)) reasons.push("does not say who it is to");
   const video = record.video && record.video.ready && record.video.url ? record.video : null;
   const links = new Set([...(record.links || []), ...(video ? [video.url] : [])].map(u => String(u).replace(/[.,;:!?]+$/, "")));
   const urls = (raw.match(URL_RE) || []).map(u => u.replace(/[.,;:!?]+$/, ""));

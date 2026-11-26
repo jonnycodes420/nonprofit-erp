@@ -17,7 +17,7 @@
 
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 
-const PARTS = ["sources", "constantcontact", "xero", "honest"];   // HONEST-1: one status per connection
+const PARTS = ["sources", "constantcontact", "xero", "honest", "honest2"];   // HONEST-1: one status per connection; HONEST-2: the census, Billing, Settings, drafts
 
 (async () => {
   const ctx = {

@@ -45,6 +45,7 @@ const FAKE = {
   "/legal/dpa": { published: true },
   "/settings/giving-levels": { midCents: 100000, majorCents: 500000 },
   // WALKB-2: one pending invite under Team
+  "/billing/invoices": { invoices: [], sentence: "No invoices yet. Your first one appears here after your first charge." },   // HONEST-2
   "/org/invites": { invites: [{ id: "inv_fake", email: "wren.halloway@example.org", role: "staff", createdAt: "2026-11-05T15:00:00Z", expiresAt: "2026-11-12T15:00:00Z", expired: false, invitedBy: "Allie Test", link: "http://localhost/invite/fake" }] },
   // ACCESS-1: the admin's switch for view-only exports, on
   "/org/wealth-scores": { team: false, maySee: true },   // WEALTH-1

@@ -291,7 +291,7 @@ export function About() {
       <h2 className="mix h-m" style={{ marginTop: 22 }}>What you can <b>hold us to.</b></h2>
       <div className="incl">
         {["A real person answers your email", "Your move done with you, checked to the cent", "Thirty days before the first monthly charge, then month to month",
-          "Your whole team on every plan", "Every feature on every plan", "No platform fee on any gift",
+          "No platform fee on any gift",
           "Export everything, any time", "Plain warning before any price change", "We never sell or share donor data"]
           .map(x => <span key={x}><Tick />{x}</span>)}
       </div>
