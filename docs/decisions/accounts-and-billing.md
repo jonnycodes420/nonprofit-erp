@@ -401,3 +401,9 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - A signed order is never edited; a change is a new order ("replace"), with a new number. An open order may be edited: the version goes up and a page opened before the edit can't be signed.
 - Nothing is charged before the first charge: `trial_end` is the date she signed for; the setup fee is an invoice item tied to the subscription after the card goes in, never `add_invoice_items`. `tests/order1.test.js`.
 - Order mail is billing mail (`order_signed_copy`, `order_request_sign`): the signed copy to the signer, and "Review and sign" only on Jonathan's Send.
+
+## SALES-5 · one price per customer (2026-11-25)
+
+- A customer's monthly price in /ops → Sales is `server/admin/sales/customerPrice.js` and nothing else: Stripe if billing, else the signed order or accepted quote (the newer), else the org's agreed `billing_mrr_cents`, else the deal's `value_cents`. ARR is `arrOf()` (× 12). The board, the deal header, the record page's MRR row, the forecast and the scoreboard read it; a new sales screen that shows a price reads it too.
+- A deal's own `value_cents` is the pipeline value only. Saving it on a deal whose price is an order, a quote or live billing answers 409 `price_differs` until the person says "Change the pipeline value only" (`valueOnly`). It never changes the order or Stripe.
+- The forecast counts a won deal Stripe doesn't bill yet from its first charge month ("Won, billing starts"), and a billing deal only in MRR now. `tests/sales1-crm.test.js` §15.

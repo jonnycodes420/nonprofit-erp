@@ -6,6 +6,7 @@
 //   &panel=settings|import|call  Sales settings, Import, or call mode (&list=<id>&view=<json>)
 //   &sub=list&list=<id>          SALES-2: one prospect list
 import { useCallback, useEffect, useState } from "react";
+import { useLive } from "../../../lib/liveRead";
 import { useSearchParams } from "react-router-dom";
 import { countLabel } from "../../../../../shared/countWords.js";
 import { apiFetch } from "../../../api";
@@ -103,17 +104,20 @@ function Forecast({ f }) {
     <div style={{ display: "flex", gap: 28, flexWrap: "wrap", margin: "6px 0 10px" }}>
       <div title={f.sentences.weighted}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-weighted="1">{usd(f.weightedCents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>weighted pipeline</div></div>
       <div title={f.sentences.signed}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-signed="1">{usd(f.signedCents || 0)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>signed, not billing yet · {countLabel(f.signedDeals || 0, "deal")}</div></div>
+      <div title={f.sentences.wonStarting}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-won="1">{usd(f.wonStartingCents || 0)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>won, billing starts · {countLabel(f.wonStartingDeals || 0, "deal")}</div></div>
       <div title={f.sentences.mrrNow}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-mrr="1">{usd(f.mrrNowCents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>MRR now · {f.mrrPctOfGoal}% of goal</div></div>
+      <div title={f.sentences.arr}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-arr="1">{usd(f.mrrNowArrCents || 0)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>ARR now · MRR now × 12</div></div>
       <div title={f.sentences.goal}><div style={{ fontSize: 22, fontWeight: 700 }}>{usd(f.goal.cents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>goal · {f.goal.says}</div></div>
-      <div><div style={{ fontSize: 22, fontWeight: 700 }}>{f.projectedPctOfGoal}%</div><div style={{ fontSize: 12, opacity: 0.7 }}>of goal, MRR now plus signed and weighted</div></div>
+      <div><div style={{ fontSize: 22, fontWeight: 700 }}>{f.projectedPctOfGoal}%</div><div style={{ fontSize: 12, opacity: 0.7 }}>of goal, MRR now plus won, signed and weighted</div></div>
     </div>
-    <p style={says}>{f.sentences.weighted} {f.sentences.signed} {f.sentences.mrrNow}{f.mrrError ? ` ${f.mrrError}` : ""}</p>
+    <p style={says}>{f.sentences.weighted} {f.sentences.signed} {f.sentences.wonStarting} {f.sentences.mrrNow} {f.sentences.arr}{f.mrrError ? ` ${f.mrrError}` : ""}</p>
     <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-      <thead><tr>{["Month", "Weighted closing", "Signed, billing starts", "MRR now + all of it", "Goal line", ""].map(h => <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, opacity: 0.65, padding: "0 10px 6px 0" }}>{h}</th>)}</tr></thead>
+      <thead><tr>{["Month", "Weighted closing", "Signed, billing starts", "Won, billing starts", "MRR now + all of it", "Goal line", ""].map(h => <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, opacity: 0.65, padding: "0 10px 6px 0" }}>{h}</th>)}</tr></thead>
       <tbody>{f.months.map(m => <tr key={m.month} data-fc-month={m.month}>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{m.label}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{usd(m.weightedClosingCents)}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }} data-fc-signed-month={m.month}>{usd(m.signedStartingCents || 0)}</td>
+        <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }} data-fc-won-month={m.month}>{usd(m.wonStartingCents || 0)}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{usd(m.projectedCents)}{m.behind ? <span style={{ ...brassTag, marginLeft: 6 }}>behind</span> : null}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{usd(m.goalPathCents)}</td>
         <td style={{ width: "30%", borderTop: `1px solid ${CREAM}` }}><div style={{ height: 8, background: CREAM, borderRadius: 4, position: "relative" }}>
@@ -165,6 +169,7 @@ export default function SalesView() {
   const loadMeta = useCallback(() => apiFetch("/ops/sales/meta").then(setMeta).catch(e => setErr(e)), []);
   const loadHome = useCallback(() => apiFetch("/ops/sales/home").then(setHome).catch(() => setHome({ ok: false })), []);
   useEffect(() => { loadMeta(); loadHome(); }, [loadMeta, loadHome]);
+  useLive("sales.home", ["sales", "org"], loadHome);   // SALES-5: the forecast re-reads after any sales save or billing change
 
   const [nowKey, setNowKey] = useState(0);
   const go = useCallback(next => setParams(p => { const o = { tab: "sales", sub: p.get("sub") || "now", ...next }; Object.keys(o).forEach(k => o[k] == null && delete o[k]); return o; }), [setParams]);

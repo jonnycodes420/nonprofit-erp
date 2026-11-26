@@ -55,6 +55,15 @@ function send(res, r, okStatus = 200) {
   return res.status(code).json(r);
 }
 
+async function dealPrice(query, id) {
+  return (await require("./customerPrice").forDealIds(query, [id])).get(id) || null;
+}
+// The Steward link panel's MRR and ARR rows: the deal's one price, with its sentence.
+function priceOnFacts(facts, p) {
+  const P = require("./customerPrice");
+  Object.assign(facts, { mrrRow: P.mrrRow(p), arrCents: p.arrCents, priceSays: p.says, priceSentence: `${p.says}. ${P.SENTENCE}` });
+}
+
 async function settings(query) {
   const rows = await query(`SELECT key, value FROM sales_settings WHERE key = ANY(?)`, [SETTING_KEYS]);
   const m = Object.fromEntries(rows.map(r => [r.key, r.value]));
@@ -159,6 +168,9 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
           if (st && st.onboarding) out.onboarding = await LINK.gates(query, o.steward_org_id);
         }
       }
+      // SALES-5: the deal's one price (customerPrice.js); the MRR row reads it.
+      out.price = await dealPrice(query, id);
+      if (out.steward && out.price) priceOnFacts(out.steward, out.price);
     }
     if (type === "org") {   // SALES-2: the fit line, read the same way the list reads it
       const row2 = (await LISTS.rowsFor(query, "org")).find(x => x.id === id);
@@ -173,6 +185,12 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
     if (type === "contact") out.dncViaOrg = (await query(`SELECT o.name, o.dnc_reason FROM sales_links l JOIN sales_orgs o ON o.id = l.b_id AND o.deleted_at IS NULL AND o.dnc_at IS NOT NULL
                                                           WHERE l.a_type = 'contact' AND l.a_id = ? AND l.b_type = 'org' LIMIT 1`, [id]))[0] || null;
     if (type === "org" && row.steward_org_id) out.steward = (await LINK.facts(query, [row.steward_org_id]))[row.steward_org_id] || { stewardOrgId: row.steward_org_id, missing: true };
+    if (type === "org" && out.steward && !out.steward.missing) {
+      // SALES-5: the organization's MRR row is its deal's one price (the deal the order follows, ORDER-1).
+      const d = await require("./orderDeal").dealForOrg(query, row.steward_org_id);
+      const p = d ? await dealPrice(query, d.id) : null;
+      if (p) { out.price = p; priceOnFacts(out.steward, p); }
+    }
     res.json(out);
   }));
 
@@ -180,6 +198,13 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
     const { type, id } = req.params;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const b = req.body || {};
+    // SALES-5 item 1: the deal's value on a deal whose price is a signed order, a quote or live billing
+    // never silently diverges: the first save asks, and only { valueOnly: true } saves the value alone.
+    if (type === "deal" && "value_cents" in b && b.valueOnly !== true) {
+      const P = require("./customerPrice");
+      const warn = P.editWarning(await dealPrice(query, id), b.value_cents);
+      if (warn) return res.status(409).json({ ok: false, error: "price_differs", message: warn.says, ...warn });
+    }
     const r = await REC.update(ctx, type, id, b, whoOf(req), { force: b.force === true });
     if (r.ok && req.audit) req.audit.entity(`sales ${type}`, id);
     send(res, r);

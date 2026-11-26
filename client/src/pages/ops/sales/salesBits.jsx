@@ -54,16 +54,18 @@ export function InlineField({ field, value, meta, onSave, testid }) {
   const [draft, setDraft] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [ask, setAsk] = useState(null);   // SALES-5: { says, where } when the value would part from the price Stripe or the order holds
   if (field.readOnly) return <div data-sales-field={testid}>{showValue(field, value, meta)}</div>;
   const start = () => {
     setErr(null); setEditing(true);
     setDraft(field.type === "list" || field.type === "multiselect" ? [].concat(value || []).join(", ")
       : field.key === "value_cents" ? (value ? String(Number(value) / 100) : "") : field.type === "checkbox" ? !!value : value == null ? "" : String(value).slice(0, field.type === "date" ? 10 : undefined));
   };
-  const save = async () => {
+  const save = async (extra = null) => {
     setBusy(true); setErr(null);
     const v = field.key === "value_cents" ? Math.round(Number(String(draft).replace(/[$,\s]/g, "") || 0) * 100) : draft;
-    try { await onSave(v); setEditing(false); } catch (e) { setErr((e && e.message) || "That did not save."); }
+    try { await onSave(v, extra || undefined); setEditing(false); setAsk(null); }
+    catch (e) { if (e && e.error === "price_differs") setAsk({ says: e.says || e.message, where: e.where || null }); else setErr((e && e.message) || "That did not save."); }
     setBusy(false);
   };
   if (!editing) return <button type="button" onClick={start} data-sales-field={testid} title="Click to edit"
@@ -80,9 +82,16 @@ export function InlineField({ field, value, meta, onSave, testid }) {
   return <div>
     {input}
     <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-      <button type="button" style={{ ...btn, padding: "4px 10px", minHeight: 28 }} onClick={save} disabled={busy} data-sales-save={testid}>{busy ? "Saving…" : "Save"}</button>
-      <button type="button" style={{ ...quiet, padding: "3px 10px", minHeight: 28 }} onClick={() => setEditing(false)}>Cancel</button>
+      <button type="button" style={{ ...btn, padding: "4px 10px", minHeight: 28 }} onClick={() => save()} disabled={busy} data-sales-save={testid}>{busy ? "Saving…" : "Save"}</button>
+      <button type="button" style={{ ...quiet, padding: "3px 10px", minHeight: 28 }} onClick={() => { setEditing(false); setAsk(null); }}>Cancel</button>
     </div>
+    {ask ? <div style={{ fontSize: 12.5, marginTop: 6, background: CREAM, borderRadius: 8, padding: "8px 10px" }} data-sales-price-ask={testid}>
+      <div>{ask.says}</div>
+      <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+        {ask.where && ask.where.href ? <a href={ask.where.href} style={{ ...link, fontSize: 12.5 }} data-sales-price-where="1">{ask.where.label}</a>
+          : ask.where ? <span style={{ opacity: 0.8 }}>{ask.where.label}: in the Quote section on this page.</span> : null}
+        <button type="button" style={{ ...quiet, padding: "3px 10px", minHeight: 28 }} onClick={() => save({ valueOnly: true })} disabled={busy} data-sales-value-only="1">Change the pipeline value only</button>
+      </div></div> : null}
     {err ? <div style={{ fontSize: 12, marginTop: 4 }}><span style={brassTag}>Not saved</span> {err}</div> : null}
   </div>;
 }

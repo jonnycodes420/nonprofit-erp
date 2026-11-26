@@ -25,7 +25,7 @@
 // A view that is not mounted hears nothing and asks for nothing.
 import { useEffect, useRef, useState } from "react";
 
-export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights", "org"];
+export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights", "org", "sales"];
 const ALL = KINDS;
 
 // ── WHAT A WRITE TOUCHED ─────────────────────────────────────────────────────
