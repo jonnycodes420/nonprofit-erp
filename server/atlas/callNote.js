@@ -37,7 +37,7 @@ function read(text) {
   if (!who || /^(?:I|We|She|He|They|Her|Him|Them)$/.test(who)) return null;
   const rest0 = String(m[3] || "").replace(/^[,.\s]+/, "");
   const whenWords = (rest0.match(/\b(today|yesterday|this (?:morning|afternoon|evening)|last (?:night|week|\w+day)|on \w+day|on [A-Z][a-z]+ \d{1,2})\b/i) || [])[1] || "";
-  const steps = [{ kind: "log_conversation", who, target: "", amountWords: "", whenWords, how: HOW(`${m[1]} ${rest0}`), words: text, noteText: text }];
+  const steps = [{ kind: "log_conversation", who, target: "", amountWords: "", whenWords, how: HOW(`${m[1]} ${rest0}`), words: parts[0] }];   // atlasNote.js takes the note from her message, from this sentence on
   // A gift she reports, a draft, a journey or a group is more than a call note: the usual read takes the whole message.
   if (parts.slice(1).some(p => !REMIND.test(p) && OTHER_ASK.test(p))) return null;
   const said = parts.slice(1).filter(p => !REMIND.test(p)).join(" ").trim();

@@ -430,7 +430,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const jan5 = `${Number(today.slice(0, 4)) + (today.slice(5) > "01-05" ? 1 : 0)}-01-05`;
   const [w12] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id = $1 AND donor_id = 'd_atl9_hugo' AND note LIKE '%will give $5,000%'`, [F9.ORG]);
   ok("§9 \"I called Hugo… he said he will give $5,000 in January. Remind me Jan 5\" proposes a call with her words and a Jan 5 follow-up, writes nothing yet, never \"I can't predict\" (Jarvis)",
-    items12.some(i => i.kind === "call" && i.donorId === "d_atl9_hugo" && /will give \$5,000 in January/.test(i.note || "")) && items12.some(i => i.kind === "follow_up" && i.donorId === "d_atl9_hugo" && i.due === jan5)
+    items12.some(i => i.kind === "call" && i.donorId === "d_atl9_hugo" && /will give \$5,000 in January/.test(i.note || "") && (i.note.match(/I called Hugo Strand/g) || []).length === 1 && !/Remind me/.test(i.note)) && items12.some(i => i.kind === "follow_up" && i.donorId === "d_atl9_hugo" && i.due === jan5)
     && !items12.some(i => /gift|pledge/.test(i.kind)) && !said12(cn12).some(l => /can't predict/.test(l)) && w12.n === 0, { items: items12, lines: said12(cn12) });
   ok("§9 a forecast she asks for is still refused as one", /^I can't predict next year's giving/.test(said12(await ask10("How much will Hugo Strand give next year?"))[0] || ""));
   // Item 5: what Steward can't know, beside what it can.
