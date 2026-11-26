@@ -39,7 +39,7 @@ const CREDITED_THROUGH = () => `(
       JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
       JOIN donors o ON o.id = g.donor_id AND o.org_id = g.org_id AND o.deleted_at IS NULL
       JOIN donors p ON p.id = sc.donor_id AND p.org_id = sc.org_id AND p.deleted_at IS NULL
-     WHERE sc.org_id = ? AND g.donor_id <> sc.donor_id AND ${MONEY("g")} AND g.amount > 0 AND ${ORG_SQL("o")}
+     WHERE sc.org_id = ? AND g.donor_id <> sc.donor_id AND ${MONEY("g")} AND g.amount > 0
     UNION ALL
     SELECT dr.donor_id_a, g.donor_id, g.id, g.date, ROUND(g.amount * 100)::bigint, 'gives_through_link'
       FROM donor_relationships dr
@@ -79,7 +79,7 @@ async function givesThroughOf(query, orgId, personId) {
             CASE WHEN COUNT(DISTINCT ct.how) > 1 THEN 'both' ELSE MIN(ct.how) END AS how
        FROM ${CREDITED_THROUGH()} ct
        JOIN donors o ON o.id = ct.through_id AND o.org_id = ?
-      WHERE ct.person_id = ?
+      WHERE ct.person_id = ? AND ${ORG_SQL("o")}   -- the person's side lists organizations (NUMBERS-8); a trust's own Through list reads any record
       GROUP BY ct.through_id, o.name
       ORDER BY cents DESC, o.name`, [orgId, orgId, orgId, personId]);
   return rows.map(r => ({ id: r.through_id, name: r.name, cents: Number(r.cents) || 0, gifts: Number(r.gifts) || 0, how: r.how,
