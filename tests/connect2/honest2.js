@@ -28,7 +28,7 @@ const { testNow } = require("../clock");
 const ORG = "org_c2hon2";
 const ADMIN = "admin@c2hon2-fixture.org";
 const ROOT = path.join(__dirname, "..", "..");
-const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
+const read = p => { try { return fs.readFileSync(path.join(ROOT, p), "utf8"); } catch { return ""; } };   // a missing file reads empty, so its check is red, not a crash
 const TABLES = ["gifts", "giving_sources", "imports", "donors", "portal_settings", "users"];
 const DAY = 86400000;
 
