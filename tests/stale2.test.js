@@ -238,7 +238,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     // Volunteers and Events: a shift made, signed up, deleted; a status; a guest added and removed.
     const VOL = ["volunteers.roster", "volunteers.shifts", "volunteers.schedule", "profile.volunteer"];
     const EVT = ["events.list", "event.rows", "events.desk-guests", "events.desk-cards"];
-    await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_by,created_by_name) VALUES ($1,$2,'Wren Calloway','prospect','active','["volunteer"]'::jsonb,'system:test/stale2','FRESH-3 test')`, [P("wren"), ORG]);
+    await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_by,created_by_name) VALUES ($1,$2,'Wren Calloway','prospect','active','["volunteer"]'::jsonb,'system:test/stale2','FRESH-3 test') ON CONFLICT (id) DO NOTHING`, [P("wren"), ORG]);
     const opp = await told("POST", "/volunteer-hub/opportunities", { name: "Heron Shelving", description: "Shelving." });
     const OPP = opp.body && (opp.body.id || (opp.body.opportunity && opp.body.opportunity.id));
     // Two overlapping shifts next week for Wren: the cards tag both, and the counter must say so.
@@ -264,6 +264,9 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     const shDel = await told("POST", `/removals/shift/${SB}`, { confirm: true });
     const deafS = hears(VOL, shDel);
     ok(`§G a shift deleted (${shDel.status}) reaches every Volunteers panel: ${deafS.length ? "deaf: " + deafS.join(", ") : "all hear it"}`, shDel.status < 300 && deafS.length === 0, { status: shDel.status, topics: shDel.topics, deafS, body: shDel.body });
+    const shUndo = await told("POST", "/removals/undo", { undoIds: (shDel.body && (shDel.body.undoIds || (shDel.body.undoId ? [shDel.body.undoId] : []))) || [] });
+    const deafU = hears(["volunteers.schedule", "volunteers.shifts"], shUndo);
+    ok(`§G its Undo from Recent changes (${shUndo.status}) reaches the Schedule (the fleet saw 1 card, 0 tags until reload)`, shUndo.status < 300 && deafU.length === 0, { status: shUndo.status, topics: shUndo.topics, deafU, body: shDel.body });
     const former = await told("POST", `/donors/${P("wren")}/volunteer-status`, { status: "former" });
     const deafF = hears(VOL, former);
     ok(`§G Mark as former reaches every Volunteers panel: ${deafF.length ? "deaf: " + deafF.join(", ") : "all hear it"}`, former.status < 300 && deafF.length === 0, { status: former.status, topics: former.topics, deafF });
@@ -280,6 +283,41 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     const guest = await told("POST", `/events/${EG}/attendees`, { donorIds: [P("eli")] });
     const deafE = hears(EVT, guest);
     ok(`§G a guest added reaches every Events panel: ${deafE.length ? "deaf: " + deafE.join(", ") : "all hear it"}`, guest.status < 300 && deafE.length === 0, { status: guest.status, topics: guest.topics, deafE });
+  }
+
+  // ── §J · FRESH-3 item 3: CAMPAIGNS, OVERVIEW AND THE CAMPAIGN LIST COUNT THE SAME CAMPAIGNS ──
+  // W-1126-Fundraising-01: "The Campaigns list says 'No campaigns yet' while Overview lists 5 active goal campaigns".
+  {
+    const end = (() => { const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 60); return d.toISOString().slice(0, 10); })();
+    const start = (() => { const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 10); return d.toISOString().slice(0, 10); })();
+    for (const n of ["Heron Roof Fund", "Heron Reading Room"]) await api("POST", "/fundraising/campaigns", tok, { name: n, goalAmount: 5000, startDate: start, endDate: end, goalCategory: "project" });
+    const ov = await api("GET", "/fundraising/overview", tok);
+    const list = await api("GET", "/fundraising/campaigns", tok);
+    const top = ((ov.body && ov.body.goals) || []).filter(g => g.isTopLevel);
+    const active = top.filter(g => g.lifecycle === "active").length;
+    // Taken back out: §2's lead event card is Fundraising Overview's hero only when no goal is running.
+    await q(`DELETE FROM campaigns WHERE org_id=$1 AND name IN ('Heron Roof Fund','Heron Reading Room')`, [ORG]);
+    ok("§J the Campaigns list (Overview's goals), Overview's Active goals and /fundraising/campaigns count the same campaigns",
+      ov.status === 200 && top.length >= 2 && active === (ov.body.rollup && ov.body.rollup.activeGoalCount) && Array.isArray(list.body) && list.body.length === top.length,
+      { top: top.length, active, rollup: ov.body && ov.body.rollup && ov.body.rollup.activeGoalCount, list: Array.isArray(list.body) ? list.body.length : list.body });
+  }
+
+  // ── §I · FRESH-3 item 5: AN IMPORT'S UNDO IS NOT HELD BY ITS OWN GIFT LINE ──
+  // W-1126-Finance-02: "Import undo removes the people it created even though its own timeline line
+  // exists (that line isn't activity)". A gift line whose gift_id is gone (the gift removed before the
+  // undo) counted as "a line on their timeline" and kept the person; a note she wrote still does.
+  {
+    const UP = require("../server/imports/undoPeople");
+    const qq = (sql, args = []) => { let i = 0; return q(sql.replace(/\?/g, () => "$" + (++i)), args); };
+    const IMP = { id: "imp_" + ORG + "_fresh3", created_at: new Date(Date.now() - 3600e3).toISOString() };
+    await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_import_id,created_by,created_by_name) VALUES ($1,$2,'Jory Imported','prospect','active','["donor"]'::jsonb,$3,$4,'Odile Marsh') `, [P("jory"), ORG, IMP.id, ME]);
+
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'gift','Gave $40.',$4,$5,'Odile Marsh')`, ["int_" + ORG + "_jory_g", ORG, P("jory"), today, ME]);
+    const kept = await UP.peopleWithActivity(qq, ORG, IMP);
+    ok("§I a person the import made, with only its gift line (gift gone), is not held back by the undo", kept.length === 0, kept);
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'note','Called about the gala.',$4,$5,'Odile Marsh')`, ["int_" + ORG + "_jory_n", ORG, P("jory"), today, ME]);
+    const kept2 = await UP.peopleWithActivity(qq, ORG, IMP);
+    ok("§I …and a note she wrote since still keeps them, named", kept2.length === 1 && /a note/.test(kept2[0].why), kept2);
   }
 
   // ── §H · FRESH-3 item 4: ONE PERSON, TWO ORGS, TWO TABS: THE OTHER TAB KEEPS ITS ORG ──
