@@ -372,7 +372,7 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
                   </thead>
                   <tbody>
                     {[...giftsFull].sort(compareGifts).map(g=>(   /* POLISH-6: date, then entered, newest first */
-                      <tr key={g.id} id={`gift-${g.id}`} style={{borderBottom:"1px solid "+T.bg3}}>
+                      <tr key={g.id} id={`gift-${g.id}`} data-ph-mask="" style={{borderBottom:"1px solid "+T.bg3}}>
                         {giftEditId===g.id?(
                           <td colSpan={8} style={{padding:"10px 12px"}}>
                             <GiftForm mode="edit" form={giftEditForm} setForm={setGiftEditForm} giftCfDefs={giftCfDefs} saving={giftSaving} error={giftEditErr}

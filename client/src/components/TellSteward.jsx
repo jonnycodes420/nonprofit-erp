@@ -28,6 +28,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal, T } from "./shared";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { errorMessage } from "../lib/domainError";
 import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip } from "../../../shared/voiceTalk.js";
 import { previewLines } from "../../../shared/atlas.js";
@@ -211,6 +212,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     try {
       const r = await apiFetch("/atlas", { method: "POST", body: JSON.stringify(askBody(words, { source, donorId: donor ? donor.id : undefined, thread: threadNow, progressKey: watch() })) });
       setRequest(r.request);
+      track("tell_steward_used", { input: source, on_profile: !!donor, follow_up: !!threadNow, outcome: (r.request && r.request.status) || "none" });   // ANALYTICS-1: never the words
       if (r.request && r.request.status === "done") told({ memoId: r.request.id });   // the page behind shows it at once
     } catch (e) { setErr(said(e)); }
     unwatch();

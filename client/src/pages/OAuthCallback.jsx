@@ -21,6 +21,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 
 // This page renders OUTSIDE the app shell (a provider drops the browser here
 // before any tab is mounted), so it takes the public pages' tokens rather than
@@ -97,6 +98,7 @@ export default function OAuthCallback() {
           setState({ phase: "choose", sentence: r.sentence });
         } else {
           setState({ phase: "done", sentence: r.sentence });
+          track("connection_connected", { source: provider });
           // FIX-33: a mailbox lands straight on Settings > Connections, where
           // the card shows "Connected as ..." with its first read.
           if (provider === "google" || provider === "microsoft")
@@ -112,6 +114,7 @@ export default function OAuthCallback() {
     try {
       const r = await apiFetch("/oauth/xero/tenant", { method: "POST", body: JSON.stringify({ tenantId: id }) });
       setState({ phase: "done", sentence: r.sentence }); setTenants(null);
+      track("connection_connected", { source: "xero" });
     } catch (e) {
       setState({ phase: "failed", sentence: e?.body?.sentence || "That organization was not saved." });
     }

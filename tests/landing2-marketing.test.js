@@ -716,6 +716,66 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("no comparison (vs) page", !ROUTES.some(r => /(^|[/-])vs([/-]|$)|versus|alternative/i.test(r.path)));
   }
 
+  // 20 · ANALYTICS-1: PostHog, only on production, with nothing that names a person.
+  // Fails when: staging, localhost, a Vercel preview or a test browser would load
+  // it; it would run on a donor's page; an event property can carry an email, a
+  // name, money or free text (the module's filter, and every track() call's own
+  // keys); posthog-js is imported anywhere else or eagerly; replay can run where a
+  // card or signature goes in; the CSP or the privacy policy leaves PostHog out.
+  {
+    const A = await import(path.join(ROOT, "client", "src", "lib", "analytics.js"));
+    const no = [["staging.stewardapp.dev", "/dashboard"], ["localhost", "/dashboard"], ["127.0.0.1", "/"], ["nonprofit-erp-git-x-steward.vercel.app", "/"],
+      ["www.stewardapp.dev", "/give/harbor"], ["www.stewardapp.dev", "/portal/harbor"], ["www.stewardapp.dev", "/embed/f1"]];
+    const loadedOn = no.filter(([hostname, pathname]) => A.analyticsAllowed({ hostname, pathname }));
+    ok("analytics never loads on staging, localhost, a preview or a donor's page", loadedOn.length === 0, loadedOn);
+    ok("…and an event that still names a donor's page is dropped before it leaves",
+      A.scrubEvent({ properties: { $current_url: "https://www.stewardapp.dev/give/harbor" } }) === null && !!A.scrubEvent({ properties: { $current_url: "https://www.stewardapp.dev/dashboard" } }));
+    ok("…nor under a test browser on production", !A.analyticsAllowed({ hostname: "www.stewardapp.dev", pathname: "/dashboard", webdriver: true }));
+    ok("…and does load on the production app and site", A.analyticsAllowed({ hostname: "www.stewardapp.dev", pathname: "/dashboard" }) && A.analyticsAllowed({ hostname: "stewardapp.dev", pathname: "/book" }));
+    const dirty = { donor_name: "Ada Lovelace", donorName: "Ada Lovelace", email: "ada@example.org", contact: "ada@example.org", giftAmount: 250, amount: 250,
+      question: "who stopped giving", label: "Ada Lovelace", note: "call her", rowsImported: 12, via: "dialog", on_profile: true };
+    const kept = A.clean(dirty);
+    ok("an event keeps counts, kinds and flags, and drops every name, email, amount and sentence",
+      JSON.stringify(kept) === JSON.stringify({ rowsImported: 12, via: "dialog", on_profile: true }), kept);
+    // Every track() call in the client: a known event, and no key that names a person, a contact, money or free text.
+    const CS = path.join(ROOT, "client", "src"), srcFiles = [];
+    (function walk(d) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.jsx?$/.test(f)) srcFiles.push(p); } })(CS);
+    const calls = [], badCalls = [];
+    for (const f of srcFiles) {
+      const t = fs.readFileSync(f, "utf8");
+      for (const m of t.matchAll(/\btrack\(\s*"([a-z_]+)"\s*(?:,\s*\{)?/g)) {
+        let props = "";
+        if (m[0].endsWith("{")) { let depth = 1, i = m.index + m[0].length; while (i < t.length && depth) { if (t[i] === "{") depth++; else if (t[i] === "}") depth--; if (depth) props += t[i]; i++; } }
+        const keys = [...props.replace(/\([^()]*\)/g, "").matchAll(/(?:^|[,{]\s*)([A-Za-z_$][\w$]*)\s*:/g)].map(k => k[1]);
+        calls.push(m[1]);
+        const bad = keys.filter(k => A.FORBIDDEN_KEY.test(k.replace(/([a-z0-9])([A-Z])/g, "$1_$2")));
+        if (!A.EVENTS.includes(m[1]) || bad.length) badCalls.push(rel(f) + " " + m[1] + " " + bad.join(","));
+      }
+    }
+    const missing = A.EVENTS.filter(e => !calls.includes(e));
+    ok("every named moment is sent from somewhere (" + calls.length + " track calls)", missing.length === 0, missing);
+    ok("no track() call names an unknown event or passes a name, email, amount or free-text key", badCalls.length === 0, badCalls);
+    const importers = srcFiles.filter(f => /from\s+["']posthog-js|import\(\s*["']posthog-js/.test(fs.readFileSync(f, "utf8"))).map(rel);
+    const own = fs.readFileSync(path.join(CS, "lib", "analytics.js"), "utf8");
+    ok("lib/analytics.js is the only file that imports posthog-js, and only lazily", importers.length === 1 && importers[0] === "client/src/lib/analytics.js"
+      && !/^\s*import\s[^(]*from\s+["']posthog-js/m.test(own) && /import\(\s*"posthog-js[/"]/.test(own), importers);
+    // Home's first look carries only the door's queue: nothing imports lib/analytics.js but the door, and it only lazily.
+    const viaModule = srcFiles.filter(f => /["'][./]*\/?lib\/analytics["'.]|["']\.\/analytics["']/.test(fs.readFileSync(f, "utf8"))).map(rel);
+    const door = fs.readFileSync(path.join(CS, "lib", "analyticsDoor.js"), "utf8");
+    ok("screens call lib/analyticsDoor.js, which alone loads lib/analytics.js, lazily", viaModule.length === 1 && viaModule[0] === "client/src/lib/analyticsDoor.js"
+      && /import\(\s*"\.\/analytics"\s*\)/.test(door) && !/^\s*import\s/m.test(door), viaModule);
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "client", "package.json"), "utf8"));
+    ok("posthog-js is pinned to an exact version", /^\d+\.\d+\.\d+$/.test(pkg.dependencies["posthog-js"] || ""), pkg.dependencies["posthog-js"]);
+    ok("no replay where a card or a signature goes in", ["/start/tok", "/quote/tok", "/signed-up"].every(p => A.NO_REPLAY.test(p)) && !A.NO_REPLAY.test("/dashboard")
+      && /maskAllInputs:\s*true/.test(own) && /maskTextSelector:\s*"\[data-ph-mask\]"/.test(own));
+    const masked = ["components/profile/ProfileHeader.jsx", "components/profile/GivingTab.jsx", "components/profile/ContactTab.jsx"].filter(f => !/data-ph-mask/.test(fs.readFileSync(path.join(CS, f), "utf8")));
+    ok("the profile header, gift rows and contact fields are masked in replay", masked.length === 0, masked);
+    const csp = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8")).headers.map(h => h.headers.find(x => x.key === "Content-Security-Policy")).filter(Boolean).map(h => h.value).join(" ");
+    const dir = n => ((new RegExp("(?:^|;)\\s*" + n + " ([^;]*)")).exec(csp) || [])[1] || "";
+    ok("the CSP lets the app reach PostHog (script-src and connect-src)", ["script-src", "connect-src"].every(d => [A.POSTHOG_HOST, A.POSTHOG_ASSETS].every(h => dir(d).split(/\s+/).includes(h))), [dir("script-src"), dir("connect-src")]);
+    ok("the privacy policy names PostHog among its service providers", /<strong>PostHog<\/strong>/.test(fs.readFileSync(path.join(CS, "pages", "PrivacyPage.jsx"), "utf8")));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

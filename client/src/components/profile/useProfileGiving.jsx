@@ -4,6 +4,7 @@
 // Tests read it through readSource("client/src/components/DonorProfile.jsx").
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1
 import { errorMessage } from "../../lib/domainError";
 import { askConfirm } from "../ConfirmDialog";
 import { fmtFull } from "../shared";
@@ -178,6 +179,7 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
         r=await post(pick==="alt"?"reduce":"extra_gift");
       }
       addGiftIdemRef.current=null;
+      track("gift_recorded",{via:"profile",pledge:!!f.pledgeId});
       const gid=r&&r.gift&&r.gift.id;
       if(gid&&f.customFields&&giftCfDefs.length&&Object.values(f.customFields).some(v=>v!==""&&v!=null))
         await apiFetch(`/gifts/${gid}/custom-fields`,{method:"PUT",body:JSON.stringify({values:f.customFields})}).catch(()=>{});

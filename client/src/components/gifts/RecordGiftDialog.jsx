@@ -20,6 +20,7 @@
 //     fundraiser carried as "Same as last" (lib/stickyGift.js).
 import { useRef, useState } from "react";
 import { apiFetch } from "../../api";
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1
 import { T, Modal, fmtFull } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import { orgTodayCivil } from "../../lib/orgToday";
@@ -83,6 +84,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
   const done = (r, p, another) => {
     idem.current = null;
     rememberGift(f);
+    track("gift_recorded", { via: eventId ? "event" : pledgeId ? "pledge" : "dialog", new_person: !!np, tribute: !!f.tribType, split_funds: Array.isArray(f.fund) && f.fund.length > 1 });
     onSaved && onSaved(r, p);
     if (!another) { onClose(); return; }
     setSaved(`Saved ${fmtFull(Number(f.amount) || 0)} from ${p.name}.`);

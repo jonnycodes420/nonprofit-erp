@@ -9,6 +9,7 @@
 // buildWorkbookSubmission — the screen cannot disagree with the write.
 import { useState, useMemo, useEffect } from "react";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { rethrowProgrammerError, errorMessage } from "../lib/domainError";
 import { T, Spin } from "./shared";
 import {
@@ -102,6 +103,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   // an org that answered nothing gets today's strings byte-identically.
   const t = useMemo(() => makeT(vocabulary), [vocabulary]);
 
+  // ANALYTICS-1: a workbook import that finished, by its row counts only.
+  useEffect(() => { if (result) track("import_finished", { workbook: true, ...Object.fromEntries(Object.entries(result).filter(([, v]) => typeof v === "number")) }); }, [result]);
   useEffect(() => {
     apiFetch("/custom-fields?entity=donor").then(r => setCfDefs(p => ({ ...p, donor: Array.isArray(r) ? r : [] }))).catch(() => {});
     apiFetch("/custom-fields?entity=gift").then(r => setCfDefs(p => ({ ...p, gift: Array.isArray(r) ? r : [] }))).catch(() => {});

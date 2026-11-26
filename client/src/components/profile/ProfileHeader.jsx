@@ -106,7 +106,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
             name (Donor since, the contact bits), then the numbers strip. Less
             than half the old height (Jonathan, 24 Nov: "cut that white window
             in half"), and it scrolls away with the page; only the tabs stick. */}
-        <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"10px 0 0",display:"grid",gridTemplateColumns:"44px minmax(0,1fr) auto",columnGap:14,rowGap:0,alignItems:"center"}}>
+        <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" data-ph-mask="" style={{padding:"10px 0 0",display:"grid",gridTemplateColumns:"44px minmax(0,1fr) auto",columnGap:14,rowGap:0,alignItems:"center"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:6}}>
             <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"1px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:22}}>← Donors</button>
           </div>

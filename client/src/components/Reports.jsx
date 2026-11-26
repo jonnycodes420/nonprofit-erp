@@ -1,6 +1,7 @@
 import { MeetingsByStaffCard } from "./MovesPanels";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
@@ -268,6 +269,7 @@ function ReportsRail({ groups, active, activeLabel, onPick }) {
 export function Reports({ appData, onNavigate, initialReport, initialParams, initialSavedReport }) {
   const [start] = useState(() => resolveReportId(initialSavedReport || initialReport));
   const [active, setActive] = useState(start.id);
+  useEffect(() => { if (active) track("report_opened", { report: String(active).slice(0, 64) }); }, [active]);   // ANALYTICS-1: which report, by its id
   const [list, setList] = useState(null);   // /saved-reports: { standard, saved }
   // NAV-1 §2 — the server's own list of dashboards, so the rail's first group
   // cannot drift from what exists. A failure is silent and the group simply

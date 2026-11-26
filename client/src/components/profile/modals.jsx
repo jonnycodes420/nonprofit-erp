@@ -5,6 +5,7 @@ import { orgTodayCivil, orgTodayPlus } from "../../lib/orgToday";
 import { greetingLine } from "../../../../shared/greeting.js";
 import { Modal, SC, STAGES, Spin, T, TpField, TpYesNo, activeMark } from "../shared";
 import { apiFetch } from "../../api";
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1
 import { errorMessage } from "../../lib/domainError";
 import { AttachFileField, uploadAttachment } from "../ProfileTimelineParts";
 import { MONTHS as BIRTH_MONTHS } from "../../../../shared/birthday.js";
@@ -445,6 +446,7 @@ function GiftLinkModal({donor,orgName,onClose}){
         name:`Gift request: ${donor.name}`,subject:emailSubject,body:emailBody,segment:seg,status:"draft"
       })});
       await apiFetch(`/campaigns/${created.id}/send`,{method:"POST"});
+      track("campaign_sent",{via:"profile_gift_request",recipients:1});
       setSent(true);
     }catch(e){setSendErr(errorMessage(e, "Failed to send email"));}
     setSending(false);

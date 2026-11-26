@@ -2,6 +2,7 @@ import { countLabel } from "../../../../shared/countWords.js";
 import { FlowWord } from "../connections/flowParts";   // HONEST-2 item 1
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../api";
+import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1
 import { errorMessage } from "../../lib/domainError";
 import { T, fmtFull, Modal, SectionLabel } from "../shared";
 import { askConfirm } from "../ConfirmDialog";
@@ -280,6 +281,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
     try{
       await apiFetch("/giving-sources",{method:"POST",
         body:JSON.stringify({provider:connect.provider.key,credentials:connect.values})});
+      track("connection_connected",{source:connect.provider.key});
       setConnect(null); await load();
     }catch(e){ setConnect(c=>({...c,testing:false,error:errorMessage(e,"Could not connect that source.")})); }
   };

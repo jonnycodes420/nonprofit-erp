@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState } from "react";
 import { T, PersonMark } from "./shared";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { errorMessage } from "../lib/domainError";
 import { DonorLink, RecordLink } from "./RecordLink";
 import { giftHref } from "../lib/appUrls";
@@ -103,6 +104,7 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
     setErr(""); hide(d.id); if (open === d.id) setOpen(null);
     try {
       await apiFetch(`/thank-yous/${encodeURIComponent(d.id)}/sent`, { method: "POST" });
+      track("thank_you_marked_sent", { on_profile: !!donorId });
       announce();
       offerUndo({ message: `Marked sent: the thank-you to ${displayName(d.donorName)}. Steward sent nothing.`, undoAction: async () => {
         const y = await apiFetch(`/thank-yous/${encodeURIComponent(d.id)}/unsent`, { method: "POST" });
@@ -165,7 +167,7 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
                     {!mail && <div data-testid="ty-draft-no-email" style={{ fontSize: 12.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, marginTop: 6 }}>
                       There is no email address on file for {who}. Copy the words and send them however you reach {who}.</div>}
                     <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      {mail && <a href={mail} data-testid="ty-draft-mailto" style={primary}>Open in my email</a>}
+                      {mail && <a href={mail} data-testid="ty-draft-mailto" onClick={() => track("draft_opened_in_email", { draft: "thank_you", on_profile: !!donorId })} style={primary}>Open in my email</a>}
                       <button type="button" data-testid="ty-draft-copy" onClick={() => copy(d)} style={mail ? plain : { ...primary, border: "none" }}>{copied === d.id ? "Copied" : "Copy"}</button>
                       <button type="button" data-testid="ty-draft-sent" onClick={() => sent(d)} style={plain}>I sent it</button>
                       <button type="button" data-testid="ty-draft-not-sending" onClick={() => notSending(d)} style={{ ...quiet, marginLeft: "auto" }}>Not sending this</button>

@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
+import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { donorsListHref } from "../lib/appUrls";
 import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
@@ -199,6 +200,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   };
   // FIX-54: the last delete's Undo comes down while a file is imported
   useEffect(() => { dismissUndo(); }, []);
+  // ANALYTICS-1: an import that finished, by its row counts only.
+  useEffect(() => { if (result) track("import_finished", Object.fromEntries(Object.entries(result).filter(([, v]) => typeof v === "number"))); }, [result]);
   // SPEED-2: the spreadsheet reader starts downloading when the window opens,
   // not after she picks a file (about 300 ms off the preview at prod's round trip).
   useEffect(() => { import("xlsx").catch(() => {}); }, []);

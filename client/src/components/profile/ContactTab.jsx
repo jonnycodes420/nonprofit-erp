@@ -88,7 +88,7 @@ function ContactTab({ donor, contact, household, contactPerson, isReadOnly, onEd
   }, [donor.id]);
 
   const addrFlags = on("address");
-  return <div className="dp2-cream" data-testid="dp-tab-contact" style={{ padding: "24px var(--dp-gutter,40px) 40px", display: "flex", flexDirection: "column", gap: 16 }}>
+  return <div className="dp2-cream" data-testid="dp-tab-contact" data-ph-mask="" style={{ padding: "24px var(--dp-gutter,40px) 40px", display: "flex", flexDirection: "column", gap: 16 }}>
     <style>{`.ct-row{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:10px;align-items:center}@media (max-width:600px){.ct-row{grid-template-columns:minmax(0,1fr) auto;row-gap:2px}.ct-l{grid-column:1/-1}}`}</style>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
       <div style={{ fontSize: 14, color: DIM }}>Everything to reach {first}, without opening Edit.</div>
