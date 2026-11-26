@@ -162,8 +162,9 @@ const tryRequire = rel => { try { return require(path.join("..", rel)); } catch 
     const w2 = await person("Walter Quillfeather"); await gift(w2, 7000, cur.from);
     const r = await atlas("how much has Walter given");
     const qs = (r.body && r.body.request && r.body.request.questions) || [];
-    const which = qs.find(x => /^Which Walter\?$/.test(x.sentence));
-    ok("§2 an ambiguous name asks \"Which Walter?\"", !!which, JSON.stringify(r.body).slice(0, 400));
+    // ATLAS-12 item 2: the question names each match and its lifetime, and offers Both (never summed before she presses it).
+    const which = qs.find(x => /^Two people match: Walter [\w-]+ \(\$[\d,]+\) and Walter [\w-]+ \(\$[\d,]+\)\. Which one\?$/.test(x.sentence));
+    ok("§2 an ambiguous name asks \"Two people match: … Which one?\"", !!which, JSON.stringify(r.body).slice(0, 400));
     ok("§2 each match says its lifetime", !!which && which.options.some(o => /lifetime \$500/.test(o.detail)) && which.options.some(o => /lifetime \$7,000/.test(o.detail)), which && JSON.stringify(which.options));
     const said = JSON.stringify(r.body || {});
     ok("§2 nothing is summed before she picks (never $7,500)", !/\$7,500/.test(said), said.slice(0, 300));

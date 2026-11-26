@@ -117,6 +117,13 @@ module.exports.AI_OFF = [
   { id: "off-5", text: "How much has Margaret Chen given?", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen has (?:given \$[\d,]+|no gifts on record yet)/ }] },
   { id: "off-6", text: "Margaret Chen's total", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen has (?:given \$[\d,]+|no gifts on record yet)/ }] },
   { id: "off-7", text: "lifetime for Margaret Chen", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen has (?:given \$[\d,]+|no gifts on record yet)/ }] },
-  { id: "off-8", text: "Brief me on Margaret Chen", expect: [{ kind: "answer", state: "done", who: MC, line: /^Here's what Steward knows about Margaret Chen\.$/ }] },
+  // ATLAS-12 item 6: a brief opens with plain sentences: who they are, their giving, the last conversation, the next move.
+  { id: "off-8", text: "Brief me on Margaret Chen", expect: [{ kind: "answer", state: "done", who: MC, line: /^Margaret Chen is (?:a donor|on file as a contact)\b.*\. (?:The last conversation was .+ on \w{3} \d{1,2}, \d{4}\.|No conversation logged yet\.) (?:Next: .+|There is no next step planned for Margaret\.)$/ }] },
+  // ATLAS-12 item 1 (Jarvis, 26 Nov: "lapsed 200 vs 343, LYBUNT 251 calendar vs 309 in Reports, SYBUNT 251 vs 553"):
+  // five phrasings of each, every one Reports' own number (run.js checks the count against the report or the registry).
+  ...[["lapsed", ["How many lapsed donors do we have?", "Who has lapsed?", "How many donors stopped giving?", "Lapsed donor count", "Show me our lapsed donors"]],
+    ["lybunt", ["How many LYBUNT donors do we have?", "How many people gave last year but not this year?", "How many donors haven't given since last year?", "Last year's donors who haven't given yet this year", "What's our LYBUNT count?"]],
+    ["sybunt", ["How many SYBUNT donors?", "How many donors gave in some year but not this year?", "How many donors gave before but not this year?", "Past donors who haven't given this year", "SYBUNT count"]]]
+    .flatMap(([pop, texts]) => texts.map((text, i) => ({ id: `off-${pop}-${i + 1}`, text, population: pop, expect: [{ kind: "answer", state: "done", line: /\S/ }] }))),
   { id: "off-9", text: "LYBUNT dollars", expect: [{ kind: "answer", state: "done", line: /(?:LYBUNT, in [\d,]+ households?\. Together they gave \$|^Nobody is LYBUNT right now)/ }] },
 ];

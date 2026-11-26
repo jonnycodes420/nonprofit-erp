@@ -595,7 +595,9 @@ export function planPrompt(question, ctx = {}, prev = null) {
   const list = (title, xs) => `${title}:\n${(xs || []).slice(0, 60).map(x => `${x.id}: ${x.name}`).join("\n") || "(none)"}`;
   return [
     "Turn this question about a nonprofit's giving into a plan, using the ask_plan tool. Never answer it yourself and never write a number.",
-    `Today is ${ctx.today}. "This year" is the calendar year to date.`,
+    // ATLAS-12 item 1: the code reads "this year" as the org's fiscal year (resolvePeriod this_year); the model is told the same,
+    // so a phrasing never turns a fiscal count into a calendar one. "Calendar year" or a year number is the calendar year.
+    `Today is ${ctx.today}. "This year" and "last year" are the organization's fiscal years${(ctx.fyStartMonth || 1) === 1 ? " (January to December)" : ` (starting each ${MONTHS[(ctx.fyStartMonth || 1) - 1][0].toUpperCase()}${MONTHS[(ctx.fyStartMonth || 1) - 1].slice(1)})`}: use this_year and last_year. Only "calendar year" or a year number (2026) is the calendar year.`,
     "Metrics: " + METRIC_KEYS.map(k => `${k} (${METRICS[k].sentence})`).join("; "),
     list("Funds (id: name)", ctx.funds), list("Campaigns (id: name)", ctx.campaigns), list("Events (id: name)", ctx.events),
     prev ? `The question before this one was planned as ${JSON.stringify(prev)}. If this one follows on from it, change only what it asks to change.` : "",
