@@ -88,17 +88,20 @@ export function setPageOrg(org, { announce = false, user = undefined } = {}) {
 
 // FRESH-3 item 4: the same person moved org in another tab: she may follow it or
 // stay. Someone else signed in there: this tab's page is not theirs, so Reload.
-export function switchedSentence(orgName) {
-  return `You switched to ${orgName || "another organization"} in another tab. Reload to follow, or stay here.`;
-}
 function heard(orgId, orgName, userId) {
   if (!pageOrg || !orgId || String(orgId) === pageOrg.id) return;
-  const same = !!pageUser && !!userId && String(userId) === pageUser;
+  const same = !!pageUser && String(userId) === pageUser;
   if (same && stayed.has(String(orgId))) return;
-  if (same) { markChanged(switchedSentence(orgName), true); changed.orgId = String(orgId); return; }
-  markChanged(`You switched to ${orgName || "another organization"} in another tab. Reload to see it.`);
+  markChanged(`You switched to ${orgName || "another organization"} in another tab. Reload to ${same ? "follow, or stay here" : "see it"}.`, same);
+  if (same) changed.orgId = String(orgId);
 }
 
+// The org and the person this tab is for, on a request's headers (FRESH-3).
+function tabHeaders(h) {
+  if (!h.has(ORG_HEADER)) h.set(ORG_HEADER, pageOrg.id);
+  if (pageUser && !h.has(USER_HEADER)) h.set(USER_HEADER, pageUser);
+  return h;
+}
 function isApiWrite(url, method, apiBase) {
   if (method === "GET" || method === "HEAD") return false;
   return typeof url === "string" && !!apiBase && url.startsWith(apiBase);
@@ -131,18 +134,13 @@ export function installOrgBinding(apiBase) {
     if (PASS_PATHS.includes(path)) return realFetch(input, init);
     // FRESH-3: how a tab learns where it is (/me) names the tab too, so a tab that stayed hears
     // its own org back, never the org another tab moved to. The server never refuses these.
-    if (!write && READ_PASS.test(path)) {
-      headers.set(ORG_HEADER, pageOrg.id);
-      if (pageUser) headers.set(USER_HEADER, pageUser);
-      return realFetch(input, { ...init, headers });
-    }
+    if (!write && READ_PASS.test(path)) return realFetch(input, { ...init, headers: tabHeaders(headers) });
     // This tab already knows the org moved: the write never leaves the browser.
     if (changed && write) {
       return new Response(JSON.stringify({ error: "org_changed", code: "org_changed", message: changed.message }),
         { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    if (!headers.has(ORG_HEADER)) headers.set(ORG_HEADER, pageOrg.id);
-    if (pageUser && !headers.has(USER_HEADER)) headers.set(USER_HEADER, pageUser);
+    tabHeaders(headers);
     const res = await realFetch(input, { ...init, headers });
     if (res.status === 409) {
       res.clone().json().then(b => { if (b && b.code === "org_changed") reportOrgChanged(b.message); }).catch(() => {});

@@ -81,7 +81,9 @@ const read = p => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
   console.log("\n— §3 · the client no longer decides by code —");
   const apiSrc = read("client/src/api.js");
   ok("a 401 on a request that carried a token clears the session",
-    /res\.status === 401 && token\)\s*\{\s*\n\s*handleAuthFailure/.test(apiSrc),
+    // FRESH-3 item 4: first, a token another tab already replaced is asked again once with the
+    // browser's current one (that 401 was the old session's, not hers); then the session clears.
+    /res\.status === 401 && token\)\s*\{(?:\s*\/\/[^\n]*\n)*\s*const held = getToken\(\);\s*\n\s*if \(held && held !== token && !tokenRetried\) return apiFetchNow\([^\n]*\n\s*handleAuthFailure/.test(apiSrc),
     (apiSrc.match(/res\.status === 401[^\n]*/g) || []).slice(0, 3));
   ok("there is no allowlist of auth codes left to fall behind",
     !/AUTH_ERROR_CODES/.test(apiSrc) && !/function isAuthError/.test(apiSrc));
