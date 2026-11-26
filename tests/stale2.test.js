@@ -64,8 +64,14 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 const optional = f => { try { return require(f); } catch { return null; } };
 const WAIT = 12000;
+let SC_LISTENING = null;   // FRESH-3 §G: which topics each surface listens for (tests/lib/surfaceCensus.js)
 
 async function freshOrg() {
+  // FRESH-3 §H: the second org and the membership it gave Odile go first, or her row can't.
+  await q(`DELETE FROM org_memberships WHERE user_id=$1 OR org_id=$2`, [ME, ORG + "_two"]).catch(() => {});
+  await q(`DELETE FROM user_sessions WHERE org_id=$1`, [ORG + "_two"]).catch(() => {});
+  await q(`DELETE FROM users WHERE org_id=$1`, [ORG + "_two"]).catch(() => {});
+  await q(`DELETE FROM orgs WHERE id=$1`, [ORG + "_two"]).catch(() => {});
   const all = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
   for (let pass = 0; pass < 5; pass++) {
     for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
@@ -163,6 +169,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
 
   // ── §E · THE SCREEN CENSUS: EVERY LIST AND COUNT HEARS WHAT IT SHOWS ──────
   const SC = require("./lib/surfaceCensus");
+  SC_LISTENING = () => SC.listening();
   const clean = await SC.census();
   ok("§E every list and count surface listens for what it shows (FRESH-2 item 3)", clean.length === 0, clean);
   const plant = async (file, from, to) => {
@@ -189,6 +196,172 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   ok("§F …a gift saved between the question and \"list them\": the answer says its rows are older (FRESH-2 item 4)", l2.status < 300 && SINCE.test(l2.said), l2.said.slice(0, 400));
   const q3 = await ask("Who gave this month?");
   ok("§F …and asked again, Bram's gift is in the answer", q3.status < 300 && /Bram Oduya/.test(q3.said), q3.said.slice(0, 400));
+
+  // ── §G · FRESH-3: EVERY MONEY, VOLUNTEER AND EVENT WRITE REACHES THE PANELS THAT SHOW IT ──
+  // W-1112-Volunteers-01X (Area 3 F1, Area 4): Finance, Volunteers and Events panels stayed stale
+  // after a save. Each write here is made as the screen sends it; its X-Steward-Changed topics must
+  // reach every surface in lib/surfaces.js that shows its rows (read from the source: useLive…).
+  {
+    const BASE_G = process.env.BASE || "http://localhost:5601";
+    const told = async (method, url, body) => {
+      const r = await fetch(BASE_G + url, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: body ? JSON.stringify(body) : undefined });
+      const b = await r.json().catch(() => ({}));
+      return { status: r.status, body: b, topics: String(r.headers.get("x-steward-changed") || "").split(",").filter(Boolean) };
+    };
+    const heard = SC_LISTENING();
+    const hears = (names, r) => names.filter(n => !heard[n] || ![...heard[n].topics].some(t => r.topics.includes(t)));
+    const FIN = Object.keys(heard).filter(n => n.startsWith("finance.") || n === "fundraising.pledges");
+    ok("§G the Finance panels are in the census (FRESH-3 item 1)", FIN.length >= 8, FIN);
+    const g1 = await told("POST", `/donors/${P("eli")}/gifts`, { amount: 120, date: today, type: "cash" });
+    const GID = g1.body && (g1.body.id || (g1.body.gift && g1.body.gift.id));
+    const pl = await told("POST", `/donors/${P("eli")}/pledges`, { amount: 600, date: today, dueDate: today });
+    const PLID = pl.body && (pl.body.id || (pl.body.pledge && pl.body.pledge.id));
+    const plan = await told("POST", `/donors/${P("eli")}/offline-plans`, { amount: 25, frequency: "monthly", startDate: today });
+    const PLAN = plan.body && (plan.body.id || (plan.body.plan && plan.body.plan.id));
+    const money = [
+      ["a gift added", g1],
+      ["a gift edited ($120 to $150)", await told("PUT", `/gifts/${GID}`, { amount: 150, donorId: P("eli") })],
+      ["a pledge added", pl],
+      ["a pledge payment", await told("POST", `/donors/${P("eli")}/gifts`, { amount: 100, date: today, type: "cash", pledgeId: PLID })],
+      ["a pledge written off", await told("PUT", `/pledges/${PLID}`, { status: "written_off", confirmed: true, donorId: P("eli") })],
+      ["a recurring plan recorded by staff", plan],
+      ["that plan cancelled", await told("POST", `/offline-plans/${PLAN}/cancel`, { confirmed: true })],
+      ["a refund", await told("POST", `/gifts/${GID}/refund`, { amount: 20, date: today, reason: "Asked for part back" })],
+      ["a gift deleted", await (async () => { const g2 = await told("POST", `/donors/${P("eli")}/gifts`, { amount: 45, date: today, type: "cash" });
+        return told("DELETE", `/gifts/${g2.body && (g2.body.id || (g2.body.gift && g2.body.gift.id))}`); })()],
+    ];
+    for (const [what, r] of money) {
+      const deaf = hears(FIN, r);
+      ok(`§G ${what} (${r.status}) reaches every Finance panel: ${deaf.length ? "deaf: " + deaf.join(", ") : "all hear it"}`, r.status < 300 && r.topics.length > 0 && deaf.length === 0, { status: r.status, topics: r.topics, deaf, body: r.status >= 300 ? r.body : undefined });
+    }
+
+    // Volunteers and Events: a shift made, signed up, deleted; a status; a guest added and removed.
+    const VOL = ["volunteers.roster", "volunteers.shifts", "volunteers.schedule", "profile.volunteer"];
+    const EVT = ["events.list", "event.rows", "events.desk-guests", "events.desk-cards"];
+    await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_by,created_by_name) VALUES ($1,$2,'Wren Calloway','prospect','active','["volunteer"]'::jsonb,'system:test/stale2','FRESH-3 test') ON CONFLICT (id) DO NOTHING`, [P("wren"), ORG]);
+    const opp = await told("POST", "/volunteer-hub/opportunities", { name: "Heron Shelving", description: "Shelving." });
+    const OPP = opp.body && (opp.body.id || (opp.body.opportunity && opp.body.opportunity.id));
+    // Two overlapping shifts next week for Wren: the cards tag both, and the counter must say so.
+    const nextWeek = (() => { const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 7); return d.toISOString().slice(0, 10); })();
+    const sA = await told("POST", "/volunteer-hub/slots", { opportunityId: OPP, date: nextWeek, startTime: "09:00", endTime: "12:00", capacity: 4 });
+    const sB = await told("POST", "/volunteer-hub/slots", { opportunityId: OPP, date: nextWeek, startTime: "11:00", endTime: "14:00", capacity: 4 });
+    const SA = sA.body && (sA.body.id || (sA.body.shift && sA.body.shift.id) || (sA.body.ids && sA.body.ids[0]));
+    const SB = sB.body && (sB.body.id || (sB.body.shift && sB.body.shift.id) || (sB.body.ids && sB.body.ids[0]));
+    const up1 = await told("POST", "/volunteer-hub/signups", { slotId: SA, personId: P("wren") });
+    const up2 = await told("POST", "/volunteer-hub/signups", { slotId: SB, personId: P("wren"), overlapOk: true });
+    ok("§G fixtures: an opportunity, two overlapping shifts next week, Wren on both", !!OPP && !!SA && !!SB && up1.status < 300 && up2.status < 300,
+      { opp: opp.status, sA: [sA.status, sA.body], sB: sB.status, up1: [up1.status, up1.body], up2: up2.status });
+    for (const [what, r] of [["a shift signed up", up1]]) {
+      const deaf = hears(VOL, r);
+      ok(`§G ${what} reaches every Volunteers panel: ${deaf.length ? "deaf: " + deaf.join(", ") : "all hear it"}`, r.topics.length > 0 && deaf.length === 0, { topics: r.topics, deaf });
+    }
+    const wk = (() => { const d = new Date(nextWeek + "T12:00:00Z"); const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow); const f = d.toISOString().slice(0, 10); d.setUTCDate(d.getUTCDate() + 6); return [f, d.toISOString().slice(0, 10)]; })();
+    const sch = await api("GET", `/volunteer-hub/schedule?from=${wk[0]}&to=${wk[1]}`, tok);
+    const tagged = ((sch.body && sch.body.shifts) || []).filter(x => x.conflicts > 0).length;
+    ok("§G next week's Schedule conflicts counts the overlap the cards tag (W-1126-Volunteers-01: it said 0)",
+      sch.status === 200 && tagged === 2 && sch.body.conflicts === 1 && (sch.body.shownConflicts || []).length === 1 && sch.body.shownConflicts[0].name === "Wren Calloway",
+      { status: sch.status, tagged, conflicts: sch.body && sch.body.conflicts, shown: sch.body && sch.body.shownConflicts, week: sch.body && sch.body.week });
+    const shDel = await told("POST", `/removals/shift/${SB}`, { confirm: true });
+    const deafS = hears(VOL, shDel);
+    ok(`§G a shift deleted (${shDel.status}) reaches every Volunteers panel: ${deafS.length ? "deaf: " + deafS.join(", ") : "all hear it"}`, shDel.status < 300 && deafS.length === 0, { status: shDel.status, topics: shDel.topics, deafS, body: shDel.body });
+    const shUndo = await told("POST", "/removals/undo", { undoIds: (shDel.body && (shDel.body.undoIds || (shDel.body.undoId ? [shDel.body.undoId] : []))) || [] });
+    const deafU = hears(["volunteers.schedule", "volunteers.shifts"], shUndo);
+    ok(`§G its Undo from Recent changes (${shUndo.status}) reaches the Schedule (the fleet saw 1 card, 0 tags until reload)`, shUndo.status < 300 && deafU.length === 0, { status: shUndo.status, topics: shUndo.topics, deafU, body: shDel.body });
+    const former = await told("POST", `/donors/${P("wren")}/volunteer-status`, { status: "former" });
+    const deafF = hears(VOL, former);
+    ok(`§G Mark as former reaches every Volunteers panel: ${deafF.length ? "deaf: " + deafF.join(", ") : "all hear it"}`, former.status < 300 && deafF.length === 0, { status: former.status, topics: former.topics, deafF });
+    let audit = [];
+    for (let i = 0; i < 20 && !audit.length; i++) {   // the audit row is written as the answer finishes
+      audit = await q(`SELECT action, entity_id FROM fin_audit_log WHERE org_id=$1 AND entity_id=$2 AND action LIKE 'marked a volunteer%'`, [ORG, P("wren")]);
+      if (!audit.length) await new Promise(r => setTimeout(r, 150));
+    }
+    const rc = await api("GET", "/recent-changes", tok);
+    const rcLine = ((rc.body && rc.body.rows) || []).find(r => /Wren Calloway/.test(r.sentence || ""));
+    ok("§G Mark as former writes its Recent changes line, through the audit trail (W-1126-Volunteers-01)", audit.length === 1 && !!rcLine && /former volunteer/.test(rcLine.sentence), { audit, rcLine, rows: ((rc.body && rc.body.rows) || []).map(r => r.sentence).slice(0, 5) });
+    const evG = await told("POST", "/events", { name: "Heron Reading Night", date: today, eventType: "community", description: "Readings." });
+    const EG = evG.body && (evG.body.id || (evG.body.event && evG.body.event.id));
+    const guest = await told("POST", `/events/${EG}/attendees`, { donorIds: [P("eli")] });
+    const deafE = hears(EVT, guest);
+    ok(`§G a guest added reaches every Events panel: ${deafE.length ? "deaf: " + deafE.join(", ") : "all hear it"}`, guest.status < 300 && deafE.length === 0, { status: guest.status, topics: guest.topics, deafE });
+  }
+
+  // ── §J · FRESH-3 item 3: CAMPAIGNS, OVERVIEW AND THE CAMPAIGN LIST COUNT THE SAME CAMPAIGNS ──
+  // W-1126-Fundraising-01: "The Campaigns list says 'No campaigns yet' while Overview lists 5 active goal campaigns".
+  {
+    const end = (() => { const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 60); return d.toISOString().slice(0, 10); })();
+    const start = (() => { const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 10); return d.toISOString().slice(0, 10); })();
+    for (const n of ["Heron Roof Fund", "Heron Reading Room"]) await api("POST", "/fundraising/campaigns", tok, { name: n, goalAmount: 5000, startDate: start, endDate: end, goalCategory: "project" });
+    const ov = await api("GET", "/fundraising/overview", tok);
+    const list = await api("GET", "/fundraising/campaigns", tok);
+    const top = ((ov.body && ov.body.goals) || []).filter(g => g.isTopLevel);
+    const active = top.filter(g => g.lifecycle === "active").length;
+    // Taken back out: §2's lead event card is Fundraising Overview's hero only when no goal is running.
+    await q(`DELETE FROM campaigns WHERE org_id=$1 AND name IN ('Heron Roof Fund','Heron Reading Room')`, [ORG]);
+    ok("§J the Campaigns list (Overview's goals), Overview's Active goals and /fundraising/campaigns count the same campaigns",
+      ov.status === 200 && top.length >= 2 && active === (ov.body.rollup && ov.body.rollup.activeGoalCount) && Array.isArray(list.body) && list.body.length === top.length,
+      { top: top.length, active, rollup: ov.body && ov.body.rollup && ov.body.rollup.activeGoalCount, list: Array.isArray(list.body) ? list.body.length : list.body });
+  }
+
+  // ── §I · FRESH-3 item 5: AN IMPORT'S UNDO IS NOT HELD BY ITS OWN GIFT LINE ──
+  // W-1126-Finance-02: "Import undo removes the people it created even though its own timeline line
+  // exists (that line isn't activity)". A gift line whose gift_id is gone (the gift removed before the
+  // undo) counted as "a line on their timeline" and kept the person; a note she wrote still does.
+  {
+    const UP = require("../server/imports/undoPeople");
+    const qq = (sql, args = []) => { let i = 0; return q(sql.replace(/\?/g, () => "$" + (++i)), args); };
+    const IMP = { id: "imp_" + ORG + "_fresh3", created_at: new Date(require("./clock").testNow() - 3600e3).toISOString() };
+    await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_import_id,created_by,created_by_name) VALUES ($1,$2,'Jory Imported','prospect','active','["donor"]'::jsonb,$3,$4,'Odile Marsh') `, [P("jory"), ORG, IMP.id, ME]);
+
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'gift','Gave $40.',$4,$5,'Odile Marsh')`, ["int_" + ORG + "_jory_g", ORG, P("jory"), today, ME]);
+    const kept = await UP.peopleWithActivity(qq, ORG, IMP);
+    ok("§I a person the import made, with only its gift line (gift gone), is not held back by the undo", kept.length === 0, kept);
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'note','Called about the gala.',$4,$5,'Odile Marsh')`, ["int_" + ORG + "_jory_n", ORG, P("jory"), today, ME]);
+    const kept2 = await UP.peopleWithActivity(qq, ORG, IMP);
+    ok("§I …and a note she wrote since still keeps them, named", kept2.length === 1 && /a note/.test(kept2[0].why), kept2);
+  }
+
+  // ── §H · FRESH-3 item 4: ONE PERSON, TWO ORGS, TWO TABS: THE OTHER TAB KEEPS ITS ORG ──
+  // The fleet, 26 Nov: "flipping between Harborlight and org_stagewalk, forcing five re-sign-ins".
+  // Tab A is painted for ORG; tab B switches the same person to ORG2 (the browser now holds B's
+  // token). Tab A names its org and its person on every request (lib/orgBinding.js).
+  {
+    const ORG2 = ORG + "_two";
+    await q(`DELETE FROM org_memberships WHERE org_id=$1`, [ORG2]).catch(() => {});
+    await q(`DELETE FROM donors WHERE org_id=$1`, [ORG2]).catch(() => {});
+    await q(`DELETE FROM users WHERE org_id=$1`, [ORG2]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [ORG2]).catch(() => {});
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,org_kind) VALUES ($1,'Stale Two Plover Trust',$2,1,'active','team','America/New_York','internal_test')`, [ORG2, ORG2.replace(/_/g, "-")]);
+    await q(`INSERT INTO org_memberships (id,user_id,org_id,role,created_by,created_by_name) VALUES ($1,$2,$3,'admin','system:test/stale2','FRESH-3 test')`, ["mem_" + ORG2, ME, ORG2]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Pim Plover','admin')`, ["u_" + ORG2, ORG2, `${ORG2}@test.local`, bcrypt.hashSync(PASSWORD, 4)]);
+    const BASE_H = process.env.BASE || "http://localhost:5601";
+    const call = async (method, url, token, headers = {}, body) => {
+      const r = await fetch(BASE_H + url, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...headers }, body: body ? JSON.stringify(body) : undefined });
+      return { status: r.status, body: await r.json().catch(() => ({})) };
+    };
+    const A = await login(EMAIL, PASSWORD);                          // tab A's session, in ORG
+    const sw = await call("POST", "/auth/switch-org", A, {}, { orgId: ORG2 });   // tab B switches
+    const B = sw.body && sw.body.token;
+    ok("§H fixtures: the same person switched to the second org in tab B", sw.status === 200 && !!B && sw.body.org && sw.body.org.id === ORG2, { status: sw.status, body: sw.body });
+    const tabA = { "X-Steward-Org": ORG, "X-Steward-User": ME };
+    const read = await call("GET", "/donors?limit=50", B, tabA);
+    const names = ((read.body && (read.body.donors || read.body.rows)) || (Array.isArray(read.body) ? read.body : [])).map(d => d.name);
+    ok("§H tab A's next read, with the browser's new token, keeps its org (its people, not the second org's)", read.status === 200 && names.includes("Ada Quill"), { status: read.status, names: names.slice(0, 5) });
+    const me = await call("GET", "/me", B, tabA);
+    ok("§H …and /me tells tab A it is still where it was", me.status === 200 && me.body.org && me.body.org.id === ORG, { status: me.status, org: me.body.org && me.body.org.id });
+    const gA = await call("POST", `/donors/${P("ada")}/gifts`, B, tabA, { amount: 31, date: today, type: "cash" });
+    const landed = await q(`SELECT org_id FROM gifts WHERE donor_id=$1 AND amount=31`, [P("ada")]);
+    ok("§H …a gift saved in tab A lands in tab A's org, nobody signed out", gA.status < 300 && landed.length === 1 && landed[0].org_id === ORG, { status: gA.status, landed });
+    const meB = await call("GET", "/me", B, { "X-Steward-Org": ORG2, "X-Steward-User": ME });
+    ok("§H …while tab B works in the org it switched to", meB.status === 200 && meB.body.org && meB.body.org.id === ORG2, { status: meB.status, org: meB.body.org && meB.body.org.id });
+    const old = await call("GET", "/donors?limit=1", A, tabA);
+    ok("§H the old session is still signed out (switchOrg.js unchanged)", old.status === 401, old.status);
+    const noUser = await call("GET", "/donors?limit=1", B, { "X-Steward-Org": ORG });
+    ok("§H a tab that names no person is answered as before: 409, reload", noUser.status === 409 && noUser.body.code === "org_changed", { status: noUser.status, body: noUser.body });
+    const other = await login(`${ORG2}@test.local`, PASSWORD);
+    const cross = await call("GET", "/donors?limit=1", other, { "X-Steward-Org": ORG, "X-Steward-User": "u_" + ORG2 });
+    const forged = await call("GET", "/donors?limit=1", other, { "X-Steward-Org": ORG, "X-Steward-User": ME });
+    ok("§H someone else's session never reaches an org they are not in, whatever the tab says (409)", cross.status === 409 && forged.status === 409, { cross: cross.status, forged: forged.status });
+  }
 
   // ── THE BROWSER LEG ────────────────────────────────────────────────────────
   const ev1 = await api("POST", "/events", tok, { name: "Heron Supper Club", date: today, eventType: "gala", description: "A supper." });
@@ -485,6 +658,49 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   const reloadBtn = await page6.getByRole("button", { name: "Reload" }).count();
   ok("§6 gone again within the minute: no second reopen, the error with a Reload button", blocked > b1 && loads6 === l1 && reloadBtn >= 1, { blocked: blocked - b1, loads: loads6 - l1, reloadBtn });
   await ctx6.close();
+
+  // ── §11 · FRESH-3 item 4: ONE BROWSER, TWO TABS, ONE PERSON, ONE SWITCH ────
+  // One context is one browser profile: the tabs share localStorage and the cookie jar. Tab A is
+  // on Ada's profile in the Heron Society; tab B switches Odile to the Plover Trust the way the
+  // switcher does (POST /auth/switch-org, the answer into localStorage). Tab A must not sign out,
+  // must offer to follow or stay, and after Stay here a gift saved in tab A lands in tab A's org.
+  {
+    const lg11 = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
+    const ctx11 = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    await ctx11.addInitScript(([tk, u, o]) => {
+      if (!localStorage.getItem("npe_token")) { localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); }
+    }, [lg11.body.token, JSON.stringify(lg11.body.user), JSON.stringify(lg11.body.org)]);
+    const tabA = await ctx11.newPage();
+    let signedOut = 0;
+    tabA.on("framenavigated", f => { if (f === tabA.mainFrame() && /\/login/.test(f.url())) signedOut++; });
+    await tabA.goto(`${APP}/donors/${P("ada")}`, { waitUntil: "networkidle", timeout: 60000 });
+    await tabA.getByRole("tab", { name: /^Giving/ }).first().click({ timeout: 30000 }).catch(() => tabA.locator('[data-tab="giving"]').first().click());
+    const tabB = await ctx11.newPage();
+    await tabB.goto(`${APP}/app/donors`, { waitUntil: "networkidle", timeout: 60000 });
+    const swB = await tabB.evaluate(async ([api, org]) => {
+      const r = await fetch(api + "/auth/switch-org", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + localStorage.getItem("npe_token") }, body: JSON.stringify({ orgId: org }) });
+      const b = await r.json();
+      if (r.ok) { localStorage.setItem("npe_token", b.token); localStorage.setItem("npe_user", JSON.stringify(b.user)); localStorage.setItem("npe_org", JSON.stringify(b.org)); }
+      return { status: r.status, org: b.org && b.org.id };
+    }, [process.env.BASE || "http://localhost:5601", ORG + "_two"]);
+    await tabA.bringToFront();
+    const banner = tabA.locator('[data-testid="org-changed-banner"]');
+    await banner.waitFor({ timeout: WAIT }).catch(() => {});
+    const said = await banner.innerText().catch(() => "(no banner)");
+    ok("§11 tab B switched; tab A says \"You switched to Stale Two Plover Trust in another tab. Reload to follow, or stay here\", nobody signed out",
+      swB.status === 200 && /You switched to Stale Two Plover Trust in another tab\. Reload to follow, or stay here\./.test(said) && signedOut === 0, { swB, said, signedOut });
+    await tabA.locator('[data-testid="org-changed-stay"]').click({ timeout: 10000 }).catch(() => {});
+    await tabA.getByRole("button", { name: /\+ Add Gift/ }).first().click({ timeout: 15000 });
+    await tabA.locator('input[placeholder="Amount ($)"]').first().fill("37");
+    await tabA.getByRole("button", { name: /^Save$/ }).first().click();
+    let landed = [];
+    for (let i = 0; i < 40 && !landed.length; i++) { await tabA.waitForTimeout(250); landed = await q(`SELECT org_id FROM gifts WHERE donor_id=$1 AND amount=37`, [P("ada")]); }
+    ok("§11 after Stay here, a gift saved in tab A lands in tab A's org, and tab A is still signed in", landed.length === 1 && landed[0].org_id === ORG && signedOut === 0 && !/\/login/.test(tabA.url()), { landed, signedOut, url: tabA.url() });
+    await tabB.reload({ waitUntil: "networkidle" });
+    const bOrg = await tabB.evaluate(() => { try { return JSON.parse(localStorage.getItem("npe_org")).id; } catch { return null; } });
+    ok("§11 …and tab B, reloaded, is in the org it switched to", bOrg === ORG + "_two" && !/\/login/.test(tabB.url()), { bOrg, url: tabB.url() });
+    await ctx11.close();
+  }
 
   await browser.close();
   await closeDb();

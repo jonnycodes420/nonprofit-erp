@@ -10,7 +10,7 @@ import { Figure } from "./Figure";
 import { T, Modal, Phone } from "./shared";
 import { AVAILABILITY } from "../../../shared/volunteerApply.js";
 import { errorMessage } from "../lib/domainError";
-import { useChanged } from "../lib/changes";   // STALE-2
+import { useLive } from "../lib/liveRead";   // STALE-2, FRESH-3
 import { entryKey } from "../lib/entryKey";   // FLOWS-4: one entry, one key
 import { displayDate } from "../../../shared/displayDate";
 import { displayOrgDate } from "../lib/orgDay";
@@ -64,7 +64,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
   // STALE-2 (W-1107-Volunteers-08): hours logged anywhere else (the Volunteers
   // page's Log shift, the kiosk, Atlas, an edit or a removal) move this
   // panel's total and its shift log, not only this panel's own form.
-  useChanged(["volunteer"], () => { load(); loadProf(); }, { person: donor.id });
+  useLive("profile.volunteer", ["volunteer", "person"], () => { load(); loadProf(); }, { ids: { person: donor.id } });
   if (!data) return null;
   // In the main column for anyone with hours or a volunteer record (FIX-24);
   // somebody with neither has it under More, opened with `always`.

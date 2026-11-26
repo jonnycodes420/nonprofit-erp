@@ -151,7 +151,7 @@ async function section2() {
   ok("§2c busy is a 503 whose code is busy, and only that", BR.isBusyAnswer(503, { code: "busy" }) && !BR.isBusyAnswer(503, { code: "request_timeout" }) && !BR.isBusyAnswer(500, { code: "busy" }));
   ok("§2c a GET is asked again, a POST, PUT, PATCH or DELETE never", BR.retriesOnBusy("GET") && BR.retriesOnBusy(undefined) && !["POST", "PUT", "PATCH", "DELETE"].some(m => BR.retriesOnBusy(m)));
   const api = require("fs").readFileSync(require("path").join(__dirname, "../client/src/api.js"), "utf8");
-  ok("§2c api.js asks again once (busyTries 0 only), with the retry's wait", /busyTries === 0 && res\.status === 503 && err && err\.code === "busy"/.test(api) && /B\.isBusyAnswer\(res\.status, err\) && B\.retriesOnBusy\(options\.method\)\) \{ await B\.waitBeforeRetry\(\)/.test(api) && /return apiFetchNow\(path, options, 1(, meta)?\)/.test(api));
+  ok("§2c api.js asks again once (busyTries 0 only), with the retry's wait", /busyTries === 0 && res\.status === 503 && err && err\.code === "busy"/.test(api) && /B\.isBusyAnswer\(res\.status, err\) && B\.retriesOnBusy\(options\.method\)\) \{ await B\.waitBeforeRetry\(\)/.test(api) && /return apiFetchNow\(path, options, 1(, meta)?(, tokenRetried)?\)/.test(api));
 }
 
 // ── §3 THE FIRST SCREEN AFTER A SAVE SHOWS THE NEW ANSWER (item 3) ─────────

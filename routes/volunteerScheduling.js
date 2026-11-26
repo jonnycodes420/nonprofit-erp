@@ -1610,14 +1610,7 @@ async function weekProblems(orgId) {
   const wk = weekOf(today);
   const { shifts, conflicts } = await scheduleRows(orgId, { from: wk.from, to: wk.to });
   const short = shifts.filter(s => s.published && s.footer.short > 0);
-  const names = new Map();
-  for (const s of shifts) for (const p of [...s.people, ...s.roles.flatMap(r => r.people)]) names.set(p.personId, p.name);
-  const byId = new Map(shifts.map(s => [s.id, s]));
-  const conflictRows = conflicts.filter(c => byId.has(c.a) || byId.has(c.b)).map(c => ({
-    personId: c.personId, name: names.get(c.personId) || "", date: c.date,
-    a: byId.get(c.a) ? { id: c.a, name: byId.get(c.a).name, when: byId.get(c.a).when } : { id: c.a },
-    b: byId.get(c.b) ? { id: c.b, name: byId.get(c.b).name, when: byId.get(c.b).when } : { id: c.b } }));
-  return { week: wk, today, short, conflicts: conflictRows };
+  return { week: wk, today, short, conflicts: require("../server/volunteers/shownConflicts").conflictRows(shifts, conflicts) };
 }
 
 require("../server/volunteers/weekProblemsHook").set(weekProblems);   // VOL-3: the header cards' sources read the same rows
@@ -1633,7 +1626,8 @@ app.get("/volunteer-hub/schedule", requireAuth, wrap(async (req, res) => {
   const { shifts, conflicts } = await scheduleRows(orgId, { from, to, opportunityId: req.query.opportunityId ? String(req.query.opportunityId) : null });
   const wp = await weekProblems(orgId);
   const opps = await query(`SELECT id, name FROM volunteer_opportunities WHERE org_id=? AND archived_at IS NULL ORDER BY name`, [orgId]);
-  res.json({ from, to, today, shifts, conflicts: conflicts.length,
+  const shown = require("../server/volunteers/shownConflicts").conflictRows(shifts, conflicts);   // FRESH-3: the counter is the tags' own rows
+  res.json({ from, to, today, shifts, conflicts: shown.length, shownConflicts: shown,
     week: { from: wp.week.from, to: wp.week.to, short: wp.short.length, conflicts: wp.conflicts.length },
     opportunities: opps, colours: VS.SHIFT_COLOURS, definitions: VS.FOOTER_SENTENCES,
     sentence: shifts.length
@@ -2266,7 +2260,8 @@ app.post("/volunteer-with/:orgSlug/apply", donateLimiter, express.urlencoded({ e
                     decided_at=NOW(), decided_by=?, decided_by_name=?
               WHERE a.id=? AND a.org_id=? AND a.status='pending' AND ${AV.VOLUNTEER_OF("a")} IS NOT NULL`, [AV.ACTOR.id, AV.ACTOR.name, id, o.id])
     .catch(e => console.error("[volunteer-apply] already a volunteer:", e.message));
-  res.send(thanks);
+  const [closed] = await query("SELECT 1 FROM volunteer_applications WHERE id=? AND org_id=? AND decided_by=?", [id, o.id, AV.ACTOR.id]);   // FRESH-3: not "You're in"
+  res.send(closed ? publicPage({ title: "You're already a volunteer", brand, body: AV.alreadyBody(brand.displayName || o.name, o.org_slug, escapeHtml) }) : thanks);
 }));
 
 // ── PENDING APPLICATIONS ─────────────────────────────────────────────────
@@ -2313,7 +2308,7 @@ app.get("/volunteer-hub/applications", requireAuth, wrap(async (req, res) => {
   for (const a of rows) out.push(shapeApp(a, a.status === "pending" ? await onFileByEmail(orgId, a.email) : []));
   const already = status === "pending" ? await query(`SELECT a.id, a.name, a.submitted_at, v.id AS person_id, v.name AS person_name
       FROM volunteer_applications a JOIN donors v ON v.id = ${AV.VOLUNTEER_OF("a")} AND v.org_id = a.org_id
-     WHERE a.org_id=? AND a.status='pending' AND COALESCE(a.via,'page')='page' ORDER BY a.submitted_at DESC LIMIT 100`, [orgId]) : [];
+     WHERE a.org_id=? AND (a.status='pending' OR (a.decided_by=? AND a.decided_at > NOW() - INTERVAL '${AV.RECENT_DAYS} days')) AND COALESCE(a.via,'page')='page' ORDER BY a.submitted_at DESC LIMIT 100`, [orgId, AV.ACTOR.id]) : [];   // FRESH-3: one closed as it arrived is listed too
   const [c] = await query(`SELECT COUNT(*) FILTER (WHERE ${AV.WAITING("a")})::int AS pending FROM volunteer_applications a WHERE a.org_id=? AND COALESCE(a.via,'page')='page'`, [orgId]);
   res.json({ status, applications: out, pending: c.pending,
     alreadyVolunteer: already.map(x => ({ id: x.id, name: x.name, submittedAt: x.submitted_at, personId: x.person_id, personName: x.person_name })),

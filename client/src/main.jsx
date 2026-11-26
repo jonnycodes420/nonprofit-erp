@@ -16,7 +16,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch, API } from "./api";
-import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged } from "./lib/orgBinding";
+import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged, stayHere } from "./lib/orgBinding";
 import { installCommitGuard } from "./lib/commitGuard";
 import { installChunkReload, reopenAfterUpdate, REOPENING_WORDS } from "./lib/chunkReload";   // FRESH-1 item 2
 import { safeNext } from "./lib/appUrls";
@@ -138,14 +138,14 @@ function AuthProvider({ children }) {
     const raw   = localStorage.getItem("npe_user");
     const org   = localStorage.getItem("npe_org");
     if (!token) return null;
-    try { const a = { token, user: JSON.parse(raw), org: JSON.parse(org) }; setPageOrg(a.org); return a; }
+    try { const a = { token, user: JSON.parse(raw), org: JSON.parse(org) }; setPageOrg(a.org, { user: a.user }); return a; }
     catch { return null; }
   });
   const login = (data) => {
     localStorage.setItem("npe_token", data.token);
     localStorage.setItem("npe_user", JSON.stringify(data.user));
     localStorage.setItem("npe_org",  JSON.stringify(data.org));
-    setPageOrg(data.org, { announce: true });
+    setPageOrg(data.org, { announce: true, user: data.user });
     setAuth(data);
   };
   const logout = () => {
@@ -162,7 +162,7 @@ function AuthProvider({ children }) {
     localStorage.removeItem("npe_token");
     localStorage.removeItem("npe_user");
     localStorage.removeItem("npe_org");
-    setPageOrg(null);
+    setPageOrg(null, { user: null });
     // FLOWS-1 item 6: sign-out landed on a solid blank page (the ink body with
     // nothing drawn on it). It now ends on a fresh load of the sign-in page,
     // carrying nothing of the signed-in app; the server's logout gets at most
@@ -273,7 +273,9 @@ function OrgChangedBanner() {
                padding: "10px 16px", fontFamily: "'DM Sans',system-ui,sans-serif", fontSize: 14, fontWeight: 600 }}>
       <span>{changed.message}</span>
       <button type="button" onClick={() => window.location.reload()}
-        style={{ background: PAL.emerald, color: PAL.white, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+        style={{ background: PAL.emerald, color: PAL.white, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{changed.canStay ? "Reload to follow" : "Reload"}</button>
+      {changed.canStay && <button type="button" data-testid="org-changed-stay" onClick={stayHere}
+        style={{ background: PAL.white, color: PAL.ink, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Stay here</button>}
     </div>
   );
 }

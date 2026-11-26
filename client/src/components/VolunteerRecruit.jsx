@@ -12,6 +12,7 @@
 // sends nothing.
 import { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch, API } from "../api";
+import { useLive } from "../lib/liveRead";   // FRESH-3
 import { T, Modal, Phone } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -147,6 +148,7 @@ export function ApplicationsView({ isReadOnly, onOpenPerson, onCount }) {
   const load = useCallback(() => apiFetch(`/volunteer-hub/applications?status=${status}`).then(d => { setData(d); countRef.current && countRef.current(d.pending); })
     .catch(e => setMsg(errorMessage(e, "The applications did not load."))), [status]);
   useEffect(() => { load(); }, [load]);
+  useLive("volunteers.applications", ["volunteer", "person"], () => load());   // FRESH-3: an approval or a new application elsewhere
   const remove = async a => {
     setBusy(a.id); setMsg("");
     try { const r = await apiFetch(`/volunteer-hub/applications/${a.id}`, { method: "DELETE" }); setMsg(r.sentence); load(); }

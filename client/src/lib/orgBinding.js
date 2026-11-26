@@ -16,15 +16,22 @@
 //   3. Tabs tell each other. A sign-in announces its org on a BroadcastChannel
 //      (the `storage` event on npe_org is the fallback); any other tab bound to
 //      a different org shows a banner and refuses writes until reloaded.
+//   4. FRESH-3 item 4: a tab also names its person (`X-Steward-User`). When the
+//      other tab's change was the SAME person switching org, this tab may stay:
+//      the server runs its requests in this tab's org while she is a member
+//      there (server/auth/tabOrg.js), so nobody is signed out and nothing moves.
 
 const CHANNEL = "steward-org";
 const SEEN_KEY = "steward_orgs_seen";
 const ORG_HEADER = "X-Steward-Org";
+const USER_HEADER = "X-Steward-User";   // FRESH-3 item 4
 const PASS_PATHS = ["/auth/logout", "/auth/login"];
 const READ_PASS = /^\/(me|me\/orgs|health|auth\/.*|support-session\/.*)$/;   // FLOWS-20: how a tab learns its org
 
 let pageOrg = null;      // { id, name } — the org this tab's page is for
-let changed = null;      // { message } once the tab knows it is out of date
+let pageUser = null;     // FRESH-3: the person this tab's page is for (an id)
+let changed = null;      // { message, canStay } once the tab knows it is out of date
+let stayed = new Set();  // FRESH-3: orgs another tab moved to that this tab chose to stay out of
 const listeners = new Set();
 let channel = null;
 let installed = false;
@@ -36,9 +43,18 @@ export const pageOrgName = () => (pageOrg ? pageOrg.name : null);
 export const orgChanged = () => changed;
 export function subscribeOrgChanged(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-function markChanged(message) {
+function markChanged(message, canStay = false) {
   if (changed && changed.message === message) return;
-  changed = { message };
+  changed = { message, canStay };
+  notify();
+}
+// FRESH-3 item 4: "Stay here". The banner goes, writes go out again, and the
+// server keeps answering in this tab's org (the person and the org ride on
+// every request). If the server can't (she left that org), it says 409 again.
+export function stayHere() {
+  if (!changed || !changed.canStay) return;
+  if (changed.orgId) stayed.add(changed.orgId);
+  changed = null;
   notify();
 }
 export function reportOrgChanged(message) {
@@ -59,20 +75,33 @@ export function orgsSeenCount() {
 
 // Bind this tab to `org`. `announce` is true for a sign-in in this tab: the
 // other tabs hear it. A render or a refresh of the same org is not news.
-export function setPageOrg(org, { announce = false } = {}) {
+export function setPageOrg(org, { announce = false, user = undefined } = {}) {
   const next = org && org.id ? { id: String(org.id), name: org.name || "" } : null;
   const moved = (next && next.id) !== (pageOrg && pageOrg.id);
   pageOrg = next;
+  if (user !== undefined) pageUser = user && user.id ? String(user.id) : null;
+  if (moved) stayed = new Set();
   if (next) rememberSeen(next.id);
   if (moved && changed) { changed = null; notify(); }
-  if (announce && next && channel) { try { channel.postMessage({ orgId: next.id, orgName: next.name }); } catch { /* closed */ } }
+  if (announce && next && channel) { try { channel.postMessage({ orgId: next.id, orgName: next.name, userId: pageUser }); } catch { /* closed */ } }
 }
 
-function heard(orgId, orgName) {
+// FRESH-3 item 4: the same person moved org in another tab: she may follow it or
+// stay. Someone else signed in there: this tab's page is not theirs, so Reload.
+function heard(orgId, orgName, userId) {
   if (!pageOrg || !orgId || String(orgId) === pageOrg.id) return;
-  markChanged(`You switched to ${orgName || "another organization"} in another tab. Reload to see it.`);
+  const same = !!pageUser && String(userId) === pageUser;
+  if (same && stayed.has(String(orgId))) return;
+  markChanged(`You switched to ${orgName || "another organization"} in another tab. Reload to ${same ? "follow, or stay here" : "see it"}.`, same);
+  if (same) changed.orgId = String(orgId);
 }
 
+// The org and the person this tab is for, on a request's headers (FRESH-3).
+function tabHeaders(h) {
+  if (!h.has(ORG_HEADER)) h.set(ORG_HEADER, pageOrg.id);
+  if (pageUser && !h.has(USER_HEADER)) h.set(USER_HEADER, pageUser);
+  return h;
+}
 function isApiWrite(url, method, apiBase) {
   if (method === "GET" || method === "HEAD") return false;
   return typeof url === "string" && !!apiBase && url.startsWith(apiBase);
@@ -102,13 +131,16 @@ export function installOrgBinding(apiBase) {
     const headers = new Headers((init && init.headers) || {});
     if (!hasBearer(headers)) return realFetch(input, init);
     const path = url.slice(apiBase.length).split("?")[0];
-    if (PASS_PATHS.includes(path) || (!write && READ_PASS.test(path))) return realFetch(input, init);
+    if (PASS_PATHS.includes(path)) return realFetch(input, init);
+    // FRESH-3: how a tab learns where it is (/me) names the tab too, so a tab that stayed hears
+    // its own org back, never the org another tab moved to. The server never refuses these.
+    if (!write && READ_PASS.test(path)) return realFetch(input, { ...init, headers: tabHeaders(headers) });
     // This tab already knows the org moved: the write never leaves the browser.
     if (changed && write) {
       return new Response(JSON.stringify({ error: "org_changed", code: "org_changed", message: changed.message }),
         { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    if (!headers.has(ORG_HEADER)) headers.set(ORG_HEADER, pageOrg.id);
+    tabHeaders(headers);
     const res = await realFetch(input, { ...init, headers });
     if (res.status === 409) {
       res.clone().json().then(b => { if (b && b.code === "org_changed") reportOrgChanged(b.message); }).catch(() => {});
@@ -117,12 +149,14 @@ export function installOrgBinding(apiBase) {
   };
   try {
     channel = new BroadcastChannel(CHANNEL);
-    channel.onmessage = e => heard(e.data && e.data.orgId, e.data && e.data.orgName);
+    channel.onmessage = e => heard(e.data && e.data.orgId, e.data && e.data.orgName, e.data && e.data.userId);
   } catch { channel = null; }
   // The fallback, and the belt to the channel's braces: a sign-in elsewhere
   // rewrites npe_org, and every other tab hears the storage event.
   window.addEventListener("storage", e => {
     if (e.key !== "npe_org" || !e.newValue) return;
-    try { const o = JSON.parse(e.newValue); heard(o && o.id, o && o.name); } catch { /* not ours */ }
+    let u = null;
+    try { u = JSON.parse(localStorage.getItem("npe_user") || "null"); } catch { /* not ours */ }
+    try { const o = JSON.parse(e.newValue); heard(o && o.id, o && o.name, u && u.id); } catch { /* not ours */ }
   });
 }

@@ -105,7 +105,7 @@ async function reset() {
     const cardsFile = read("client/src/components/finance/FundCards.jsx");
     const cards = cardsFile.slice(cardsFile.indexOf("function FinFundCards"));
     ok("§2d the fund cards and Finance's totals re-read on a gift, pledge or fund change, never left on \"Updating\"",
-       /useChanged\(\["gift", "pledge", "fund", "totals"\]/.test(cards.slice(0, 1500)) && (fin.match(/useChanged\(\["gift", "pledge", "fund", "totals"\]/g) || []).length === 1);
+       /use(Changed|Live)\((?:"finance\.fund-cards", )?\["gift", "pledge", "fund", "totals"\]/.test(cards.slice(0, 1500)) && (fin.match(/use(Changed|Live)\((?:"finance\.ledger", )?\["gift", "pledge", "fund", "totals"\]/g) || []).length === 1);   // FRESH-3: through lib/liveRead.js
   }
 
   // ── §2e · ONE SHIFT, ONE COUNT ──────────────────────────────────────────
