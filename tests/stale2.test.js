@@ -309,7 +309,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   {
     const UP = require("../server/imports/undoPeople");
     const qq = (sql, args = []) => { let i = 0; return q(sql.replace(/\?/g, () => "$" + (++i)), args); };
-    const IMP = { id: "imp_" + ORG + "_fresh3", created_at: new Date(Date.now() - 3600e3).toISOString() };
+    const IMP = { id: "imp_" + ORG + "_fresh3", created_at: new Date(require("./clock").testNow().getTime() - 3600e3).toISOString() };
     await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_import_id,created_by,created_by_name) VALUES ($1,$2,'Jory Imported','prospect','active','["donor"]'::jsonb,$3,$4,'Odile Marsh') `, [P("jory"), ORG, IMP.id, ME]);
 
     await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'gift','Gave $40.',$4,$5,'Odile Marsh')`, ["int_" + ORG + "_jory_g", ORG, P("jory"), today, ME]);
