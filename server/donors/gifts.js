@@ -558,6 +558,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     voidedTaskCount += stopped.tasks; stoppedJourneys = stopped.journeys;
     if (withRefunds) refundsRemoved = (await PAIRS.removeRefundsOf(PAIRS.onClient(client), req.user.orgId, [req.params.id])).count;
     const guest = await require("../events/registrationEffects").reverseForGift(_fx, req.user.orgId, req.params.id, actor(req));   // UNDO-1 item 5
+    await runTx(client, GDU.TIMELINE_SQL, [req.user.orgId, req.params.id]);   // POLISH-13 item 2: its own timeline line goes with it
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     const [_dn] = g.donor_id ? await _fx.query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, req.user.orgId]) : [];
     removedLine = await GDU.recordDelete(_fx, { orgId: req.user.orgId, g, donorName: _dn && _dn.name, snap, who: actor(req),

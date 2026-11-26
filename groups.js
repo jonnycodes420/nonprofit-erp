@@ -995,7 +995,7 @@ async function directoryRoles(orgId, q, build) {
   if (role === "auto" && require("./server/donors/connections").namesConnection(q.where)) role = "";
   // the org's own donors, not this search's: the view she opens on does not hop as she types
   const auto = role === "auto"
-    ? query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${IS_DONOR("")}`, [orgId])
+    ? query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND ${require("./shared/numbers/everyone").EVERYONE("donors")} AND ${IS_DONOR("")}`, [orgId])   // POLISH-13: Everyone's one rule
     : null;
   const [c, a] = await Promise.all([counted, auto]);
   if (c) roleCounts = { everyone: c.everyone, donors: c.donors, contacts: c.everyone - c.donors };
