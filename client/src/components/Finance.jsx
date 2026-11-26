@@ -1,5 +1,5 @@
-import { useState, useEffect, Fragment } from "react";
-import { useChanged } from "../lib/changes";   // FEEL-1: fund totals re-read on a gift change
+import { useState, useEffect, useRef, Fragment } from "react";
+import { useLive, useLiveRev } from "../lib/liveRead";   // FEEL-1, FRESH-3: every Finance panel re-reads after a money write
 import { filteredEmptySentence } from "../../../shared/filteredEmpty.js";   // FLOWS-13 item 4
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
@@ -578,8 +578,11 @@ function MonthlyClose() {
   const [flavour, setFlavour] = useState("steward");
   const [openIssue, setOpenIssue] = useState(null);
   const { from, to } = monthBounds(ym);
+  // FRESH-3: a gift saved, edited or deleted moves the month's file; read it again behind the screen.
+  const rev = useLiveRev("finance.month-close", ["gift", "fund", "totals"]);
+  const span = useRef("");
   useEffect(() => {
-    let alive = true; setD(null); setDep(null); setErr("");
+    let alive = true; if (span.current !== from + to) { setD(null); setDep(null); } span.current = from + to; setErr("");
     apiFetch(`/reports/bookkeeper?from=${from}&to=${to}`)
       .then(r => { if (alive) setD(r); })
       .catch(e => { if (alive) setErr(errorMessage(e, "Steward could not build that month.")); });
@@ -587,7 +590,7 @@ function MonthlyClose() {
       .then(r => { if (alive) setDep(r); })
       .catch(() => { /* the deposits view is additional; the gift file stands alone */ });
     return () => { alive = false; };
-  }, [from, to]);
+  }, [from, to, rev]);
   const monthName = new Date(from + "T12:00:00").toLocaleDateString("en-US", { month:"long", year:"numeric" });
 
   // ONE download function for every file this screen offers, so the format,
@@ -897,7 +900,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   useEffect(() => { loadAll(); }, []);
   // FEEL-1: a gift, a pledge or a fund change made anywhere (a profile, Atlas,
   // the worker) moves these totals; they are read again, never left stale.
-  useChanged(["gift", "pledge", "fund", "totals"], () => loadAll());
+  useLive("finance.ledger", ["gift", "pledge", "fund", "totals"], () => loadAll());
 
   const reloadTxns = (yr) => apiFetch(`/finance/transactions?year=${yr}`).then(setTransactions);
   const reloadBudgets = (yr, ym = yearMode) => apiFetch(budgetsUrl(yr, ym)).then(takeBudgets);
@@ -1750,6 +1753,7 @@ function FinOverview({ onNavigate, ledgerEmpty }) {
       .catch(e => { if (alive) setErr(errorMessage(e, "Steward could not add up this month.")); });
     return () => { alive = false; };
   }, []);
+  useLive("finance.this-month", ["gift", "pledge", "fund", "totals"], () => reload());   // FRESH-3: read once on mount, never again
 
   async function openFigure(f) {
     setOpen({ loading: true, label: f.label, definition: f.definition });

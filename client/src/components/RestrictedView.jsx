@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
+import { useLive } from "../lib/liveRead";   // FRESH-3
 import { T, fmtFull } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -86,6 +87,7 @@ export function RestrictedView({ isReadOnly, onNavigate }) {
   const load = () => apiFetch("/finance/restricted").then(setData)
     .catch(e => { setData({ grants: [], unrestricted: [], totals: {}, definitions: {} }); setMsg(errorMessage(e, "Restricted balances could not be loaded.")); });
   useEffect(() => { load(); }, []);
+  useLive("finance.restricted", ["gift", "grant", "pledge", "fund"], () => load());   // FRESH-3
   if (!data) return <div style={{ padding: 40, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   const defs = data.definitions || {};
   return (

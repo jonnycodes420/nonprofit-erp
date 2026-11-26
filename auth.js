@@ -90,11 +90,15 @@ async function sessionOrgOf(req) {
   const info = await sessionCache.get(p.userId, loadUserSession);
   if (!info || !info.org_id) return null;
   // ACCESS-1: a session switched into another org is in that org.
+  let orgId = String(info.org_id);
   if (p.orgId && String(p.orgId) !== String(info.org_id)) {
     const m = await require("./server/auth/access").membershipFor(p.userId, p.orgId).catch(() => null);
-    return m ? String(m.org_id) : null;
+    if (!m) return null;
+    orgId = String(m.org_id);
   }
-  return String(info.org_id);
+  // FRESH-3 item 4: the same person's tab keeps the org it was opened in (server/auth/tabOrg.js).
+  const tab = await require("./server/auth/tabOrg").tabOrgFor(req, p, info, orgId).catch(() => null);
+  return tab ? String(tab.orgId) : orgId;
 }
 
 // Loader for the session cache: the live revocation state for one user, or null
@@ -198,6 +202,9 @@ async function requireAuth(req, res, next) {
       if (!m) return res.status(401).json({ error: "membership_ended", message: "You're no longer a member of that organization. Sign in again." });
       orgId = m.org_id; role = m.role;
     }
+    // FRESH-3 item 4: a tab keeps the org it was opened in (server/auth/tabOrg.js).
+    const tab = await require("./server/auth/tabOrg").tabOrgFor(req, payload, info, orgId);
+    if (tab) { orgId = tab.orgId; role = tab.role; }
     // FIX-57: her name as set, so what she does is signed with it, not her email.
     req.user = { ...payload, role, orgId, name: String(info.name || "").trim() || null };
     // SECURE-2: a Sentry event names the org and the user by id, never by name.

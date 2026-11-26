@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { T, fmtFull, Card, SectionLabel } from "../shared";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
-import { useChanged } from "../../lib/changes";
+import { useLive } from "../../lib/liveRead";   // FRESH-3: the census holds it
 
 const btn = (primary, off) => ({ background: primary ? T.green : "transparent", color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3,
   borderRadius: 8, padding: "7px 12px", fontSize: 12.5, fontWeight: 700, cursor: off ? "not-allowed" : "pointer", opacity: off ? 0.5 : 1 });
@@ -22,7 +22,7 @@ export default function PostToBooks({ isReadOnly, onChanged }) {
   const [err, setErr] = useState("");
   const load = () => apiFetch("/finance/ledger-post").then(r => { setD(r); setPick({}); }).catch(e => setErr(errorMessage(e, "The waiting gifts did not load.")));
   useEffect(() => { load(); }, []);
-  useChanged(["gift", "fund"], () => { if (!busy) load(); });
+  useLive("finance.post-to-books", ["gift", "fund"], () => { if (!busy) load(); });
   if (!d) return err ? <Card><div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div></Card> : null;
   if (d.postingOff || (!d.groups.length && !d.recent.length && !done)) return null;
 
