@@ -24,6 +24,7 @@
 //
 // A view that is not mounted hears nothing and asks for nothing.
 import { useEffect, useRef, useState } from "react";
+import { pageOrgId } from "./orgBinding.js";   // FRESH-3: a write is told only to tabs on the same org
 
 export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights", "org", "sales"];
 const ALL = KINDS;
@@ -130,6 +131,15 @@ export function kindsOfWrite(path, method, body, changed = null) {
 }
 
 // ── THE CHANNEL ──────────────────────────────────────────────────────────────
+// FRESH-3 item 1 (staging re-check): Pledges and Recurring giving, open in another tab, waited for the
+// bell. A browser only (Node has BroadcastChannel too, and a suite importing this must not hang on it).
+let tabs = null;
+if (typeof window !== "undefined") {
+  try {
+    tabs = new BroadcastChannel("steward-changes");
+    tabs.onmessage = e => { const d = e.data || {}; if (d.org && d.org === pageOrgId()) announce({ kinds: d.kinds, ids: Object.fromEntries(Object.entries(d.ids || {}).map(([k, v]) => [k, new Set(v)])), source: "tab", path: d.path, method: d.method }); };
+  } catch { tabs = null; }
+}
 const subs = new Set();
 const log = [];   // the last few announcements, for tests (window.__stewardChanges)
 // The first hearer: api.js, which forgets the answers it holds for a change it
@@ -141,6 +151,8 @@ export function announce(change) {
   log.push({ kinds: [...c.kinds], source: c.source, path: c.path, at: Date.now() }); if (log.length > 50) log.shift();
   for (const f of first) { try { f(c); } catch { /* never stops the announcement */ } }
   for (const s of subs) { try { s(c); } catch { /* one view's re-read never stops another */ } }
+  // FRESH-3: the browser's other tabs on this org hear this tab's write at once, not at the bell's next minute.
+  if (c.source === "write" && tabs) { try { tabs.postMessage({ org: pageOrgId(), kinds: [...c.kinds], ids: Object.fromEntries(Object.entries(c.ids).map(([k, v]) => [k, [...v]])), path: c.path, method: c.method }); } catch { /* closed */ } }
 }
 if (typeof window !== "undefined") { try { Object.defineProperty(window, "__stewardChanges", { value: log, configurable: true }); } catch { /* read-only window */ } }
 
