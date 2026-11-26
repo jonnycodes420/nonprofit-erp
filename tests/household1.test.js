@@ -42,6 +42,8 @@ async function reset() {
   await q(`DELETE FROM households WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM donors WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Household Test','household-test',1,'active','team','America/New_York') ON CONFLICT (id) DO NOTHING`, [ORG]);
+  // POLISH-12: the Top 100 is off unless an org turns it on; this org uses it.
+  await q(`UPDATE orgs SET top100_enabled=true WHERE id=$1`, [ORG]);
   const hash = bcrypt.hashSync("loadtest1234", 10);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,can_major_gifts) VALUES ($1,$2,$3,$4,'Ada Admin','admin',true)
            ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash, role='admin', can_major_gifts=true, org_id=EXCLUDED.org_id`,

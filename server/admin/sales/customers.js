@@ -25,6 +25,7 @@ const { newId } = require("../../shared/newId");
 const { GIFT } = require("../../../shared/numbers/money");
 const LINK = require("./stewardLink");
 const Q = require("./quotes");
+const { endOnName } = require("../../../shared/endOnName.js");   // POLISH-12
 
 const PLANT = Q.PLANT;
 const DAY = 86400000;
@@ -148,7 +149,7 @@ async function board(query, now = Date.now()) {
     let says = health.says;
     if (PLANT === "donorname") {
       const [d] = await query(`SELECT name FROM donors WHERE org_id = ? ORDER BY created_at DESC LIMIT 1`, [c.steward_org_id]);
-      if (d) says += ` Newest: ${d.name}.`;
+      if (d) says += ` Newest: ${endOnName(d.name)}`;
     }
     rows.push({
       salesOrgId: c.id, name: c.name, stewardOrgId: c.steward_org_id, dealId: q ? q.deal_id : null, status,

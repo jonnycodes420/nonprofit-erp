@@ -78,6 +78,8 @@ async function seed() {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,plan,subscription_status) VALUES ($1,'Zzwren Valley Arts Trust','acc3-home',1,'team','active')
            ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`, [ORG]);
   await q(`UPDATE orgs SET org_kind='fixture' WHERE id=$1`, [ORG]).catch(() => {});
+  // POLISH-12: the Top 100 is off unless an org turns it on; this org uses it.
+  await q(`UPDATE orgs SET top100_enabled=true WHERE id=$1`, [ORG]);
   const hash = bcrypt.hashSync(PW, 8);
   for (const [id, email, name, role, sees, canExport] of Object.values(U)) {
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,$5,$6)`, [id, ORG, email, hash, name, role]);

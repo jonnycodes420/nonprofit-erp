@@ -50,7 +50,8 @@ async function reset() {
     await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,org_kind)
              VALUES ($1,$2,$3,1,'active','team',$4) ON CONFLICT (id) DO UPDATE SET nav_layout=NULL, mg_views=NULL, org_kind=EXCLUDED.org_kind`,
       [org, org === ORG ? "Lantern Menu Test" : "Quill Other Test", org.replace(/_/g, "-"), org === ORG ? "customer" : "demo"]);
-    await q(`UPDATE orgs SET nav_layout=NULL, mg_views=NULL WHERE id=$1`, [org]);
+    // POLISH-12: the Top 100 is off unless an org turns it on; these orgs use it.
+    await q(`UPDATE orgs SET nav_layout=NULL, mg_views=NULL, top100_enabled=true WHERE id=$1`, [org]);
   }
   const hash = bcrypt.hashSync("loadtest1234", 4);
   for (const [id, role, sa] of [["admin", "admin", false], ["staff", "member", false], ["super", "admin", true]])

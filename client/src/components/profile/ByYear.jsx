@@ -5,25 +5,61 @@
 // A total stated in an import is one row, Before Steward, not spread across
 // years. Every number opens its rows. The numbers are the server's
 // (GET /donors/:id/by-year, shared/numbers/byYear.js); nothing is added here.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../api";
 import { useChangeRev } from "../../lib/changes";
 import { T, Spin, fmtFull } from "../shared";
 import { Figure } from "../Figure";
 import { countLabel } from "../../../../shared/countWords.js";
 import { displayDate } from "../../../../shared/displayDate";
+import { fitYearLabels, estimateWidth } from "../../../../shared/yearAxis.js";
 
 const th = { textAlign: "right", fontSize: 10.5, fontWeight: 800, color: T.ink3, padding: "6px 8px", whiteSpace: "nowrap" };
 const td = { textAlign: "right", fontSize: 13, color: T.ink, padding: "7px 8px", borderTop: "1px solid " + T.bg3, whiteSpace: "nowrap" };
 
+// POLISH-12 item 1: the year labels are read at a size a person can read
+// (never under LABEL_PX on screen, however narrow the chart is drawn) and
+// never run into each other: shared/yearAxis.js picks the full names, the
+// short ones, or every other one, from the width each bar has.
+const W = 640, H = 176, LABEL_PX = 11;
+let canvas = null;
+function measurer(fontSize, family) {
+  try {
+    canvas = canvas || document.createElement("canvas");
+    const c = canvas.getContext("2d");
+    c.font = `${fontSize}px ${family || "sans-serif"}`;
+    return t => c.measureText(t).width;
+  } catch { return t => estimateWidth(t, fontSize); }
+}
+function useDrawnWidth(ref) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const read = () => setW(el.getBoundingClientRect().width || 0);
+    read();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(read); ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
+
 export function YearBars({ years, label = "Giving by year" }) {
+  const ref = useRef(null);
+  const drawn = useDrawnWidth(ref);
   const span = [...(years || [])].reverse().slice(-12);
   if (!span.length) return null;
   const max = Math.max(...span.map(y => y.total), 1);
-  const W = 640, H = 176, pad = { t: 18, r: 8, b: 34, l: 52 };
+  const pad = { t: 18, r: 8, b: 34, l: 52 };
   const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
   const slot = pw / span.length, bw = Math.min(48, slot * 0.62);
-  return <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${label}, ${span[0].chartLabel} to ${span[span.length - 1].chartLabel}`} data-testid="by-year-chart" style={{ display: "block", overflow: "visible" }}>
+  // The chart scales with its box; the labels' size is set so they draw at LABEL_PX at least.
+  const scale = drawn > 0 ? drawn / W : 1;
+  const fs = Math.min(22, Math.max(10, LABEL_PX / scale));
+  const family = ref.current && typeof getComputedStyle === "function" ? getComputedStyle(ref.current).fontFamily : "";
+  const fit = fitYearLabels(span, slot, drawn > 0 ? measurer(fs, family) : t => estimateWidth(t, fs));
+  return <svg ref={ref} width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${label}, ${span[0].chartLabel} to ${span[span.length - 1].chartLabel}`} data-testid="by-year-chart" data-label-mode={fit.mode} style={{ display: "block", overflow: "visible" }}>
     {[0, max / 2, max].map((v, i) => {
       const y = pad.t + ph - (v / max) * ph;
       return <g key={i}><line x1={pad.l} y1={y} x2={W - pad.r} y2={y} stroke={i === 0 ? T.bg3 : T.bg2} />
@@ -32,13 +68,14 @@ export function YearBars({ years, label = "Giving by year" }) {
     {span.map((y, i) => {
       const h = y.total > 0 ? Math.max(3, (y.total / max) * ph) : 0;
       const x = pad.l + i * slot + (slot - bw) / 2, top = pad.t + ph - h;
+      const name = y.chartLabel && y.chartLabel !== y.label ? `${y.chartLabel} (${y.label})` : y.label;
       return <g key={y.key} data-bar-year={y.key} data-so-far={y.current ? "1" : undefined}>
         {y.total > 0
           ? <rect x={x} y={top} width={bw} height={h} rx={3} fill={T.greenDk} fillOpacity={y.current ? 0.55 : 1} />
           : <rect x={x} y={pad.t + ph - 3} width={bw} height={3} rx={1.5} fill={T.bg3} />}
         {y.current && <text x={x + bw / 2} y={(y.total > 0 ? top : pad.t + ph - 3) - 5} textAnchor="middle" fontSize={10} fontWeight={700} fill={T.ink}>so far</text>}
-        <text x={x + bw / 2} y={H - 10} textAnchor="middle" fontSize={10} fill={T.ink3}>{y.chartLabel}</text>
-        <title>{y.total > 0 ? `${fmtFull(y.total)} in ${y.label}${y.current ? ", so far" : ""}` : `Nothing in ${y.label}`}</title>
+        {fit.labels[i] ? <text data-year-label={y.key} x={x + bw / 2} y={H - 10} textAnchor="middle" fontSize={fs} fill={T.ink3}>{fit.labels[i]}</text> : null}
+        <title>{y.total > 0 ? `${fmtFull(y.total)} in ${name}${y.current ? ", so far" : ""}` : `Nothing in ${name}`}</title>
       </g>;
     })}
   </svg>;

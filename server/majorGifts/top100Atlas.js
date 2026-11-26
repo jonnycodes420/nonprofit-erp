@@ -23,6 +23,9 @@ async function answer({ req, query, step, top100Rows, today }) {
   const orgId = req.user.orgId;
   if (!(await P.canSee(req.user.userId, orgId)))
     return { kind: "refused", state: "refused", line: "The Top 100 is for admins and staff with the major gifts permission." };
+  // POLISH-12: an org that has not turned the Top 100 on gets no Top 100 answer.
+  const SW = require("./top100Switch");
+  if (!(await SW.top100On(query, orgId))) return { kind: "refused", state: "refused", line: SW.OFF_LINE };
   const S = await shapeMod();
   const rows = await top100Rows(orgId);
   if (!rows.length) return { kind: "answer", state: "done", line: "Your Top 100 is empty. Add people from a profile, from Donors, or on the Top 100 page.", link: { tab: "top100" } };

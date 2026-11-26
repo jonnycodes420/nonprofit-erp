@@ -590,7 +590,7 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
               <div style={{ minWidth: 0 }}>
                 <DonorLink id={p.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: p.donorId }) : undefined}
                   style={{ fontSize: 14, fontWeight: 600, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{p.name}</DonorLink>
-                <div style={{ fontSize: 11, color: T.ink3 }}>{fmtFull(p.lifetime)} lifetime{p.stage ? " · " + p.stage : ""}</div>
+                <div style={{ fontSize: 11, color: T.ink3 }}>{`${fmtFull(p.lifetime)} lifetime${p.stage ? " · " + p.stage : ""}`}</div>
               </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: p.openAskCents ? T.ink : T.ink3, fontFamily: "'DM Serif Display',serif" }}>
                 {p.openAskCents ? fmtFull(p.openAskAmount) : "Not set"}
@@ -625,7 +625,7 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
                     {!isReadOnly && isAdmin && (
                       <button onClick={() => assignTo(p.donorId)}
                         style={{ background: T.gold, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: T.ink, cursor: "pointer" }}>
-                        Assign to {d.officer.name.split(" ")[0]}
+                        {`Assign to ${d.officer.name.split(" ")[0]}`}
                       </button>
                     )}
                   </div>

@@ -37,6 +37,7 @@ import { BulkLogTouchButton } from "./donors/BulkLogTouch";   // EDIT-2: one tou
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one word, one population
 import { AddToTop100 } from "./majorGifts/AddToTop100";   // TOP100-1
+import { useTop100On } from "../lib/top100On";   // POLISH-12
 import { filteredEmptySentence } from "../../../shared/filteredEmpty.js";   // FLOWS-13 item 4: an empty filtered list names its filters
 import { useCanExport } from "../lib/exportAccess";   // ACCESS-3: no Export CSV for the Campaign cabinet
 import { HouseholdListRow, unitCountWords } from "./donors/HouseholdListRow";   // HOUSEHOLD-1 item 2
@@ -373,6 +374,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const canExport=useCanExport(isAdmin?"admin":"staff");   // ACCESS-3
+  const top100On=useTop100On();   // POLISH-12: "Add to Top 100" only when the org has the Top 100 on
   const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).filter(k=>k!=="role").length>0?r:null;})();
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
@@ -920,7 +922,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
             </div>
           )}
 
-          <AddToTop100 ids={selFiltered.map(d=>d.id)} disabled={busy} flash={flash} onDone={()=>setSelIds(new Set())}/>{/* TOP100-1 */}
+          {top100On===true&&<AddToTop100 ids={selFiltered.map(d=>d.id)} disabled={busy} flash={flash} onDone={()=>setSelIds(new Set())}/>}{/* TOP100-1; POLISH-12: only when the org has it on */}
           {/* MOPUP-2: More → Move to trash (admin only), with people who have gifts left unless she says so */}
           {isAdmin&&<BulkTrash ids={selFiltered.map(d=>d.id)} disabled={busy} flash={flash} onDone={()=>{setSelIds(new Set());setMatchingIds(null);if(onBulkDone)onBulkDone();}}/>}
           </>}

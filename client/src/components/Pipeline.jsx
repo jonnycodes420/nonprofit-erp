@@ -122,8 +122,8 @@ function ProspectCard({ card, colorMap, onOpen, onMove, isReadOnly, dndEnabled, 
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-            {card.askAmount > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: T.gold600 }}>{fmt(card.askAmount)} ask{card.openOppCount > 1 ? ` ×${card.openOppCount}` : ""}</span>}
-            {card.totalGiving > 0 && <span style={{ fontSize: 11, color: T.ink3 }}>{fmt(card.totalGiving)} given</span>}
+            {card.askAmount > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: T.gold600 }}>{`${fmt(card.askAmount)} ask${card.openOppCount > 1 ? ` ×${card.openOppCount}` : ""}`}</span>}
+            {card.totalGiving > 0 && <span style={{ fontSize: 11, color: T.ink3 }}>{`${fmt(card.totalGiving)} given`}</span>}{/* POLISH-12: one text node, so no reader loses the space (polish5's seam check) */}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 6 }}>
             {card.stageAge != null && <span style={{ fontSize: 11, color: card.stageAge > 120 ? T.terracotta : T.ink3 }}>{card.stageAge}d in stage</span>}

@@ -263,8 +263,9 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const AT_ = await AT();
   const gate = await (gateP || agentGate(orgId));
   // TOP100-1: the Top 100's two asks are read here, on the server only, so the browser's bundle does not carry them.
+  // POLISH-12: only for an org that has turned the Top 100 on; otherwise her words are read as anything else.
   const t100 = require("../server/majorGifts/top100Atlas").readInCode(text);
-  if (t100) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
+  if (t100 && await require("../server/majorGifts/top100Switch").top100On(query, orgId)) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
   // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
   const inCode = AT_.readInCode(text);
   if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };

@@ -70,17 +70,29 @@ export function MajorGiftsTabsCard({ load, save, canEdit = true, announce = fals
   const { m, msg, put } = useOrgMenu(load, save, announce);
   if (!m) return <div style={box} data-testid="org-mg-views"><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Major Gifts shows</div><p style={note}>{msg || "Loading…"}</p></div>;
   const on = new Set(m.mgViews || MG_VIEWS.map(v => v.id));
+  // POLISH-12: the Top 100 is its own switch, off unless the org turns it on.
+  // Off, its tab is not one to choose here (the server keeps where it was).
+  const top100 = m.top100 === true;
+  const views = MG_VIEWS.filter(v => top100 || v.id !== "top100");
   const flip = (id, want) => {
-    const next = MG_VIEWS.map(v => v.id).filter(v => (v === id ? want : on.has(v)));
+    const next = views.map(v => v.id).filter(v => (v === id ? want : on.has(v)));
     if (!next.length) return;   // at least one: the server refuses none too
     put({ mgViews: next });
   };
   return (
     <div style={box} data-testid="org-mg-views">
       <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Major Gifts shows</div>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13.5, color: T.ink, minHeight: 36, margin: "6px 0 4px" }}>
+        <input type="checkbox" data-testid="org-top100-toggle" checked={top100} disabled={!canEdit}
+          onChange={e => put({ top100: e.target.checked })} style={{ marginTop: 3 }} />
+        <span><strong>Top 100</strong>, a list of the people who matter most, ranked by hand.
+          <span style={{ display: "block", fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
+            {top100 ? "On: Major Gifts has a Top 100 tab, and a profile shows the person's place on it."
+              : "Off: no Top 100 tab, and no Top 100 on profiles or in Atlas. Major Gifts opens on Pipeline. Nobody on the list is removed."}</span></span>
+      </label>
       <p style={note}>The tabs on the Major Gifts page. With one on, the page is just that view, with no tabs. The sidebar still says Major Gifts.</p>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-        {MG_VIEWS.map(v => (
+        {views.map(v => (
           <label key={v.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5, color: T.ink, minHeight: 36 }}>
             <input type="checkbox" data-mg-view-toggle={v.id} checked={on.has(v.id)} disabled={!canEdit || (on.has(v.id) && on.size === 1)}
               onChange={e => flip(v.id, e.target.checked)} />

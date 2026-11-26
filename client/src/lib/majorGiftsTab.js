@@ -34,8 +34,11 @@ export function mgShownViews(views) {
   const shown = MG_VIEWS.filter(v => want.has(v.id));
   return shown.length ? shown : MG_VIEWS;
 }
+// POLISH-12: with the Top 100 off (orgs.top100_enabled, server/org/menu.js
+// leaves it out of the list) the page opens on Pipeline when Pipeline is shown.
 export function mgViewIn(id, shown) {
-  return shown.some(v => v.id === id) ? id : shown[0].id;
+  if (shown.some(v => v.id === id)) return id;
+  return shown.some(v => v.id === "pipeline") && !shown.some(v => v.id === "top100") ? "pipeline" : shown[0].id;
 }
 
 // A navigation, rewritten: an old Fundraising part that is one of these views

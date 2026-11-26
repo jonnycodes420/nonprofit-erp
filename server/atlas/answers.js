@@ -26,6 +26,7 @@ const usd = cents => require("../../money").formatCentsPlain(cents || 0);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const day = d => { const s = String(d || "").slice(0, 10); const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : ""; };
 const { toCents: moneyCents } = require("../../money");
+const { endOnName } = require("../../shared/endOnName.js");   // POLISH-12
 const toCents = v => moneyCents(v) || 0;
 
 // ── 1. A LIST ──────────────────────────────────────────────────────────────
@@ -176,7 +177,7 @@ async function personAnswer({ query, orgId, donorId, today, more = false }) {   
   if (more) facts.push(...await moreFacts(query, orgId, donorId, first));   // ATLAS-11 item 3: what the brief doesn't say
   if (d.deceased) facts.unshift({ kind: "care", line: `${d.name} is marked as deceased.`, link: { tab: "donor", donorId } });
   else if (d.do_not_contact) facts.unshift({ kind: "care", line: `${d.name} is marked do not contact.`, link: { tab: "donor", donorId } });
-  return { donorId, name: d.name, about, spoke: more ? `Here's everything Steward holds on ${d.name}.` : `Here's what Steward knows about ${d.name}.`, facts, today, more };
+  return { donorId, name: d.name, about, spoke: more ? `Here's everything Steward holds on ${endOnName(d.name)}` : `Here's what Steward knows about ${endOnName(d.name)}`, facts, today, more };
 }
 
 // ATLAS-11 item 3 (Jarvis: "Tell me more adds nothing"): Tell me more on a person adds what the

@@ -231,6 +231,11 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
   visit, due Thu".
 - **Atlas's "Make a plan of care for #4" writes nothing.** It names the template's touches and opens the
   person's plan of care, where one press adds them.
+- **The Top 100 is an org setting, off unless the org turns it on (POLISH-12).** `orgs.top100_enabled`, set in
+  Settings → Major gifts or by the super admin; never an org id in code. Off hides the tab, the profile's rank and
+  "Add to Top 100", the Donors bulk add, Home's "Next on your Top 100" and Atlas's Top 100 answers
+  (`server/majorGifts/top100Switch.js` on the server, `client/src/lib/top100On.js` in the browser). Nothing on the
+  list is deleted and the /top100 routes still answer.
 - **Who sees the Top 100 and plans of care is `prospect.canSee`**: admins and the major gifts permission,
   read live, on every route. Never donor-facing.
 
@@ -342,7 +347,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 
 ## ASKS-1 · Major Gifts has its own rail entry (2026-11-10)
 
-- Under Raise, between Fundraising and Events, for admins and staff with the major gifts permission (`prospect.canSee`, read from GET /me). Tabs Top 100 · Portfolios · Pipeline · Plans, the same views; Top 100 is where it opens (`client/src/lib/majorGiftsTab.js`, `MajorGiftsPage.jsx`).
+- Under Raise, between Fundraising and Events, for admins and staff with the major gifts permission (`prospect.canSee`, read from GET /me). Tabs Top 100 · Portfolios · Pipeline · Plans, the same views; Top 100 is where it opens when the org has it on, Pipeline otherwise (`client/src/lib/majorGiftsTab.js`, `MajorGiftsPage.jsx`, POLISH-12).
 - Old addresses for those four (`?fr=top100`, `?fr=pipeline`, `navigateTo("pipeline")`, `/dashboard?fr=…`) open Major Gifts on the same tab, and the address is replaced. Somebody without the permission is sent Home.
 - At a glance and Proposals stay in Fundraising → Major gifts, where staff without the permission still reach them.
 
