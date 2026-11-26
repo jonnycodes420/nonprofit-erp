@@ -23,7 +23,7 @@ const {
   ALL_PIPELINE_STAGES, MEANINGFUL_CONTACT_TYPES, NOT_HISTORY_TYPES, RB_READY, UNDO_SECONDS, actor, asJson,
   checkWriteAccess, composeBoardPack, computeAtRiskCandidates, computeDashboard, computeRetentionRate,
   computeStewardshipDebtBreakdown, dashboardsMod, displayNameCase, donorOnly, figureSources,
-  fundraisingCampaignRows, fundraisingGoalsPortfolio, goalFigureRow, grantMsMod, importHealth,
+  fundraisingCampaignRows, fundraisingGoalsPortfolio, goalCard, grantMsMod, importHealth,
   lookupMatchingGift, orgDaysOverdue, orgFiscalYearStart, orgPlanTier, orgRow, orgTime, orgToday, orgTz,
   portfolioMembership, query, requireAuth, run, solicitableSql, toCents, toDollars, trashRow, uuid, wrap,
 } = ctx;
@@ -68,8 +68,7 @@ app.get("/home/annual-goal", requireAuth, wrap(async (req, res) => {
   const running = ((out && out.goals) || []).filter(x => x.isTopLevel && x.lifecycle === "active")
     .map(x => ({ id: x.id, name: x.name, raisedCents: Math.round(Number(x.rolledRaised) * 100) || 0, goalCents: Math.round(Number(x.goalAmount) * 100) || 0 }));
   if (!g) return res.json({ goal: null, running });
-  const fig = async source => ({ ...(await figureSources.figureValue(orgId, source, {})), source });
-  res.json({ goal: await goalFigureRow(g, fig), running });
+  res.json({ goal: await goalCard(orgId, g), running });   // ATLAS-11: the one goal card Atlas reads too
 }));
 
 // ── THE BOARD PACKET ───────────────────────────────────────────────────────

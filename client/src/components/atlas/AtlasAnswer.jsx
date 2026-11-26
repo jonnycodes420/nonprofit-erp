@@ -17,11 +17,18 @@ const link = { background: "none", border: "none", padding: 0, font: "inherit", 
 const quiet = { fontSize: 12.5, color: T.ink3, lineHeight: 1.45 };
 const usd = c => "$" + (Math.round(Number(c) || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: Number(c) % 100 ? 2 : 0, maximumFractionDigits: 2 });   // ATLAS-8
 
-export default function AtlasAnswer({ line, onGo, busy }) {
+export default function AtlasAnswer({ line, onGo, onAsk, busy }) {
   const a = line && line.answer;
   const [opening, setOpening] = useState(false);
   const [err, setErr] = useState("");
   if (!a) return null;
+  // ATLAS-11 item 1: "Did you mean Annual Fund 2026 or Annual Fund 2025?", one press each, asked as a follow-up.
+  if (a.type === "choices") return (
+    <div data-testid="atlas-choices" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+      {(a.options || []).map(o => <button key={o.label} type="button" data-testid="atlas-choice-ask" disabled={busy || !onAsk} onClick={() => onAsk && onAsk(o.ask)}
+        style={{ background: T.white, color: T.ink, border: "1px solid " + T.greenDk, borderRadius: 8, padding: "4px 12px", minHeight: 32, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{o.label}</button>)}
+    </div>
+  );
   if (a.type === "person") return (
     <ul data-testid="atlas-person" style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
       {a.facts.map((f, i) => <li key={i} data-fact={f.kind} style={{ fontSize: 13.5, lineHeight: 1.45, color: T.ink }}>

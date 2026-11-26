@@ -32,6 +32,13 @@
 //       lapsed call list holds only lapsed people, top by lifetime, and foots; top donors'
 //       per-row figure = Reports > Top donors'; the reading-off line is the shared one.
 //       Red on main (ATLAS-9 report).
+//   §8  ATLAS-11: "How is the Annual Fund doing?" answers with Home's own goal figure (to the cent,
+//       its pace and days left), asks "Did you mean …" when two match, lists the closest names when
+//       none do, and Tell me more after it lists the gifts behind it, footing to the cent; four
+//       phrasings of a lifetime give one figure; "LYBUNT dollars" says count, households and dollars
+//       with the registry's sentence; a closed and reopened Atlas shows the prior turns, and Start
+//       over empties it; the AI-off refusal no longer repeats the header's line.
+//       Red on 87433bc (run against main: ATLAS-11 report).
 //
 // HOW IT GOES RED (planted, seen red before green, ATLAS-6 report):
 //   * remove the post-check (why.js accepts a sentence whatever its dates):
@@ -281,7 +288,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const more10 = await ask10("Tell me more", r10.id);
   // Odile's brief held nothing back (one conversation, one unthanked gift), so Tell me more says so, about her.
   const ml10 = (more10.lines || []).map(l => l.line).join(" ");
-  ok("§7 ATLAS-10 Tell me more after a brief answers about her (never \"my last answer had no rows\")", /everything Steward holds on Odile Marchetti/.test(ml10) && !/had no rows/.test(ml10), more10.lines && more10.lines.map(l => l.line));
+  ok("§7 ATLAS-10 Tell me more after a brief answers about her (never \"my last answer had no rows\")", /^Here.s more on Odile Marchetti/.test(ml10) && !/had no rows/.test(ml10), more10.lines && more10.lines.map(l => l.line));
   // A brief that held lines back (four unthanked gifts, three shown) shows them all on Tell me more.
   // Every line the same words (Rufus Tallgrass on staging: $25 gifts on the same days): four $210 gifts on one day,
   // her $1,500 thanked, so the brief shows three identical lines and holds one back. Red on 99ccbfd (a set of lines).
@@ -291,8 +298,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const more10b = await ask10("Tell me more", r10b.id);
   const pm10 = (more10b.lines || []).find(l => l.answer && l.answer.type === "person");
   const un10 = (pm10 && pm10.answer.facts || []).filter(f => f.kind === "unthanked");
-  ok("§7 ATLAS-10 Tell me more shows what the brief held back: every gift not yet thanked, no \"And N more\"", !!pm10 && /everything Steward holds on Odile/.test(pm10.line) && un10.length === 4 && !un10.some(f => /^And \d/.test(f.line)), un10.map(f => f.line));
-  ok("§7 ATLAS-10 the refusal opens with the one reading-off line Settings > Atlas shows", (await import("../shared/atlas.js")).AI_OFF_LINE.startsWith((await import("../shared/atlasReading.js")).READING_OFF));
+  // ATLAS-11 item 3: Tell me more draws only what the brief didn't say: the one gift it held back, never "And N more", and contact and gift history.
+  ok("§7 ATLAS-10 Tell me more shows what the brief held back: the gift not yet shown, no \"And N more\"", !!pm10 && /^Here's more on Odile Marchetti/.test(pm10.line) && un10.length === 1 && !(pm10.answer.facts || []).some(f => /^And \d+ more gifts not yet thanked/.test(f.line)), un10.map(f => f.line));
+  ok("§7 ATLAS-11 Tell me more adds what the brief never says: how to reach them and their gift history", !!pm10 && (pm10.answer.facts || []).some(f => f.kind === "contact" && /d_atl9_odile@atl9\.test/.test(f.line)) && (pm10.answer.facts || []).filter(f => f.kind === "gift").length >= 4, pm10 && pm10.answer.facts.map(f => f.line));
+  ok("§7 ATLAS-11 Settings > Atlas still opens with the reading-off line; the dialog's refusal doesn't repeat it", (await import("../shared/atlas.js")).AI_OFF_LINE.startsWith((await import("../shared/atlasReading.js")).READING_OFF) && typeof (await import("../shared/atlas.js")).AI_OFF_REFUSAL === "string" && !(await import("../shared/atlas.js")).AI_OFF_REFUSAL.includes((await import("../shared/atlasReading.js")).READING_OFF));
 
   // Top donors (item 4): each row's figure is Reports > Top donors' for the period, labelled.
   const top9 = ((await ask9("Who are our top donors this year?")).lines || []).find(l => l.answer && l.answer.type === "list");
@@ -305,6 +314,53 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // Item 5: the line the dialog says is the one shared line Settings and the Home Thread draw.
   const off9 = await ask9("How many lapsed donors do we have?");
   ok("§7 reading off: the dialog's line is shared/atlasReading.js's, the one Settings > Atlas and the Home Thread draw", off9.readingOff === (await import("../shared/atlasReading.js")).READING_OFF);
+
+  // ── §8 ATLAS-11: Atlas never denies what Home shows; one lifetime in any phrasing; the conversation is kept ──
+  const y11 = Number(today.slice(0, 4));
+  await q(`DELETE FROM campaigns WHERE org_id = $1 AND id LIKE 'camp_atl11_%'`, [F9.ORG]);
+  await q(`INSERT INTO campaigns (id, org_id, name, type, status, goal_amount, goal_category, start_date, end_date, created_by, created_by_name)
+           VALUES ('camp_atl11_af', $1, $2, 'appeal', 'active', 50000, 'annual', $3, $4, 'system:test', 'atlas11 fixture')`, [F9.ORG, `Annual Fund ${y11}`, `${y11}-01-01`, `${y11}-12-31`]);
+  await q(`UPDATE gifts SET campaign_id = 'camp_atl11_af' WHERE org_id = $1 AND donor_id IN ('d_atl9_hugo', 'd_atl9_wren')`, [F9.ORG]);
+  const home11 = (await api("GET", "/home/annual-goal", tok9)).body.goal;
+  const af11 = await ask10("How is the Annual Fund doing?");
+  const afl = (af11.lines || [])[0] || {};
+  const homeCents = Math.round(Number(home11 && home11.value) * 100);
+  ok("§8 \"How is the Annual Fund doing?\" answers with Home's goal figure, to the cent, with its pace and days left (Jarvis: \"said no Annual Fund exists\")",
+    !!home11 && cents(afl.line) === homeCents && homeCents > 0 && afl.line.includes(home11.paceSentence) && afl.line.includes(home11.endsWords) && !/no fund, appeal or event/i.test(afl.line), { atlas: afl.line, home: home11 });
+  const more11 = await ask10("Tell me more", af11.id);
+  const ml11 = (more11.lines || []).find(l => l.answer && l.answer.type === "why") || {};
+  ok("§8 Tell me more after it lists the gifts behind it, by giver, footing to the cent", ml11.answer && ml11.answer.totalCents === homeCents && ml11.answer.people.map(p => p.donorId).join() === "d_atl9_hugo,d_atl9_wren", more11.lines);
+  await q(`INSERT INTO campaigns (id, org_id, name, type, status, goal_amount, goal_category, start_date, end_date, created_by, created_by_name)
+           VALUES ('camp_atl11_af0', $1, $2, 'appeal', 'completed', 40000, 'annual', $3, $4, 'system:test', 'atlas11 fixture')`, [F9.ORG, `Annual Fund ${y11 - 1}`, `${y11 - 1}-01-01`, `${y11 - 1}-12-31`]);
+  const two11 = ((await ask10("How's the Anual Fund going?")).lines || [])[0] || {};
+  ok("§8 two that match (and one letter off) ask \"Did you mean …\", each a button", two11.line === `Did you mean Annual Fund ${y11} or Annual Fund ${y11 - 1}?` && two11.answer && two11.answer.type === "choices" && two11.answer.options.length === 2, two11);
+  const none11 = ((await ask10("How is the capital campaign doing?")).lines || [])[0] || {};
+  ok("§8 nothing that matches lists the closest names, never \"doesn't exist\"", /closest names I have are .*Annual Fund/.test(none11.line || "") && !/no fund, appeal or event called/i.test(none11.line || ""), none11.line);
+  // Item 2: four phrasings, one lifetime, the profile's rule; the key is the gift rows, added here.
+  const [hugo11] = await q(`SELECT ROUND(SUM(amount) * 100)::bigint AS c FROM gifts WHERE org_id = $1 AND donor_id = 'd_atl9_hugo' AND amount > 0`, [F9.ORG]);
+  const life11 = [];
+  for (const text of ["How much has Hugo Strand given?", "Hugo Strand's total", "lifetime for Hugo Strand", "Brief me on Hugo Strand"]) {
+    const r = await ask10(text);
+    const l = (r.lines || [])[0] || {};
+    const giving = l.answer && l.answer.type === "person" ? (l.answer.facts.find(f => f.kind === "giving") || {}).line : l.line;
+    life11.push([text, cents(giving)]);
+  }
+  ok("§8 four phrasings of Hugo's lifetime give one figure, the sum of his gifts (Jarvis: \"only 'Brief me on X' works\")", life11.every(([, c]) => c === Number(hugo11.c)), { want: Number(hugo11.c), got: life11 });
+  const lyb11 = ((await ask10("LYBUNT dollars")).lines || [])[0] || {};
+  const lyr11 = (await api("GET", "/reports/lybunt", tok9)).body;
+  const money11 = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+  ok("§8 \"LYBUNT dollars\" answers count, households and dollars, each Reports > LYBUNT's, with the registry's sentence",
+    (lyb11.line || "").startsWith(`${lyr11.rows.length} ${lyr11.rows.length === 1 ? "person is" : "people are"} LYBUNT, in ${lyr11.units.length} household`) && (lyb11.line || "").includes(`gave ${money11(lyr11.figures.atStake.cents)} last fiscal year`) && (lyb11.line || "").endsWith(W9.population("lybunt").sentence), { line: lyb11.line, rows: lyr11.rows.length, units: lyr11.units.length, atStake: lyr11.figures.atStake });
+  // Item 4: the conversation, kept server-side; reopening reads it back; Start over empties it.
+  const c1 = await ask10("How much has Hugo Strand given?");
+  const c2 = await ask10("Tell me more", c1.id);
+  const conv = (await api("GET", "/atlas/conversation", tok9)).body;
+  ok("§8 a closed and reopened Atlas shows the prior turns, in order", (conv.requests || []).slice(-2).map(r => r.id).join() === `${c1.id},${c2.id}` && ((conv.requests || []).slice(-1)[0] || { lines: [] }).lines.length > 0, (conv.requests || []).map(r => r.text));
+  await api("POST", "/atlas/conversation/start-over", tok9, {});
+  const after11 = (await api("GET", "/atlas/conversation", tok9)).body;
+  const c3 = await ask10("How much has Wren Okafor given?");
+  const fresh11 = (await api("GET", "/atlas/conversation", tok9)).body;
+  ok("§8 Start over empties it, and the next ask starts a new one", Array.isArray(after11.requests) && after11.requests.length === 0 && (fresh11.requests || []).map(r => r.id).join() === c3.id, { after: after11.requests, fresh: (fresh11.requests || []).map(r => r.text) });
 
   await closeDb();
   summary();

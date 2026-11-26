@@ -31,7 +31,7 @@ const E = "e_event";
 const FUNDRAISING = [{ read: "Fundraising totals (Fundraising.jsx)", kinds: ["gift", "pledge", "totals", "event"] }];
 const DONORS_PORTFOLIO = [{ read: "Donors portfolio totals (Donors.jsx loadOfficers)", kinds: ["gift", "person", "totals"] }];
 const VOLUNTEER = [
-  { read: "Volunteers header, counts and Recent shifts (VolunteersHub.jsx useWriteRev)", kinds: ["volunteer"] },
+  { read: "Volunteers header, counts and Recent shifts (VolunteersHub.jsx useLive, FRESH-2)", kinds: ["volunteer", "person"] },
   { read: "Profile volunteer hours (VolunteerPanel.jsx)", kinds: ["volunteer"], ids: { person: P } },
 ];
 const EVENT = [

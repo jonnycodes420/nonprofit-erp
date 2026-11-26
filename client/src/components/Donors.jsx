@@ -21,7 +21,8 @@ import { LogTouchPicker } from "./donors/LogTouchPicker";   // EDIT-2: one perso
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { useStewardTold } from "../lib/stewardTold";
-import { useChanged, ADDS_PEOPLE } from "../lib/changes";   // STALE-1; QUICKADD-1: the writes that add people
+import { ADDS_PEOPLE } from "../lib/changes";   // QUICKADD-1: the writes that add people
+import { useLive } from "../lib/liveRead";   // FRESH-2: every list and count re-reads from one place
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // QUICKADD-1: Record a gift, with + New person
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
@@ -603,7 +604,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // write to one person's record: their profile re-reads itself).
   // SCALE-6 item 3 (W-1112-Volunteers-01X): the portfolio totals (each owner's people and
   // dollars) re-read after a gift, a delete, an owner change or the worker's after-change.
-  useChanged(["gift","person","totals"],c=>{
+  useLive("donors.officers",["gift","person","totals"],c=>{
     loadOfficers();
     // And the people a write named (a gift recorded from here, a profile or Home), re-read
     // by id into the whole-org list Team sums and Kanban groups, without reading the org again.
@@ -611,7 +612,16 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(!orgPeople||!named.length||named.length>200)return;
     peopleById(named).then(fresh=>{if(Object.keys(fresh).length)setOrgPeople(list=>Array.isArray(list)?list.map(d=>fresh[d.id]?{...d,...fresh[d.id]}:d):list);}).catch(()=>{});
   });
-  useChanged(["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||ADDS_PEOPLE.test(c.path||"")||/^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
+  useLive("donors.list",["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||ADDS_PEOPLE.test(c.path||"")||/^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
+
+  // FRESH-2 item 5: the open record itself (the Notes summary line, "Fresh has given $100 in all",
+  // and every effect keyed on it) re-reads when a change reaches this person; the profile's own
+  // panels re-read themselves, this is the record they were handed.
+  useLive("profile.record",["gift","person","note","totals"],()=>{
+    const id=selectedRef.current?.id;
+    if(!id||!selectedRef.current.fullRecord)return;
+    apiFetch(`/donors/${id}`).then(full=>setSelected(prev=>prev?.id===id?{...adaptDonor(full),fullRecord:true,lastTouchpoint:prev.lastTouchpoint??null,interactions:prev.interactions||[]}:prev)).catch(()=>{});
+  },{ids:{person:selected?.id}});
 
   // SCALE-2: open someone only if they are still on file (the old list's
   // .find()), asked of the server by id; otherwise run `orElse`.

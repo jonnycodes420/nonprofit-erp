@@ -19,7 +19,7 @@ import { countLabel } from "../../../shared/countWords.js";
 import { eventRowsChanged, useEventRowsRev, withinWrite, useLatestRead, useLatestLoad } from "../lib/eventRows";
 import GuestPickerStatus from "./events/GuestPickerStatus";   // FLOWS-10 items 2, 3
 import { EventVolunteerTeam } from "./events/EventVolunteerTeam";   // VOL-3: an event has a volunteer team
-import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
+import { useLive } from "../lib/liveRead";   // STALE-1, FRESH-2   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
 import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
@@ -1894,8 +1894,9 @@ export function Events({ data, isReadOnly }) {
     if (t === listSeq.current) setLoading(false);
   };
 
-  const listRev = useChangeRev(["event"]);   // STALE-1: a gift for any event, made anywhere, moves its card's Raised
-  useEffect(() => { reload(); }, [listRev]);
+  // STALE-1: a gift for any event, made anywhere, moves its card's Raised. FRESH-2: one place (lib/liveRead.js).
+  useEffect(() => { reload(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useLive("events.list", ["event", "gift"], () => { reload(); });
 
   // SWEEP-4, MOPUP-1: today is the org's day, not London's: at 8pm in New York an event
   // tonight moved to Past.

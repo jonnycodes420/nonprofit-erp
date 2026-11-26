@@ -32,6 +32,17 @@
 //   §6 a chunk gone with a deploy reopens the page once ("Steward was just updated.
 //      Reopening…"); gone again at once, the error shows with Reload and nothing loops
 //
+// FRESH-2 (Jarvis's mega sweep, 25 Nov: "list and count surfaces do not re-read"):
+//   §E the screen census (static, tests/lib/surfaceCensus.js): every list and count surface in
+//      client/src/lib/surfaces.js listens, through lib/liveRead.js, for a topic each table it
+//      shows announces; a surface that stops listening, or stops hearing one table, fails it
+//   §F Atlas: "list them" after a gift says its rows are older than the gift; with no change
+//      between, it does not
+//   §7 the profile's Notes summary line follows a gift saved and deleted, no reload (item 5)
+//   §8 Communications → Overview → Recent sends drops a deleted campaign, no reload
+//   §9 Volunteers: a volunteer deleted elsewhere in this browser leaves the header and the list
+//   §10 Home's rail person view (the mini-profile): Lifetime moves with a gift
+//
 // Planted defects (each turned this suite red, then was taken back out; the
 // STALE-2 report names them):
 //   · "event" dropped from changes.js's event rule → §C and §1 red
@@ -150,6 +161,35 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     && [...(CH.kindsOfWrite("/events/ev_1/attendees", "POST", null).ids.event || [])].includes("ev_1"), kinds(`/events/ev_1/attendees/a_1`, "PATCH"));
   ok("§C a grant's write is a task change too (its deadlines are tasks)", kinds("/grants/g_1/milestones").includes("task"), kinds("/grants/g_1/milestones"));
 
+  // ── §E · THE SCREEN CENSUS: EVERY LIST AND COUNT HEARS WHAT IT SHOWS ──────
+  const SC = require("./lib/surfaceCensus");
+  const clean = await SC.census();
+  ok("§E every list and count surface listens for what it shows (FRESH-2 item 3)", clean.length === 0, clean);
+  const plant = async (file, from, to) => {
+    const src = fs.readFileSync(path.join(__dirname, "../client/src", file), "utf8");
+    if (!src.includes(from)) return ["(the planted line was not found: " + from + ")"];
+    return SC.census({ src: { [file]: src.replace(from, to) } });
+  };
+  const deaf = await plant("components/VolunteersHub.jsx", 'useLive("volunteers.roster", ["volunteer", "person"]', 'useLive("volunteers.roster", ["volunteer"]');
+  ok("§E …a surface that stops hearing a table it shows fails it (the roster without \"person\")", deaf.length === 1 && /volunteers\.roster shows donors/.test(deaf[0]), deaf);
+  const unheard = await plant("components/Communications.jsx", 'useLiveRead("comms.overview"', 'useLiveReadNot("comms.overview"');
+  ok("§E …and a surface that stops listening fails it (Overview's Recent sends)", unheard.length === 1 && /comms\.overview .* no longer listens/.test(unheard[0]), unheard);
+
+  // ── §F · ATLAS: A FOLLOW-UP SAYS WHEN ITS ROWS ARE OLDER THAN A GIFT ──────
+  const ask = async (text, follows) => { const r = await api("POST", "/atlas", tok, { text, ...(follows ? { followsId: follows.id } : {}) });
+    return { status: r.status, id: r.body && r.body.request && r.body.request.id, said: JSON.stringify(r.body || {}) }; };
+  const SINCE = /changed after that answer/;
+  await api("POST", `/donors/${P("ada")}/gifts`, tok, { amount: 60, date: today, type: "cash" });
+  const q1 = await ask("Who gave this month?");
+  const lt1 = await ask("list them", q1);
+  ok("§F Atlas lists the month's givers again, with no gift in between: no note", q1.status < 300 && lt1.status < 300 && /Ada Quill/.test(lt1.said) && !SINCE.test(lt1.said), { q1: q1.said.slice(0, 200), lt1: lt1.said.slice(0, 300) });
+  const q2 = await ask("Who gave this month?");
+  await api("POST", `/donors/${P("bram")}/gifts`, tok, { amount: 80, date: today, type: "cash" });
+  const l2 = await ask("list them", q2);
+  ok("§F …a gift saved between the question and \"list them\": the answer says its rows are older (FRESH-2 item 4)", l2.status < 300 && SINCE.test(l2.said), l2.said.slice(0, 400));
+  const q3 = await ask("Who gave this month?");
+  ok("§F …and asked again, Bram's gift is in the answer", q3.status < 300 && /Bram Oduya/.test(q3.said), q3.said.slice(0, 400));
+
   // ── THE BROWSER LEG ────────────────────────────────────────────────────────
   const ev1 = await api("POST", "/events", tok, { name: "Heron Supper Club", date: today, eventType: "gala", description: "A supper." });
   const E1 = ev1.body && (ev1.body.id || (ev1.body.event && ev1.body.event.id));
@@ -158,6 +198,14 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   await api("POST", `/events/${E2}/attendees`, tok, { donorIds: [P("eli")] });
   await api("POST", `/donors/${P("fay")}/gifts`, tok, { amount: 400, date: today, type: "cash", eventId: E2 });
   const th = await api("POST", `/donors/${P("gus")}/threads`, tok, { label: "Call Gus about the gala", due: today, ownerId: ME });
+  // FRESH-2 fixtures: Ivy has a record note and no gift; Vic volunteers; a draft campaign for Overview.
+  await person("ivy", "Ivy Tamsin");
+  await q(`UPDATE donors SET notes='Met at the spring open house.', notes_at=NOW() WHERE org_id=$1 AND id=$2`, [ORG, P("ivy")]);
+  await q(`INSERT INTO donors (id,org_id,name,stage,status,person_types,created_by,created_by_name) VALUES ($1,$2,'Vic Larkspur','prospect','active','["volunteer"]'::jsonb,'system:test/stale2','FRESH-2 test')`, [P("vic"), ORG]);
+  await api("POST", `/donors/${P("vic")}/volunteer-hours`, tok, { date: today, hours: 2, role: "Shelving" });
+  const camp = await api("POST", "/campaigns", tok, { name: "Heron Autumn Letter", subject: "Autumn at the Heron Society", body: "<p>Hello</p>" });
+  const thD = await api("POST", `/donors/${P("dev")}/threads`, tok, { label: "Ask Devi about the reading room", due: today, ownerId: ME });
+  ok("FRESH-2 fixtures: Ivy's note, Vic's hours, a draft campaign, Devi's step due today", camp.status < 300 && thD.status < 300, { camp: camp.status, thread: thD.status });
   await api("POST", `/donors/${P("hal")}/volunteer-hours`, tok, { date: today, hours: 2, role: "Shelving" });
   ok("browser fixtures: two events, a guest, an event gift and a next step due today", !!E1 && !!E2 && th.status < 300, { E1, E2, thread: th.status });
 
@@ -209,7 +257,15 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   page.on("load", () => { loads++; });
   await page.addInitScript(([tk, u, o]) => {
     localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    localStorage.setItem("steward_test_hooks", "1");   // FRESH-2 §9 and §10: lib/changes.js's __stewardWrote
   }, [lg.body.token, JSON.stringify(lg.body.user), JSON.stringify(lg.body.org)]);
+  // A write made elsewhere in this browser (another panel, Atlas's Yes): sent, then handed to the
+  // channel exactly as api.js hands its own writes (lib/changes.js window.__stewardWrote).
+  const wroteHere = (method, url, body) => page.evaluate(async ([m, u, b, api, t]) => {
+    const r = await fetch(api + u, { method: m, headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: b ? JSON.stringify(b) : undefined });
+    window.__stewardWrote(u, m, b ? JSON.stringify(b) : null);
+    return r.status;
+  }, [method, url, body || null, process.env.BASE || "http://localhost:5601", lg.body.token]);
   const open = async url => { await page.goto(`${APP}${url}`, { waitUntil: "networkidle", timeout: 60000 }); };
   const text = async sel => ((await page.locator(sel).first().textContent({ timeout: 4000 }).catch(() => "")) || "").replace(/\s+/g, " ").trim();
   const until = (fn, arg) => page.waitForFunction(fn, arg, { timeout: WAIT }).then(() => true).catch(() => false);
@@ -318,6 +374,75 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     ok("§5 …and the sentence says 0 people are in the trash", sentence, await text('[data-testid="trash-list"] > div'));
     const tab = await until(() => /Trash \(0\)/.test(document.body.innerText) && !/Trash \(1\)/.test(document.body.innerText));
     ok("§5 …and Settings says Trash (0)", tab, (await page.locator("body").innerText()).match(/Trash \(\d+\)/g));
+  });
+
+  // ── §7 · THE NOTES SUMMARY LINE FOLLOWS A GIFT SAVED AND DELETED ──────────
+  // Prod (Jarvis, 25 Nov): "Notes summary line stale until reload" after gift save and delete.
+  await open(`/donors/${P("ivy")}`);
+  await noReload("§7", async () => {
+    const line = '[data-testid="dp-notes-giving"]';
+    const tabTo = t => page.locator(`[data-tab="${t}"]`).first().click({ timeout: 20000 });
+    await tabTo("notes");
+    await page.locator(line).waitFor({ timeout: 20000 });
+    ok("§7 the Notes line says Ivy hasn't given yet", /hasn't given yet/.test(await text(line)), await text(line));
+    await tabTo("giving");
+    await page.getByRole("button", { name: "+ Add Gift" }).click({ timeout: 15000 });
+    await page.getByPlaceholder("Amount ($)").fill("100");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByText("Total: $100").first().waitFor({ timeout: 15000 });
+    await tabTo("notes");
+    const gave = await until(() => /has given \$100 in all/.test((document.querySelector('[data-testid="dp-notes-giving"]') || {}).textContent || ""));
+    ok("§7 after the gift, the Notes line says Ivy has given $100, with no reload (FRESH-2 item 5)", gave, await text(line));
+    await tabTo("giving");
+    await page.getByRole("button", { name: "Delete", exact: true }).first().click({ timeout: 15000 });
+    await page.getByRole("button", { name: "Delete gift" }).click({ timeout: 15000 });
+    await page.getByText("Total: $0").first().waitFor({ timeout: 15000 });
+    await tabTo("notes");
+    const back = await until(() => /hasn't given yet/.test((document.querySelector('[data-testid="dp-notes-giving"]') || {}).textContent || ""));
+    ok("§7 …and after the gift is deleted, it says she hasn't given yet again", back, await text(line));
+  });
+
+  // ── §8 · OVERVIEW'S RECENT SENDS DROPS A DELETED CAMPAIGN ─────────────────
+  await open(`/app/communications`);
+  await noReload("§8", async () => {
+    const recent = '[data-testid="comms-recent-sends"]';
+    await page.locator(recent).getByText("Heron Autumn Letter").first().waitFor({ timeout: 20000 });
+    await page.locator("button:visible", { hasText: /^Campaigns/ }).first().click();
+    const row = page.locator('[data-testid="camp-more"]').locator("xpath=ancestor::*[contains(., 'Heron Autumn Letter')][1]");
+    await row.locator('[data-testid="camp-more"]').first().click({ timeout: 15000 });
+    await page.locator('[data-testid="camp-delete"]').click();
+    await page.getByRole("button", { name: "Delete campaign" }).click();
+    await page.locator("button:visible", { hasText: /^Overview$/ }).first().click();
+    const dropped = await until(() => { const el = document.querySelector('[data-testid="comms-recent-sends"]'); return el && !/Heron Autumn Letter/.test(el.innerText); });
+    ok("§8 Overview's Recent sends no longer lists the deleted campaign, with no reload", dropped, await text(recent).then(t => t.slice(0, 200)));
+  });
+
+  // ── §9 · A VOLUNTEER DELETED ELSEWHERE LEAVES THE VOLUNTEERS HEADER ──────
+  // DELETE /donors/:id says "person", never "volunteer": the hub heard only volunteer writes.
+  await open(`/app/volunteers`);
+  await noReload("§9", async () => {
+    const count = () => page.evaluate(() => { const m = document.body.innerText.match(/(\w+) active volunteers? on the roster/i); return m ? m[1].toLowerCase() : null; });
+    await page.getByText(/active volunteers? on the roster/i).first().waitFor({ timeout: 20000 });
+    const before = await count();
+    const st = await wroteHere("DELETE", `/donors/${P("vic")}`);
+    const moved = await until(([b]) => { const m = document.body.innerText.match(/(\w+) active volunteers? on the roster/i); return m && m[1].toLowerCase() !== b; }, [before]);
+    ok("§9 a volunteer moved to the trash elsewhere: the header moves, with no reload", st === 200 && moved, { status: st, before, after: await count() });
+  });
+
+  // ── §10 · HOME'S RAIL PERSON VIEW (THE MINI-PROFILE) FOLLOWS A GIFT ───────
+  // Devi's step is due today, so her row is on Home's Thread; a plain click opens the rail.
+  await open(`/dashboard`);
+  await noReload("§10", async () => {
+    const rowMain = page.locator(".attn-row-main", { hasText: "Devi Halloran" }).first();
+    await rowMain.waitFor({ timeout: 20000 });
+    const box = await rowMain.boundingBox();
+    await rowMain.click({ position: { x: Math.max(10, box.width - 30), y: Math.min(20, box.height / 2) } });
+    const rail = '[data-testid="rail-donor"]';
+    await page.locator(rail).waitFor({ timeout: 15000 });
+    ok("§10 the rail opens Devi with no gift on file", /No gift on file yet/.test(await text(rail)), await text(rail));
+    const st = await wroteHere("POST", `/donors/${P("dev")}/gifts`, { amount: 75, date: today, type: "cash" });
+    const moved = await until(() => /Lifetime giving\s*\$75/.test((document.querySelector('[data-testid="rail-donor"]') || {}).innerText || ""));
+    ok("§10 after a gift, the rail says Lifetime giving $75, with no reload", st < 300 && moved, { status: st, rail: await text(rail) });
   });
 
   // ── §6 · A CHUNK GONE WITH A DEPLOY REOPENS THE PAGE ONCE ─────────────────
