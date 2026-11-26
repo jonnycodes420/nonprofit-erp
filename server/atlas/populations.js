@@ -46,12 +46,13 @@ const day = d => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) ? `${MON[Number(d.
 
 // { line, answer } with the list answer's shape (AtlasAnswer draws it, Open list opens all of it).
 // `get`: GET as her (the very route the screen reads). `query`: for the lapsed rows.
-async function populationAnswer(key, { get, query, orgId }) {
+// ATLAS-12 item 1: `calendar` (she said "calendar") reads the same report in calendar years, and says so.
+async function populationAnswer(key, { get, query, orgId, calendar = false }) {
   const P = populationOf(key);
   if (!P) return null;
   let people = [], units = null, atStakeCents = null;
   if (P.report) {
-    const r = await get(`/reports/${P.report}`);
+    const r = await get(`/reports/${P.report}${calendar ? "?yearMode=calendar" : ""}`);
     if (r.status >= 300 || !r.body || !Array.isArray(r.body.rows)) return { line: `I couldn't read the ${P.word} report just now. Reports > ${P.word} has it. ${P.definition}` };
     people = r.body.rows.map(x => ({ donorId: x.id, name: x.name, cents: Math.round((Number(x.priorYearTotal) || 0) * 100), lifetimeCents: Math.round((Number(x.lifetimeGiving) || 0) * 100) }));
     people.sort((a, b) => b.cents - a.cents || String(a.donorId).localeCompare(String(b.donorId)));
@@ -69,23 +70,26 @@ async function populationAnswer(key, { get, query, orgId }) {
     people = rows.map(x => ({ donorId: x.id, name: x.name, cents: 0, lifetimeCents: Number(x.cents) || 0, last: x.last_gift_date }));
   }
   const count = people.length;
+  const cal = !!(calendar && P.report);
+  const lastYear = cal ? "last calendar year" : "last fiscal year";
+  const asked = cal ? ` Counted in calendar years, as you asked; Reports > ${P.word} counts fiscal years unless you pick Calendar year there.` : "";
   // Lifetime by the profile's rule (shared/numbers, periodAmounts.lifetimeCents), never the stored rollup.
   const life = await require("../../shared/numbers/periodAmounts").lifetimeCents(query, orgId, people.slice(0, SHOWN).map(p => p.donorId)).catch(() => new Map());
   for (const p of people.slice(0, SHOWN)) if (life.has(p.donorId)) p.lifetimeCents = life.get(p.donorId);
-  if (!count) return { line: `Nobody is ${P.word} right now. ${P.definition}` };
+  if (!count) return { line: `Nobody is ${P.word} right now. ${P.definition}${asked}` };
   const shown = people.slice(0, SHOWN).map(p => {
     const lifetime = `Lifetime ${usd(p.lifetimeCents)}`;
-    const amount = P.report ? `${usd(p.cents)} ${key === "lybunt" ? "last fiscal year" : "in the last year they gave"}` : (day(p.last) ? `last gift ${day(p.last)}` : "last gift not dated");
+    const amount = P.report ? `${usd(p.cents)} ${key === "lybunt" ? lastYear : "in the last year they gave"}` : (day(p.last) ? `last gift ${day(p.last)}` : "last gift not dated");
     return { donorId: p.donorId, name: p.name, amount, lifetime, reason: `${amount}; ${lifetime}` };
   });
   const are = count === 1 ? "person is" : "people are";
   // ATLAS-11 item 2: count, households and dollars, as Reports > LYBUNT says them.
   const hh = units != null ? `, in ${units.toLocaleString("en-US")} ${units === 1 ? "household" : "households"}` : "";
-  const gave = atStakeCents != null ? `. Together they gave ${usd(atStakeCents)} ${key === "lybunt" ? "last fiscal year" : "in the last year each of them gave"}` : "";
+  const gave = atStakeCents != null ? `. Together they gave ${usd(atStakeCents)} ${key === "lybunt" ? lastYear : "in the last year each of them gave"}` : "";
   return {
-    line: `${count.toLocaleString("en-US")} ${are} ${P.word}${hh}${gave}${P.report ? ". The same list as Reports > " + P.word : ""}. ${P.definition}`,
+    line: `${count.toLocaleString("en-US")} ${are} ${P.word}${hh}${gave}${P.report && !cal ? ". The same list as Reports > " + P.word : ""}. ${P.definition}${asked}`,
     answer: { type: "list", question: P.word, count, unit: "people", ids: people.map(p => p.donorId), reason: P.definition.replace(/^[^:]+:\s*/, "").replace(/\.$/, ""),
-      more: Math.max(0, count - shown.length), people: shown, countSentence: `${count.toLocaleString("en-US")} ${count === 1 ? "person matches" : "people match"}.`, population: key,
+      more: Math.max(0, count - shown.length), people: shown, countSentence: `${count.toLocaleString("en-US")} ${count === 1 ? "person matches" : "people match"}.`, population: key, ...(cal ? { yearMode: "calendar" } : {}),
       ...(units != null ? { households: units } : {}), ...(atStakeCents != null ? { totalCents: atStakeCents } : {}) },
   };
 }

@@ -166,10 +166,12 @@ function followUpLine(mode, prior) {
 // ── 4. WHAT HOME ALREADY SHOWS ─────────────────────────────────────────────
 const GOAL_RE = /\b(?:how much|what(?:'s| is)?)\b.*\b(?:left|to go|remaining|still need|short|away)\b.*\bgoal\b|\bgoal\b.*\b(?:left|to go|remaining)\b|\bhow (?:close|far) (?:are we|is it) (?:to|from) (?:the |our )?(?:annual )?goal\b/i;
 const STOPPED_RE = /\b(?:who|which (?:donors?|people))\b.*\b(?:stopped|cancel(?:l?ed)?|failed|quit|lapsed on)\b.*\b(?:monthly|recurring|sustain\w*|card)\b|\b(?:stopped|failed) (?:monthly|recurring) (?:gifts?|donors?|cards?)\b/i;
+// ATLAS-12 item 5: "which monthly donors stopped giving", "stopped monthly", "monthly givers who quit".
+const STOPPED_RE2 = /\b(?:monthly|recurring|sustain\w*) (?:donors?|givers?|gifts?|giving|supporters?)\b.*\b(?:stopped|cancel\w*|failed|quit|lapsed|dropped off|went quiet)\b|\bstopped (?:giving )?monthly\b|\b(?:stopped|quit|cancel\w*) (?:their |the )?(?:monthly|recurring)\b/i;
 function homeAsked(text) {
   const t = String(text || "");
-  if (STOPPED_RE.test(t)) return "stopped_monthly";
-  if (GOAL_RE.test(t)) return "goal_left";
+  if (STOPPED_RE.test(t) || STOPPED_RE2.test(t)) return "stopped_monthly";
+  if (require("./goalAsk").goalAsked(t) || (GOAL_RE.test(t) && /\b(?:the|our|annual) goal\b/i.test(t))) return "goal_left";   // ATLAS-12 item 3: a goal she names is campaignAsk's
   return null;
 }
 const dayWords = d => require("./grounded").dayWords(String(d || "").slice(0, 10));
@@ -178,23 +180,25 @@ async function homeAnswer(which, get, tz = null) {
   if (which === "goal_left") {
     const r = await get("/home/annual-goal");
     const g = r.status < 300 && r.body ? r.body.goal : null;
-    // ATLAS-10 item 7 (W-1125-Atlas-T8): one goal running is Home's goal bar; several, and she named none, asks which.
     const running = (r.body && r.body.running) || [];
+    // ATLAS-12 item 3 (Jarvis: "Home shows $136,500 of $180,000 with $43,500 left in one line"): the goal Home's bar
+    // shows is the goal she means, answered from that card (goalCard), its pace and days left with it.
+    if (g) {
+      const GQ = require("./goalAsk");
+      const c = GQ.cardLine(g.label, g);
+      const others = running.filter(x => !g.source || !g.source.params || x.id !== g.source.params.campaign).filter(x => x.name !== g.label);
+      const also = others.length ? ` ${others.length === 1 ? "One other goal is" : `${others.length} other goals are`} running too; ask about one by name.` : "";
+      return { line: `${c.line} The same line as Home's goal bar.${also}`, link: { tab: "fundraising" },
+        answer: others.length ? { type: "choices", topic: "campaign", options: others.slice(0, 4).map(x => ({ label: x.name, ask: `How is ${x.name} doing?` })) } : c.answer };
+    }
+    // No goal bar on Home: one running goal is that one, by the same card; several ask which, one button each.
+    if (running.length === 1) return null;   // campaignAsk answers it by name (the caller asks it)
     if (running.length > 1) {
       const each = running.map(x => `${x.name} (${usd(Math.max(0, x.goalCents - x.raisedCents))} left of ${usd(x.goalCents)})`);
-      return { line: `${running.length} goals are running: ${each.join("; ")}. Which one did you mean?${g ? ` Home's goal bar is ${g.label}.` : ""}`, link: { tab: "fundraising" } };
+      return { line: `Home has no annual goal set, and ${running.length} goals are running: ${each.join("; ")}. Which one did you mean?`, link: { tab: "fundraising" },
+        answer: { type: "choices", topic: "campaign", options: running.slice(0, 6).map(x => ({ label: x.name, ask: `How is ${x.name} doing?` })) } };
     }
-    if (!g && running.length === 1) {
-      const x = running[0], left = Math.max(0, x.goalCents - x.raisedCents);
-      return { line: `${usd(left)} is left to reach ${x.name}: ${usd(x.raisedCents)} raised of the ${usd(x.goalCents)} goal.`, link: { tab: "fundraising" } };
-    }
-    if (!g) return { line: "There's no annual goal set, so there's nothing left to count. Set one in Fundraising and Home will show it." };
-    const target = (g.also || []).find(a => a.key === "goal");
-    const raised = Math.round((Number(g.value) || 0) * 100), goal = Math.round((Number(target && target.value) || 0) * 100);
-    const left = Math.max(0, goal - raised);
-    const line = left > 0 ? `${usd(left)} is left to reach ${g.label}: ${usd(raised)} raised of the ${usd(goal)} goal.` : `${g.label} is met: ${usd(raised)} raised of the ${usd(goal)} goal.`;
-    return { line: `${line} Left: the goal less what has been raised toward it, as Home's goal bar counts it.`, link: { tab: "fundraising" },
-      answer: { type: "figure", parts: [{ label: "Raised", cents: raised, source: g.source || null }, { label: "The goal", cents: goal, source: (target && target.source) || null }, { label: "Left", cents: left }] } };
+    return { line: "There's no annual goal set, so there's nothing left to count. Set one in Fundraising and Home will show it." };
   }
   if (which === "stopped_monthly") {
     const r = await get("/recurring/exceptions");

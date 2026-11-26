@@ -26,8 +26,16 @@ const W = require("../../shared/populationWords.js");
 // The words each population is asked by. Every key must be a registry id.
 const CUES = {
   lybunt: [/\blybunts?\b/, /\b(?:gave|given|giving|donated) (?:last (?:fiscal )?year|in (?:the )?last fiscal year) (?:but|and) (?:not|nothing|didn't give|did not give|haven't given|have not given|hasn't given|has not given)(?: (?:yet|anything|given|give))* (?:this|so far this) (?:fiscal )?year\b/,
-    /\blast year but (?:not|nothing)(?: yet)? this year\b/, /\blast year but unfortunately not this year\b/],
-  sybunt: [/\bsybunts?\b/, /\bsome year but (?:unfortunately )?not this year\b/, /\b(?:gave|given|donated) (?:in )?(?:some|a|an earlier|a previous|a past) (?:fiscal )?year (?:but|and) not this (?:fiscal )?year\b/],
+    /\blast year but (?:not|nothing)(?: yet)? this year\b/, /\blast year but unfortunately not this year\b/,
+    // ATLAS-12 item 1 (Jarvis, 26 Nov: "LYBUNT 251 calendar vs 309 in Reports"): every way of saying it reads the one list.
+    /\b(?:gave|given|donated|giving) (?:in )?last (?:calendar |fiscal )?year\b.*?\b(?:not|nothing|haven't|hasn't|didn't|did not|have not|has not)\b.*?\bthis (?:calendar |fiscal )?year\b/,
+    /\b(?:haven't|hasn't|have not|has not|didn't|did not) (?:given|give|donated) (?:anything |again )?since last (?:calendar |fiscal )?year\b/,
+    /\blast (?:calendar |fiscal )?year's (?:donors|givers|supporters)\b.*?\b(?:not|haven't|hasn't|didn't)\b.*?\bthis (?:calendar |fiscal )?year\b/],
+  sybunt: [/\bsybunts?\b/, /\bsome year but (?:unfortunately )?not this year\b/, /\b(?:gave|given|donated) (?:in )?(?:some|a|an earlier|a previous|a past) (?:fiscal )?year (?:but|and) not this (?:fiscal )?year\b/,
+    /\b(?:gave|given|donated) (?:before|previously|in the past|ever|in (?:some|a|an|any) (?:earlier |previous |past |prior |other )?(?:calendar |fiscal )?years?|in (?:earlier|previous|past|prior|other) (?:calendar |fiscal )?years)\b.*?\b(?:not|nothing|haven't|hasn't|didn't|did not|have not|has not)\b.*?\bthis (?:calendar |fiscal )?year\b/,
+    /\b(?:past|former|previous|earlier|old) (?:donors|givers|supporters)\b.*?\b(?:not|haven't|hasn't|didn't)\b.*?\bthis (?:calendar |fiscal )?year\b/],
+  // ATLAS-12 item 1: "monthly donors" is the registry's Monthly givers, the same people every screen counts.
+  monthly_givers: [/\bmonthly (?:donors?|givers?|supporters?)\b/, /\bsustainers?\b/, /\b(?:give|gives|giving) (?:to us )?monthly\b/],
   lapsing: [/\blapsing\b/, /\b(?:about|going|likely|starting) to lapse\b/, /\bat risk of lapsing\b/],
   lapsed: [/\blapsed\b/, /\blapses?\b/, /\b(?:stopped|quit|ceased|stopped) (?:giving|donating)\b/, /\bno longer (?:give|giving|gives|donate|donating|donates)\b/,
     /\b(?:not|haven't|have not|hasn't|has not) (?:given|donated) in (?:a year|12 months|twelve months|over a year|more than a year)\b/, /\bfallen off\b|\bdropped off\b|\bfell off\b/],
@@ -43,7 +51,9 @@ const ASKABLE = { lapsed: "lapsed_askable", lybunt: "lybunt_askable", lapsing: "
 for (const [k, v] of Object.entries(ASKABLE)) if (!W.isPopulationId(v)) throw new Error(`populationAsk: ${k} -> ${v} is not a registry population`);
 
 // A fiscal year said beside "lapsed" is what makes it ambiguous with LYBUNT.
-const FISCAL = /\b(?:this|last|so far this) (?:fiscal )?year\b|\b(?:this|last) fy\b|\bfiscal year\b|\bsince last year\b/;
+const FISCAL = /\b(?:this|last|so far this) (?:fiscal |calendar )?year\b|\b(?:this|last) fy\b|\bfiscal year\b|\bcalendar year\b|\bsince last year\b/;
+// ATLAS-12 item 1: a list counted in fiscal years is counted in calendar years only when she says "calendar".
+const CALENDAR = /\bcalendar\b/;
 // A call question: who to call, reach, win back.
 const CALL = /\b(?:call|calls|calling|ring|phone|reach out to|reach|contact|win back|winback|bring back|get back|re-?engage|re-?activate)\b/;
 const WIN_BACK = /\b(?:win back|winback|bring back|get back|re-?engage|re-?activate)\b/;
@@ -52,7 +62,7 @@ const FILL = new Set(("how many who whos which what whats is are was were be bee
   "people person persons donors donor givers giver supporters supporter members folks contacts ones those these them they us any " +
   "currently now today right there got show me list count number total totals in so far yet still already tell about see find get let know " +
   "please would like to can could us a an count gone become became considered counted as some just exactly here " +
-  "anyone anybody somebody someone").split(/\s+/));
+  "anyone anybody somebody someone calendar").split(/\s+/));
 // ATLAS-11 item 2 (Jarvis: "cannot give LYBUNT dollars"): the money words of a count question. A
 // population answer always says its dollars, so "LYBUNT dollars" and "how much did they give" are it too.
 const MONEY_FILL = new Set(("and how much many did do does they them their give gave given giving dollars dollar money worth value " +
@@ -91,7 +101,7 @@ function readPopulation(text) {
   let ambiguous = false;
   if (ids.length === 1 && ids[0] === "lapsed" && fiscal) { ids = ["lapsed", "lybunt"]; ambiguous = true; }
   if (call) ids = ids.map(id => ASKABLE[id] || id);
-  return { ids, call, ambiguous };
+  return { ids, call, ambiguous, ...(CALENDAR.test(t) ? { calendar: true } : {}) };
 }
 
 module.exports = { readPopulation, norm, CUES, ASKABLE };

@@ -38,6 +38,9 @@ const SHAPES = [
   /^how much (?:have we|has|did we|did) (?:raised?|brought in|bring in) (?:for|in|toward|towards|on|to) (?:the |our )?(.+)$/,
   /^how much (?:has|did|is in) (?:the |our )?(.+?)(?: (?:raise|raised|bring in|brought in|got|have|hold|holding))?$/,
   /^(?:the |our )?(.+?)(?:'s)? (?:progress|status|total|totals|numbers|raised so far)$/,
+  // ATLAS-12 item 3: what is left on a goal she names, and its pace.
+  /^how much (?:is |'s )?(?:still )?(?:left|to go|remaining) (?:on|for|in|to reach|toward|towards) (?:the |our )?(.+?)(?:'s)?(?: goal)?$/,
+  /^(?:are|is) we (?:on|ahead of|behind) (?:pace|track|schedule) (?:for|with|on|to (?:reach|hit|make)) (?:the |our )?(.+?)(?:'s)?(?: goal)?$/,
 ];
 
 function norm(s) {
@@ -151,14 +154,14 @@ async function run(st, { query, orgId, get }) {
   }
   if (st.choose) {
     return { line: `Did you mean ${join(st.choose.map(c => c.name))}?`,
-      answer: { type: "choices", options: st.choose.map(c => ({ label: c.name, ask: `How is ${c.name} doing?` })) } };
+      answer: { type: "choices", topic: "campaign", options: st.choose.map(c => ({ label: c.name, ask: `How is ${c.name} doing?` })) } };
   }
   if (st.of === "fund") {
     const r = await get("/finance/funds-detail");
     const f = r.status < 300 && r.body && (r.body.funds || []).find(x => x.id === st.id);
     if (!f) return { line: `I couldn't read ${st.name}'s card just now. Finance > Funds has it.` };
     return { line: `${f.name} has received ${dollars(f.received.cents)} in ${f.received.count.toLocaleString("en-US")} ${f.received.count === 1 ? "gift" : "gifts"} this fiscal year, and its balance is ${dollars(f.balanceCents)}. ${f.sentence} Received: ${String(r.body.definitions && r.body.definitions.received || "").trim()}`.trim(),
-      answer: { type: "figure", parts: [{ label: "Received this fiscal year", cents: f.received.cents }, { label: "Balance", cents: f.balanceCents }] } };
+      answer: { type: "figure", topic: "campaign", parts: [{ label: "Received this fiscal year", cents: f.received.cents }, { label: "Balance", cents: f.balanceCents }] } };
   }
   // A campaign: Home's own card when it has a goal, the same portfolio /home/annual-goal reads.
   const N = require("../../numbers");
@@ -166,14 +169,11 @@ async function run(st, { query, orgId, get }) {
   const g = ((portfolio && portfolio.goals) || []).find(x => x.id === st.id);
   if (g && N.screens.goalCard) {
     const card = await N.screens.goalCard(orgId, g);
-    const raised = Math.round(Number(card.value) * 100) || 0;
-    const goalP = (card.also || []).find(a => a.key === "goal"), pctP = (card.also || []).find(a => a.key === "percent");
-    const goal = Math.round(Number(goalP && goalP.value) * 100) || 0;
-    const pct = pctP && pctP.value != null ? `${pctP.value}%` : null;
-    const when = card.lifecycle === "upcoming" ? "It hasn't started yet." : card.endsWords === "Ended" ? "It has ended." : card.endsWords ? `${card.endsWords}.` : "It has no end date, so there's no pace.";
-    const pace = card.paceSentence ? ` ${card.paceLabel ? card.paceLabel + ": " : ""}${card.paceSentence}.` : "";
-    return { line: `${g.name} has raised ${dollars(raised)} of its ${dollars(goal)} goal${pct ? ` (${pct})` : ""}.${pace} ${when} The same figures as Home and Fundraising.`.replace(/\.\./g, "."),
-      answer: { type: "figure", parts: [{ label: "Raised", cents: raised }, { label: "Goal", cents: goal }], sources: { raised: card.source, goal: goalP && goalP.source } },
+    // ATLAS-12 item 3: the one line Home's goal card makes (goalAsk.cardLine): raised of the goal, what is left, pace, days.
+    const c = require("./goalAsk").cardLine(g.name, card);
+    const goalP = (card.also || []).find(a => a.key === "goal");
+    return { line: `${c.line} The same figures as Home and Fundraising.`,
+      answer: { type: "figure", topic: "campaign", campaignId: st.id, parts: [{ label: "Raised", cents: c.raised }, { label: "Goal", cents: c.goal }, { label: "Left", cents: c.left }], sources: { raised: card.source, goal: goalP && goalP.source } },
       link: { tab: "fundraising" } };
   }
   // A campaign or appeal with no goal: what it has raised (the goal-raised source, which opens its gifts).
@@ -181,7 +181,7 @@ async function run(st, { query, orgId, get }) {
   const cents = f && f.value != null ? Math.round(Number(f.value) * 100) : null;
   return { line: cents == null ? `I couldn't read ${st.name}'s figures just now. Fundraising has it.`
     : `${st.name} has raised ${dollars(cents)}. It has no goal set, so there's no percent or pace to give.`,
-    ...(cents == null ? {} : { answer: { type: "figure", parts: [{ label: "Raised", cents }], sources: { raised: { key: "goal-raised", params: { campaign: st.id } } } } }), link: { tab: "fundraising" } };
+    ...(cents == null ? {} : { answer: { type: "figure", topic: "campaign", campaignId: st.id, parts: [{ label: "Raised", cents }], sources: { raised: { key: "goal-raised", params: { campaign: st.id } } } } }), link: { tab: "fundraising" } };
 }
 
 module.exports = { read, run, readCampaignAsk, matchNamed, nameScore, closest, norm };

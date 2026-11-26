@@ -135,8 +135,8 @@ const runq = async (sql, params) => { const r = await qq(sql, params); return { 
   await P("pru2", "Prudence Galbraith", { email: `pru2-${run}@flows16.invalid` });
   for (const [a, d] of [[2000, "2025-12-05"], [885, "2025-12-19"], [3000, "2025-06-01"], [2355, "2026-03-10"]]) await gift(ids.pru2, a, d);
   const w = await api("POST", "/atlas", tok, { text: "How much did Prudence Galbraith give in December 2025?" });
-  const wq = ((w.body && w.body.request && w.body.request.questions) || []).find(x => /^Which Prudence Galbraith\?$/.test(x.sentence));
-  ok("§4 the ambiguous name asks \"Which Prudence Galbraith?\"", !!wq, w.body);
+  const wq = ((w.body && w.body.request && w.body.request.questions) || []).find(x => /^Two people match: Prudence Galbraith \(\$[\d,]+\) and Prudence Galbraith \(\$[\d,]+\)\. Which one\?$/.test(x.sentence));   // ATLAS-12 item 2
+  ok("§4 the ambiguous name asks \"Two people match: … Which one?\"", !!wq, w.body);
   if (wq) {
     const a = await api("POST", `/atlas/${w.body.request.id}/answer`, tok, { answers: { [wq.id]: ids.pru2 } });
     const s = JSON.stringify((a.body && a.body.request && a.body.request.lines) || []);

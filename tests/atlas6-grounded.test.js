@@ -39,6 +39,15 @@
 //       with the registry's sentence; a closed and reopened Atlas shows the prior turns, and Start
 //       over empties it; the AI-off refusal no longer repeats the header's line.
 //       Red on 87433bc (run against main: ATLAS-11 report).
+//   §9  ATLAS-12: five phrasings each of lapsed, LYBUNT and SYBUNT give Reports' (the registry's) count, with
+//       its sentence, and "calendar" reads Reports in calendar years; a surname matching two people asks
+//       "Two people match: A ($X) and B ($Y). Which one?" and sums only on Both; "how much is left", "how
+//       far are we from the goal" and "are we on pace" answer Home's goal line, and "and the <campaign>?"
+//       stays on campaigns; a call she reports is a proposed call (her words) and a follow-up on the day
+//       she named, nothing written before Save; "what's his favorite color" says Steward doesn't know it
+//       beside the half it can answer; stopped monthly lists Home's Drifting monthly givers and a
+//       canceled plan; a brief opens with plain sentences, says "No conversation logged yet.", and finds
+//       a name with a comma in it. Red on c2e96c9 (ATLAS-12 report).
 //
 // HOW IT GOES RED (planted, seen red before green, ATLAS-6 report):
 //   * remove the post-check (why.js accepts a sentence whatever its dates):
@@ -156,7 +165,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // ── §5 a compound can't-know question ───────────────────────────────────
   const c = await ask(tok, "What's Rosalind Kemp's favorite color, and how much will she give next year?");
   ok("§5 two plain answers: what isn't kept, and what is known instead of a forecast",
-    c.lines.length === 2 && c.lines[0] === "I don't have Rosalind Kemp's favorite color." && /^I can't predict next year's giving, but Rosalind /.test(c.lines[1] || ""), c.lines);
+    c.lines.length === 2 && c.lines[0] === "Steward doesn't know Rosalind Kemp's favorite color." && /^I can't predict next year's giving, but Rosalind /.test(c.lines[1] || ""), c.lines);
   ok("§5 the question is never echoed back", !c.lines.some(l => /how much will she give/i.test(l)), c.lines);
 
   // ── §6 ATLAS-8: no total without its rows; one population per word; a figure is its person's ──
@@ -364,6 +373,90 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const c3 = await ask10("How much has Wren Okafor given?");
   const fresh11 = (await api("GET", "/atlas/conversation", tok9)).body;
   ok("§8 Start over empties it, and the next ask starts a new one", Array.isArray(after11.requests) && after11.requests.length === 0 && (fresh11.requests || []).map(r => r.id).join() === c3.id, { after: after11.requests, fresh: (fresh11.requests || []).map(r => r.text) });
+
+  // ── §9 ATLAS-12: the same question gets the same number; a name that matches two asks; Home's goal; a call
+  //    note proposed, not refused; what Steward can't know, said; stopped monthly as Home sees it; a brief as a brief.
+  const said12 = r => (r.lines || []).map(l => l.line);
+  const regOf = async id => (id === "lybunt" || id === "sybunt") ? (await api("GET", `/reports/${id}`, tok9)).body.rows.length : REG.population(id).count({ query: DB.query, orgId: F9.ORG });
+  const FIVE = {
+    lapsed: ["How many lapsed donors do we have?", "Who has lapsed?", "How many donors stopped giving?", "Lapsed donor count", "Show me our lapsed donors"],
+    lybunt: ["How many LYBUNT donors do we have?", "How many people gave last year but not this year?", "How many donors haven't given since last year?",
+      "Last year's donors who haven't given yet this year", "What's our LYBUNT count?"],
+    sybunt: ["How many SYBUNT donors?", "How many donors gave in some year but not this year?", "How many donors gave before but not this year?",
+      "Past donors who haven't given this year", "SYBUNT count"],
+  };
+  const five12 = [];
+  for (const [id, texts] of Object.entries(FIVE)) {
+    const want = await regOf(id), name = W9.population(id).name, sentence = W9.population(id).sentence;
+    for (const t of texts) {
+      const l = ((await ask10(t)).lines || [])[0] || {};
+      const n = /^Nobody is /.test(l.line || "") ? 0 : Number((/^([\d,]+) (?:people are|person is) /.exec(l.line || "") || [])[1]?.replace(/,/g, ""));
+      if (n !== want || !(l.line || "").includes(name) || !(l.line || "").includes(sentence)) five12.push({ t, want, line: l.line });
+    }
+  }
+  ok("§9 five phrasings each of lapsed, LYBUNT and SYBUNT give Reports' number with its definition (Jarvis: \"lapsed 200 vs 343\")", !five12.length, five12);
+  const cal12 = ((await ask10("How many donors gave last calendar year but not this year?")).lines || [])[0] || {};
+  const calRep = (await api("GET", "/reports/lybunt?yearMode=calendar", tok9)).body;
+  ok("§9 \"calendar\" reads Reports > LYBUNT in calendar years, and says so", (cal12.line || "").startsWith(calRep.rows.length ? `${calRep.rows.length} ${calRep.rows.length === 1 ? "person is" : "people are"} LYBUNT` : "Nobody is LYBUNT") && /Counted in calendar years, as you asked/.test(cal12.line || ""), cal12.line);
+  // Item 2: two people named Lindqvist; a surname alone asks, with each lifetime; Both sums.
+  await q(`DELETE FROM gifts WHERE org_id = $1 AND donor_id LIKE 'd_atl12_%'`, [F9.ORG]);
+  await q(`DELETE FROM donors WHERE org_id = $1 AND id LIKE 'd_atl12_%'`, [F9.ORG]);
+  for (const [id, name, amt] of [["d_atl12_ada", "Ada Lindqvist", 150], ["d_atl12_gwen", "Gwen Lindqvist", 100]]) {
+    await q(`INSERT INTO donors (id, org_id, name, email, created_by, created_by_name) VALUES ($1, $2, $3, $4, 'system:test', 'atlas12 fixture')`, [id, F9.ORG, name, `${id}@atl12.test`]);
+    await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, type, created_by, created_by_name) VALUES ($1, $2, $3, $4, $5, 'one-time', 'system:test', 'atlas12 fixture')`, [`g_${id}`, F9.ORG, id, amt, F9.addDays(today, -20)]);
+  }
+  const lq = await ask10("How much did Lindqvist give?");
+  const q12 = (lq.questions || [])[0] || {};
+  ok("§9 \"How much did Lindqvist give?\" asks: \"Two people match: Ada Lindqvist ($150) and Gwen Lindqvist ($100). Which one?\", with Both (Jarvis: \"silently merges two Atkinsons\")",
+    q12.sentence === "Two people match: Ada Lindqvist ($150) and Gwen Lindqvist ($100). Which one?" && (q12.options || []).map(o => o.name).join("|") === "Ada Lindqvist|Gwen Lindqvist|Both" && !(lq.lines || []).length, { q: q12, lines: said12(lq) });
+  const one12 = (await api("POST", `/atlas/${lq.id}/answer`, tok9, { answers: { [q12.id]: "d_atl12_ada" } })).body?.request || {};
+  const lq2 = await ask10("How much did Lindqvist give?");
+  const both12 = (await api("POST", `/atlas/${lq2.id}/answer`, tok9, { answers: { [((lq2.questions || [])[0] || {}).id]: "__all" } })).body?.request || {};
+  ok("§9 one pressed is that one person; Both adds them together, each named", /^Ada Lindqvist has given \$150 /.test(said12(one12)[0] || "") && /^Ada Lindqvist and Gwen Lindqvist have given \$250 together/.test(said12(both12)[0] || ""), { one: said12(one12), both: said12(both12) });
+  // Item 3: Home's goal (the §8 Annual Fund is Home's goal bar).
+  const homeG = (await api("GET", "/home/annual-goal", tok9)).body.goal;
+  const goalBad = [];
+  for (const t of ["How much is left on the goal?", "How far are we from the goal?", "Are we on pace?"]) {
+    const l = ((await ask10(t)).lines || [])[0] || {};
+    if (cents(l.line) !== Math.round(Number(homeG.value) * 100) || !(l.line || "").includes(homeG.label) || !(l.line || "").includes(homeG.paceSentence) || !/ left\./.test(l.line || "")) goalBad.push({ t, line: l.line });
+  }
+  ok("§9 \"how much is left\", \"how far are we from the goal\", \"are we on pace\" answer Home's goal line: raised, goal, left, pace (Jarvis: \"cannot answer\")", !goalBad.length, goalBad);
+  const g12 = await ask10("How much is left on the goal?");
+  const fu12 = ((await ask10(`and the Annual Fund ${y11 - 1}?`, g12.id)).lines || [])[0] || {};
+  ok("§9 a follow-up naming a campaign (\"and the Annual Fund <last year>?\") stays on campaigns", (fu12.line || "").startsWith(`Annual Fund ${y11 - 1}`) && !/can't read that one/.test(fu12.line || ""), fu12.line);
+  // Item 4: the call note.
+  const cn12 = await ask10("I called Hugo Strand today. He said he will give $5,000 in January. Remind me Jan 5");
+  const items12 = (cn12.proposal && cn12.proposal.items) || [];
+  const jan5 = `${Number(today.slice(0, 4)) + (today.slice(5) > "01-05" ? 1 : 0)}-01-05`;
+  const [w12] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id = $1 AND donor_id = 'd_atl9_hugo' AND note LIKE '%will give $5,000%'`, [F9.ORG]);
+  ok("§9 \"I called Hugo… he said he will give $5,000 in January. Remind me Jan 5\" proposes a call with her words and a Jan 5 follow-up, writes nothing yet, never \"I can't predict\" (Jarvis)",
+    items12.some(i => i.kind === "call" && i.donorId === "d_atl9_hugo" && /will give \$5,000 in January/.test(i.note || "")) && items12.some(i => i.kind === "follow_up" && i.donorId === "d_atl9_hugo" && i.due === jan5)
+    && !items12.some(i => /gift|pledge/.test(i.kind)) && !said12(cn12).some(l => /can't predict/.test(l)) && w12.n === 0, { items: items12, lines: said12(cn12) });
+  ok("§9 a forecast she asks for is still refused as one", /^I can't predict next year's giving/.test(said12(await ask10("How much will Hugo Strand give next year?"))[0] || ""));
+  // Item 5: what Steward can't know, beside what it can.
+  const fc12 = said12(await ask10("How much will Hugo Strand give next year and what's his favorite color?"));
+  ok("§9 \"…and what's his favorite color?\" answers both halves: Steward doesn't know his favorite color", fc12.length === 2 && /^I can't predict next year's giving, but Hugo /.test(fc12[0]) && fc12[1] === "Steward doesn't know Hugo Strand's favorite color.", fc12);
+  // Stopped monthly: a monthly giver gone quiet (Home's Drifting) and a canceled plan.
+  await q(`DELETE FROM recurring_subscriptions WHERE org_id = $1 AND id LIKE 'rs_atl12_%'`, [F9.ORG]);
+  for (const [id, name] of [["d_atl12_mo", "Marguerite Fallowmere"], ["d_atl12_cx", "Ansel Brookhart"]])
+    await q(`INSERT INTO donors (id, org_id, name, email, created_by, created_by_name) VALUES ($1, $2, $3, $4, 'system:test', 'atlas12 fixture')`, [id, F9.ORG, name, `${id}@atl12.test`]);
+  // Through the gift route (recordGift and the after-change step), so Drift reads her as it would on Home.
+  for (let k = 3; k <= 12; k++) await api("POST", "/donors/d_atl12_mo/gifts", tok9, { amount: 40, date: F9.addDays(today, -30 * k), type: "one-time" });
+  await q(`INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, amount, interval, status, canceled_at) VALUES ('rs_atl12_cx', $1, 'd_atl12_cx', 'sub_atl12_cx', 25, 'month', 'canceled', NOW() - INTERVAL '20 days')`, [F9.ORG]);
+  const drift12 = ((await api("GET", "/drift?all=1&includeMedium=1", tok9)).body.list || []).map(r => r.donorId);
+  const sm12 = ((await ask10("Which monthly donors stopped giving?")).lines || [])[0] || {};
+  const smIds = ((sm12.answer && (sm12.answer.ids || (sm12.answer.people || []).map(p => p.donorId))) || []);
+  ok("§9 stopped monthly lists Home's Drifting monthly giver and the canceled plan, with the definition (Jarvis: \"found only 1 canceled gift\")",
+    drift12.includes("d_atl12_mo") && smIds.includes("d_atl12_mo") && smIds.includes("d_atl12_cx") && /Stopped monthly: /.test(sm12.line || ""), { drift: drift12, line: sm12.line, ids: smIds });
+  // Item 6: a brief reads as a brief.
+  await q(`INSERT INTO donors (id, org_id, name, email, kind, created_by, created_by_name) VALUES ('d_atl12_inc', $1, 'Larkspur Supply Co., Inc.', 'larkspur@atl12.test', 'organisation', 'system:test', 'atlas12 fixture')`, [F9.ORG]);
+  const b12 = ((await ask10("Brief me on Ada Lindqvist")).lines || [])[0] || {};
+  ok("§9 a brief opens with plain sentences (who, giving shape, last contact, next) and says \"No conversation logged yet.\"",
+    /^Ada Lindqvist is a donor since .+, and has given \$150 across 1 gift, most recently \$150 on .+\. No conversation logged yet\. (?:Next: |There is no next step planned for Ada\.)/.test(b12.line || "") && b12.answer && b12.answer.type === "person", b12.line);
+  const inc12 = ((await ask10("Brief me on Larkspur Supply Co., Inc.")).lines || [])[0] || {};
+  const prep12 = ((await ask10("Prep me for my call with Ada Lindqvist")).lines || [])[0] || {};
+  ok("§9 a brief never says it can't find someone on file: a comma in the name, \"Prep me for my call with …\"",
+    /^Larkspur Supply Co\., Inc\. is an organization on file/.test(inc12.line || "") && /^Ada Lindqvist is a donor/.test(prep12.line || ""), { inc: inc12.line, prep: prep12.line });
 
   await closeDb();
   summary();
