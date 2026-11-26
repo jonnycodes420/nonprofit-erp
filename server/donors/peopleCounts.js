@@ -25,7 +25,10 @@ const DS = require("../../donorStatus");
 const L = require("../../shared/numbers/lapse");
 const { NOT_CREDIT } = require("../../creditTypes");
 
-const SET = "donors.org_id = ? AND donors.deleted_at IS NULL AND donors.erased_at IS NULL";   // TRUTH-2: an erased person is in no count
+// POLISH-13 item 1 (W-1126-Donors-09): the people these counts are of are Everyone, by the one
+// rule (shared/numbers/everyone.js EVERYONE: not in the trash, not erased, not archived), so the
+// Directory's total, Home's and Re-engage's badge count the same people. TRUTH-2: never an erased one.
+const SET = `donors.org_id = ? AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`;
 
 function countsSql(orgId, today, visible) {
   const v = visible && visible.sql ? visible : { sql: "", args: [] };   // ACCESS-2: a portfolio's people

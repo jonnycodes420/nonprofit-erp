@@ -104,6 +104,12 @@ const timeline = async donor => (await one(`SELECT COUNT(*)::int AS n FROM inter
   const tot1 = await one(`SELECT total_giving::float AS t, gift_count AS n FROM donors WHERE id=$1`, [SOL]);
   ok("§3 the delete adds nothing to the timeline", del.status === 200 && tl1 <= tl0
     && !(await one(`SELECT 1 AS x FROM interactions WHERE org_id=$1 AND donor_id=$2 AND note LIKE 'Gift removed%'`, [ORG, SOL])).x, { del: del.body, tl0, tl1 });
+  // POLISH-13 item 2 (W-1126-Finance-03): what the gift MADE goes with it: its own timeline line, its
+  // thank-you task and the next step it opened (main: the gift's timeline line stayed, pointing at nothing).
+  const made = await one(`SELECT (SELECT COUNT(*)::int FROM interactions WHERE org_id=$1 AND gift_id=$2) AS line,
+      (SELECT COUNT(*)::int FROM threads WHERE org_id=$1 AND opening_gift_id=$2 AND closed_at IS NULL) AS step,
+      (SELECT COUNT(*)::int FROM tasks WHERE org_id=$1 AND source_gift_id=$2 AND voided_at IS NULL) AS task`, [ORG, g3]);
+  ok("§3b the delete takes the gift's timeline line, its thank-you task and its next step", made.line === 0 && made.step === 0 && made.task === 0, made);
   const lines = (await recent(tok)).filter(r => r.kind === "effect_gift_delete");
   ok("§3 one Recent changes line, with Undo", lines.length === 1 && /^Removed Soledad Arkwright's \$25 gift of [A-Z][a-z]{2} \d{1,2}, \d{4}\./.test(lines[0].sentence)
     && lines[0].undo && lines[0].undo.path === `/gifts/${g3}/restore`, lines);
@@ -117,6 +123,7 @@ const timeline = async donor => (await one(`SELECT COUNT(*)::int AS n FROM inter
   const s1 = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "after Undo" });
   ok("§3 Undo puts the gift back: totals, its thank-you task, and every surface as before", un.status === 200 && tot2.t === tot0.t && tot2.n === tot0.n
     && !t3b.voided_at && s0.ok && s1.ok && (await timeline(SOL)) <= tl0, { un: un.body, tot2, t3b, ledger, d0: s0.diffs, d1: s1.diffs });
+  ok("§3b Undo puts the gift's timeline line back", Number((await one(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND gift_id=$2`, [ORG, g3])).n) >= 1);
   const again = await api("POST", `/gifts/${g3}/restore`, tok, {});
   ok("§3 the line leaves Recent changes and a second Undo is refused", again.status === 409
     && !(await recent(tok)).some(r => r.kind === "effect_gift_delete"), { again: again.status });

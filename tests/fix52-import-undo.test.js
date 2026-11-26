@@ -204,6 +204,21 @@ async function main() {
   // POLISH-11 item 5 (W-1119-Atlas-13): each row carries what Undo can still do, the receipt's own window.
   const row5 = list.find(x => x.id === RUN) || {};
   ok("§3 …and its row says until when Undo is open, the same date as the receipt", row5.canUndo === true && row5.undoUntil === rc.undoUntil, JSON.stringify([row5.canUndo, row5.undoUntil, rc.undoUntil]));
+  // POLISH-13 item 5 (W-1119-Atlas-13): the receipt and the row say the date in words, from the one
+  // setting (shared/importUndo.js), and past its window an import says so (main: no sentence at all).
+  const IU = await import("../shared/importUndo.js");
+  const wantOpen = IU.undoWords(IU.undoUntil("sheet", rc.committedAt || rc.committed_at || testNow()), { now: testNow() });
+  ok("§3b the receipt and its row say \"You can undo this import until <date>.\"",
+    /^You can undo this import until [A-Z][a-z]{2} \d{1,2}, \d{4}\.$/.test(rc.undoSentence || "") && row5.undoSentence === rc.undoSentence
+      && rc.undoSentence === IU.undoWords(rc.undoUntil, { now: testNow() }), JSON.stringify([rc.undoSentence, row5.undoSentence, wantOpen]));
+  const [{ c: was }] = await q(`SELECT committed_at AS c FROM imports WHERE id=$1`, [RUN]);
+  await q(`UPDATE imports SET committed_at = committed_at - INTERVAL '31 days' WHERE id=$1`, [RUN]);
+  const old5 = (await api("GET", `/imports/${RUN}`, tok)).body.import || {};
+  const oldRow = ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === RUN) || {};
+  await q(`UPDATE imports SET committed_at = $2 WHERE id=$1`, [RUN, was]);
+  ok("§3b past its window the receipt and the row say the window closed, and offer no Undo",
+    old5.canUndo === false && /^The window to undo this import closed on [A-Z][a-z]{2} \d{1,2}, \d{4}\.$/.test(old5.undoSentence || "") && oldRow.undoSentence === old5.undoSentence,
+    JSON.stringify([old5.canUndo, old5.undoSentence, oldRow.undoSentence]));
 
   // §4 stage follows role
   const st = await q(`SELECT external_donor_id AS x, stage FROM donors WHERE org_id=$1 AND created_import_id=$2`, [ORG, RUN]);

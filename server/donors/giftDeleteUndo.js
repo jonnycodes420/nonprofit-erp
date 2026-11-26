@@ -78,6 +78,10 @@ async function snapshot(db, orgId, giftId) {
     }
   }
   snap.tasks = [...new Set(snap.tasks)]; snap.threads = [...new Set(snap.threads)];
+  // POLISH-13 item 2 (W-1126-Finance-03): the gift's own timeline line (interactions.type 'gift', its
+  // gift_id this gift) is what the gift write MADE (UNDO-1's effects rule), so the delete takes it
+  // (TIMELINE_SQL below) and the Undo puts it back as it was.
+  snap.timeline = (await db.query(`SELECT to_jsonb(i) AS row FROM interactions i WHERE i.org_id = ? AND i.gift_id = ? AND i.type = 'gift'`, [orgId, giftId])).map(r => r.row);
   return snap;
 }
 
@@ -153,6 +157,7 @@ function mount(app, ctx) {
         if (!IDENT.test(r.table) || !IDENT.test(r.col)) continue;
         await db.run(`UPDATE ${r.table} SET ${r.col} = ? WHERE org_id = ? AND id = ANY(?::text[]) AND ${r.col} IS NULL`, [giftId, orgId, r.ids]);
       }
+      for (const row of s.timeline || []) await db.run("INSERT INTO interactions SELECT * FROM jsonb_populate_record(NULL::interactions, ?::jsonb) ON CONFLICT DO NOTHING", [JSON.stringify(row)]);
       const keptThreads = await reopenWhatItStopped(db, orgId, s);
       await WE.finish(db, orgId, KIND, giftId, who, "Undo");
       const kept = [keptThreads ? "A newer next step is open, so the one this gift started stays closed." : "",
@@ -172,4 +177,7 @@ function mount(app, ctx) {
   }));
 }
 
-module.exports = { snapshot, recordDelete, mount, sentence, KIND };
+// The delete's own statement for the timeline line (args: org, gift), inside its transaction.
+const TIMELINE_SQL = "DELETE FROM interactions WHERE org_id = ? AND gift_id = ? AND type = 'gift'";
+
+module.exports = { snapshot, recordDelete, mount, sentence, KIND, TIMELINE_SQL };

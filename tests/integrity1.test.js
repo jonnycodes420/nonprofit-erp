@@ -203,6 +203,41 @@ const ODESSA_ROW = ["Odessa Marchbanks", "odessa.marchbanks@example.test", "2025
     ok("§2 Everyone = 4 on the Directory tabs, its list, and the people total of /donors/summaries; Donors + Contacts = Everyone (main: the summaries total counts the archived and the erased, 6)",
       rc.everyone === key && rc.donors + rc.contacts === key && rc.contacts === 1 && Number(dir.total) === key && summaries === key,
       { rc, total: dir.total, summaries });
+    // POLISH-13 item 1 (W-1126-Donors-09): every surface that says Everyone counts the same people
+    // (Home's /donors/counts, Re-engage's rows and the summaries rows too; main: /donors/counts and the
+    // summaries rows counted the archived person, 5), and a grant's delete takes the funder it made.
+    const census = async () => {
+      const d = (await api("GET", "/donors?roleCounts=1&role=&limit=1", tok)).body || {};
+      const c = (await api("GET", "/donors/counts", tok)).body || {};
+      const sr = await fetch(`${BASE}/donors/summaries?limit=500`, { headers: { Authorization: "Bearer " + tok } });
+      const rows = await sr.json();
+      return { tabs: (d.roleCounts || {}).everyone, counts: c.total, sumTotal: Number(sr.headers.get("x-total-count")), sumRows: rows.length,
+        archivedListed: rows.some(r => r.id === "d_i1e_archived"), erasedListed: rows.some(r => r.id === "d_i1e_erased") };
+    };
+    const c0 = await census();
+    ok("§2b Home's people count, the Directory's tabs and the summaries rows all say 4; no archived or erased row is listed (main: /donors/counts 5, 5 rows)",
+      c0.tabs === key && c0.counts === key && c0.sumTotal === key && c0.sumRows === key && !c0.archivedListed && !c0.erasedListed, c0);
+    const gr = await api("POST", "/grants", tok, { funder: "Larkspur Fixture Trust", program: "Reading", amount: 5000, status: "prospecting" });
+    const c1 = await census();
+    // the walk's own steps (staging, 25 Nov): a stage change writes a line on the funder, then the delete
+    const mv = await api("PATCH", `/grants/${gr.body && gr.body.id}/stage`, tok, { stage: "loi", status: "loi" });
+    const del = await api("DELETE", `/grants/${gr.body && gr.body.id}`, tok);
+    const c2 = await census();
+    const funder = gr.body && gr.body.funder_donor_id;
+    const und = await api("POST", "/removals/undo", tok, { undoIds: (del.body && del.body.undoIds) || [] });
+    const c3 = await census();
+    const back = funder ? await one(`SELECT deleted_at FROM donors WHERE id=$1`, [funder]) : null;
+    ok("§2c a new grant's new funder is one more (5); deleting the grant takes the funder it made (4 everywhere); Undo brings both back (5) (main: 5 after the delete)",
+      gr.status === 201 && !!funder && c1.tabs === key + 1 && del.status === 200 && c2.tabs === key && c2.counts === key && c2.sumTotal === key
+        && und.status === 200 && c3.tabs === key + 1 && back && back.deleted_at === null,
+      { gr: gr.status, mv: mv.status, del: del.status, und: und.status, c1, c2, c3 });
+    // A funder somebody used (a note on it) is theirs: the next grant's delete leaves it.
+    const gr2 = await api("POST", "/grants", tok, { funder: "Larkspur Fixture Trust", program: "Second", amount: 100, status: "prospecting" });
+    await api("DELETE", `/grants/${gr.body.id}`, tok);
+    const c4 = await census();
+    ok("§2d a funder another grant still names stays when one grant goes", gr2.status === 201 && c4.tabs === key + 1, c4);
+    await require("./lib/surfacesAgree").assertSurfacesAgree(ORG, { token: tok, label: "POLISH-13 Everyone census", only: ["people"] });
+    ok("§2e the truth check's people census agrees (Directory tabs, Home, Re-engage)", true);
   }
 
   // ── §3 W-1107-Donors-11: one owner field

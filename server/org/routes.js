@@ -408,7 +408,8 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
 
   const [donorRow, giftRow, pageRow, threadRow, userRow, inviteRow] = await Promise.all([
     // NUMBERS-4: people, counted once (shared/numbers/households.js).
-    NUMBERS.households.counts(query, orgId).then(c => [{ n: c.people }]),
+    // POLISH-13 item 1: and Everyone's rule (everyone.js): an archived person is not one of the people here.
+    NUMBERS.households.counts(query, orgId, { where: NUMBERS.everyone.EVERYONE("d") }).then(c => [{ n: c.people }]),
     // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [orgId]),

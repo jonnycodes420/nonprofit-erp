@@ -252,6 +252,12 @@ async function freshOrg(id, name) {
   const off = await api("GET", "/org/menu", tok);
   ok("§6 Top 100 off by default: no Top 100 tab, and Major Gifts opens on Pipeline",
     off.status === 200 && off.body.top100 === false && !off.body.mgViews.includes("top100") && opens(off.body.mgViews) === "pipeline", off.body);
+  // POLISH-13 item 6: a direct load renders before the org's list arrives (all four shown, Top 100 on
+  // screen); when the list lands without Top 100, the page moves to Pipeline (main: Portfolios, the first tab).
+  const firstPaint = MG.mgViewIn(MG.mgView(undefined), MG.mgShownViews(undefined));
+  ok("§6b a direct load with Top 100 off lands on Pipeline once the org's tabs arrive",
+    firstPaint === "top100" && MG.mgViewIn(firstPaint, MG.mgShownViews(off.body.mgViews)) === "pipeline"
+      && /setViewRaw\(mgViewIn\(view, shown\)\)/.test(require("fs").readFileSync(require("path").join(__dirname, "../client/src/components/MajorGiftsPage.jsx"), "utf8")));
   const on = await api("PUT", "/org/menu", tok, { top100: true });
   ok("§6 turned on: the Top 100 tab is back, first", on.status === 200 && on.body.top100 === true && on.body.mgViews[0] === "top100" && opens(on.body.mgViews) === "top100", on.body);
   const [orow] = await q(`SELECT top100_enabled FROM orgs WHERE id=$1`, [ORG]);

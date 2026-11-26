@@ -101,16 +101,23 @@ const WITH = {
   // TRASH-1: a grant's deadlines, documents, notes, reports, spending and
   // program links (ON DELETE CASCADE) go into its trash row and come back with it.
   grants: {
-    take: async (tx, ctx, row, orgId) => {
+    take: async (tx, ctx, row, orgId, who) => {
       const out = {};
       for (const t of GRANT_CHILDREN) out[t] = await ctx.queryTx(tx, `SELECT * FROM ${t} WHERE grant_id=? AND org_id=?`, [row.id, orgId]);
+      // POLISH-13 item 1: the funder organization this grant made, nobody's since, goes with it.
+      const made = await require("../server/grants/funderMade").funderMadeBy((s, a) => ctx.queryTx(tx, s, a), orgId, row);
+      if (made) {
+        await require("../personTrash").trashPeople(orgId, [made.id], who, { client: tx, why: { kind: "grant_delete", grantId: row.id } });
+        out.__funderMade = made.id;
+      }
       return out;
     },
-    give: async (tx, ctx, w) => {
+    give: async (tx, ctx, w, row, orgId) => {
       for (const t of GRANT_CHILDREN) {
         if (w && Array.isArray(w[t]) && w[t].length)
           await ctx.runTx(tx, `INSERT INTO ${t} SELECT * FROM jsonb_populate_recordset(NULL::${t}, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w[t])]);
       }
+      if (w && w.__funderMade) await require("../personTrash").bringPeopleBack(orgId, [w.__funderMade], { client: tx });
     },
   },
   programs: {
@@ -212,7 +219,7 @@ function mount(ctx) {
     const [row] = await queryTx(tx, `SELECT * FROM ${K.table} WHERE id=? AND org_id=? FOR UPDATE`, [p.id, orgId]);
     if (!row) return null;
     if (p.mode === "delete") {
-      const w = WITH[K.table] ? await WITH[K.table].take(tx, ctx, row, orgId) : null;
+      const w = WITH[K.table] ? await WITH[K.table].take(tx, ctx, row, orgId, who) : null;
       await runTx(tx, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
                        SELECT ?, ?, ?, ?, to_jsonb(t) || ?::jsonb, ?, ? FROM ${K.table} t WHERE t.id=? AND t.org_id=?`,
         [trashId, orgId, K.table, p.id, JSON.stringify({ __with: w, __removal: p.kind }), who.id, who.name, p.id, orgId]);
