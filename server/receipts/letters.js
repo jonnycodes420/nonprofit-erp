@@ -135,11 +135,23 @@ function mount(ctx) {
   // The gifts behind one choice: { eventId | campaignId, from, to }.
   async function givingGifts(orgId, b) {
     const eventId = b?.eventId ? String(b.eventId) : null, campaignId = b?.campaignId ? String(b.campaignId) : null;
-    if (!!eventId === !!campaignId) return { error: "Choose one event or one campaign." };
+    // COMMS-3: Audience's "Send them a printed letter" chooses the mail-only donors (shared/numbers/reach.js).
+    const group = b?.group === "mail_only" ? "mail_only" : null;
+    if ([eventId, campaignId, group].filter(Boolean).length !== 1) return { error: "Choose one event or one campaign." };
     const today = await todayOf(orgId);
     const from = DAY.test(b?.from || "") ? b.from : "0001-01-01";
     const to = DAY.test(b?.to || "") ? b.to : today;
     if (from > to) return { error: "The range starts after it ends." };
+    if (group) {
+      const R = require("../../shared/numbers/reach");
+      const rows = await query(
+        `SELECT g.id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+          WHERE g.org_id=? AND ${GIFT("g")} AND ${IN_SPAN("g")} AND g.is_sample IS NOT TRUE AND d.is_sample IS NOT TRUE
+            AND ${require("../../shared/numbers/everyone").EVERYONE("d")} AND ${require("../../shared/numbers/isDonor").IS_DONOR("d")} AND ${R.PART_SQL("d")} = 'mail'
+          ORDER BY g.date, g.id LIMIT 5001`, [orgId, from, to]);
+      if (rows.length > 5000) return { error: "That is more than 5,000 gifts. Choose a shorter date range." };
+      return { what: { kind: "group", id: group, name: "your mail-only donors" }, from: b?.from && DAY.test(b.from) ? from : null, to, today, giftIds: rows.map(r => r.id) };
+    }
     const [what] = eventId
       ? await query("SELECT id, name FROM events WHERE id=? AND org_id=?", [eventId, orgId])
       : await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [campaignId, orgId]);
@@ -173,7 +185,7 @@ function mount(ctx) {
     if (refuse(res, r)) return;
     const ACK = await ACK_READY;
     if (r.empty) return res.json({ what: r.what, from: r.from, to: r.to, letters: [], skipped: [], giftCount: 0,
-      sentence: `Nobody gave to ${r.what.name} in that range.` });
+      sentence: r.what.kind === "group" ? "None of your mail-only donors gave in that range." : `Nobody gave to ${r.what.name} in that range.` });
     const set = r.set;
     const giftCount = set.letters.reduce((n, l) => n + l.giftIds.length, 0);
     const totalCents = set.letters.reduce((n, l) => n + l.totalCents, 0);
@@ -182,7 +194,7 @@ function mount(ctx) {
       what: r.what, from: r.from, to: r.to, template: set.template, signer: { name: set.signer.name, hasImage: !!set.signer.image },
       giftCount, total: totalCents / 100, deductible: deductibleCents / 100,
       // The sentences that define the numbers above them.
-      sentence: `${set.letters.length} ${set.letters.length === 1 ? "letter" : "letters"}, one for each person who gave to ${r.what.name} ${r.from ? `from ${ACK.formatLetterDate(r.from)} to ${ACK.formatLetterDate(r.to)}` : `up to ${ACK.formatLetterDate(r.to)}`}, covering ${giftCount} ${giftCount === 1 ? "gift" : "gifts"} of ${ACK.formatCents(totalCents)}. Refunded gifts and soft credits are not counted.`,
+      sentence: `${set.letters.length} ${set.letters.length === 1 ? "letter" : "letters"}, ${r.what.kind === "group" ? "one for each of your mail-only donors who gave" : `one for each person who gave to ${r.what.name}`} ${r.from ? `from ${ACK.formatLetterDate(r.from)} to ${ACK.formatLetterDate(r.to)}` : `up to ${ACK.formatLetterDate(r.to)}`}, covering ${giftCount} ${giftCount === 1 ? "gift" : "gifts"} of ${ACK.formatCents(totalCents)}. Refunded gifts and soft credits are not counted.`,
       deductibleSentence: `Deductible is what each person paid less the fair market value of what they received (a ticket, a dinner, an auction item), as their receipts say: ${ACK.formatCents(deductibleCents)} in all.`,
       letters: set.letters.map(l => ({ donorId: l.donorId, name: l.name, address: l.address, text: l.text, giftIds: l.giftIds,
         total: l.totalCents / 100, deductible: l.deductibleCents / 100 })),
@@ -194,7 +206,7 @@ function mount(ctx) {
     const r = await lettersFor(req);
     if (refuse(res, r)) return;
     if (r.empty || !r.set.letters.length) return res.status(409).json({ error: "no_letters", skipped: r.set ? r.set.skipped : [],
-      message: r.empty ? `Nobody gave to ${r.what.name} in that range.` : "None of these letters can be printed yet. The reason is beside each name." });
+      message: r.empty ? (r.what.kind === "group" ? "None of your mail-only donors gave in that range." : `Nobody gave to ${r.what.name} in that range.`) : "None of these letters can be printed yet. The reason is beside each name." });
     if (await require("../../exportGuard").largeExportRefused(req, res, r.set.letters.length)) return;   // SECURE-2 item 8
     const ACK = await ACK_READY;
     const opts = { dateLine: ACK.formatLetterDate(r.today), signature: r.set.signer.image };

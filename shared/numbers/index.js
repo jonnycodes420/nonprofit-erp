@@ -8,6 +8,7 @@ module.exports = {
   orderFigures: require("./orderFigures"),   // ORDER-1
   money: require("./money"),
   lifetime: require("./lifetime"),
+  reach: require("./reach"),   // COMMS-3: who you can reach, and how
   portfolioValue: require("./portfolioValue"),   // FLOWS-13
   givingBetween: require("./givingBetween"),
   lastGift: require("./lastGift"),

@@ -41,6 +41,8 @@ const RULES = [
   // owners move who owns each person (Home's portfolio, the Donors list's owner).
   [/^\/onboarding\/setup\/voice$/, ["org", "person", "totals", "insights"]],
   [/^\/onboarding\/setup\/owners$/, ["person", "totals"]],
+  // COMMS-3: opening a thank-you draft is not a change: nothing re-reads for it (the server says "none").
+  [/^\/thank-yous\/[^/]+\/opened$/, []],
   // COMMS-1: a draft dismissed, restored, sent, approved or skipped moves every count of drafts waiting.
   [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
   // SENDS-2: a committed send plan sends drafts (Communications, volunteers, auction winners) or

@@ -20,6 +20,19 @@
 //      draft; ten at once; the bell and the "draft" kind move at once; a
 //      dismissed draft is never sent.
 //
+//   COMMS-3 (§7-§10, extended here rather than a new suite):
+//   §7 opening a thank-you draft is not a change: POST /thank-yous/:id/opened answers
+//      X-Steward-Changed "none", and the browser neither announces "draft" for it nor forgets
+//      its held reads (api.js SEEN_ONLY), so Drafts to review does not re-read under the click.
+//   §8 I sent it takes the draft out, and a re-read straight after does not bring it back;
+//      Undo (POST /thank-yous/:id/unsent) puts back exactly what it changed.
+//   §9 Audience's reach bar: has an email, mail only and no way to reach add to Donors' own
+//      count (DEFINE-1), All donors is the email part, and each part opens its people.
+//   §10 a Major donors card at 0 names "no stages set" when no one has a stage, with the step;
+//      once someone has a stage it says the other reason.
+// What makes COMMS-3 fail on main: /opened answers "draft,task" (§7); /unsent is a 404 (§8);
+// the audience answer has no reach (§9) and no zeroWhy (§10).
+// Planted (§7): taking the header line out of /opened turns §7 red.
 // What makes it fail on main: no turnOn on the audience or hub (§1); the
 // setting's sentence says nothing about sending staying manual (§2); the
 // invite email carries no kind or org and the Resend route sends again with
@@ -32,7 +45,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const express = require("express");
 const { execFileSync } = require("child_process");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, BASE, civilToday } = require("./helpers");
 
 const ORG = "org_comms1t";
 const PASSWORD = "loadtest1234";
@@ -278,6 +291,78 @@ async function dismissDrafts({ admin }) {
     && /useChanged\(\["draft"\], \(\) => load\(\)\)/.test(src("AtlasNote.jsx")));
 }
 
+// ── §7-§10 COMMS-3 ──────────────────────────────────────────────────────────
+async function comms3({ admin }) {
+  const today = civilToday();
+  // Made-up people: one with an email, one reachable only by post, one with neither. Each has given.
+  await q(`INSERT INTO donors (id,org_id,name,email,imported_total,created_by,created_by_name) VALUES ('d_c3_em',$1,'Tamsin Orrell','tamsin.orrell@comms1.test',900,${sys})`, [ORG]);
+  await q(`INSERT INTO donors (id,org_id,name,address,city,state,zip,imported_total,created_by,created_by_name) VALUES ('d_c3_mail',$1,'Ulric Penhale','1 Elm Street','Dover','DE','19901',400.25,${sys})`, [ORG]);
+  await q(`INSERT INTO donors (id,org_id,name,imported_total,created_by,created_by_name) VALUES ('d_c3_none',$1,'Vesna Croft',50,${sys})`, [ORG]);
+  const g = await api("POST", "/donors/d_c3_em/gifts", admin, { amount: 120, date: today, type: "one-time", payment_method: "check" });
+  const list0 = await api("GET", "/thank-yous", admin);
+  const draft = ((list0.body && list0.body.drafts) || []).find(d => d.donorId === "d_c3_em");
+  ok("§7 a gift for Tamsin waits as a thank-you draft", g.status < 300 && !!draft, { gift: g.status, drafts: (list0.body.drafts || []).map(d => d.donorId) });
+  if (!draft) return;
+
+  // §7 opening it changes nothing anyone re-reads for.
+  const r = await fetch(`${BASE}/thank-yous/${draft.id}/opened`, { method: "POST", headers: { Authorization: "Bearer " + admin, "Content-Type": "application/json" } });
+  const changed = r.headers.get("x-steward-changed");
+  const ch = await import("../client/src/lib/changes.js");
+  const apiSrc = require("fs").readFileSync(path.join(__dirname, "..", "client/src/api.js"), "utf8");
+  const seenOnly = (apiSrc.match(/const SEEN_ONLY = \[([^\n]*)\];/) || [])[1] || "";
+  ok("§7 opening a draft answers X-Steward-Changed: none, so nothing re-reads for it", r.status === 200 && changed === "none", { status: r.status, changed });
+  ok("§7 the browser announces no draft topic for it, by the header or by the fallback rule",
+    !ch.kindsOfWrite(`/thank-yous/${draft.id}/opened`, "POST", null, changed).kinds.has("draft") && !ch.kindsOfWrite(`/thank-yous/${draft.id}/opened`, "POST").kinds.has("draft"));
+  ok("§7 and does not throw away the reads it holds (a seen-only write)", seenOnly.includes("thank-yous") && new RegExp(seenOnly.split(", ").find(x => x.includes("thank-yous")).replace(/^\/|\/$/g, "")).test(`/thank-yous/${draft.id}/opened`), seenOnly);
+  ok("§7 it is still recorded as opened", (await q(`SELECT opened_at FROM thank_you_drafts WHERE id=$1`, [draft.id]))[0].opened_at != null);
+
+  // §8 I sent it, then a re-read straight after.
+  const [ack0] = await q(`SELECT acknowledgement_sent, thanked_at FROM gifts WHERE id=$1`, [draft.giftId]);
+  const sent = await api("POST", `/thank-yous/${draft.id}/sent`, admin);
+  const after = await api("GET", "/thank-yous", admin);
+  ok("§8 I sent it takes the draft out, and a re-read straight after does not bring it back",
+    sent.status === 200 && !((after.body && after.body.drafts) || []).some(d => d.id === draft.id), { sent: sent.status });
+  const [ack1] = await q(`SELECT acknowledgement_sent FROM gifts WHERE id=$1`, [draft.giftId]);
+  const logged = await q(`SELECT id FROM interactions WHERE org_id=$1 AND metadata->>'draftId'=$2`, [ORG, draft.id]);
+  ok("§8 it logged the thank-you in her name and marked the gift acknowledged", ack1.acknowledgement_sent === true && logged.length === 1);
+  const undo = await api("POST", `/thank-yous/${draft.id}/unsent`, admin);
+  const back = await api("GET", "/thank-yous", admin);
+  const [ack2] = await q(`SELECT acknowledgement_sent, thanked_at FROM gifts WHERE id=$1`, [draft.giftId]);
+  ok("§8 Undo puts it back: waiting again, the timeline line gone, the gift as it was",
+    undo.status === 200 && ((back.body && back.body.drafts) || []).some(d => d.id === draft.id)
+    && (await q(`SELECT id FROM interactions WHERE org_id=$1 AND metadata->>'draftId'=$2`, [ORG, draft.id])).length === 0
+    && ack2.acknowledgement_sent === ack0.acknowledgement_sent && String(ack2.thanked_at) === String(ack0.thanked_at), { undo: undo.status, body: undo.body, ack0, ack2 });
+
+  // §9 the reach bar adds to Donors.
+  const aud = (await api("GET", "/communications/audience", admin)).body || {};
+  const reach = aud.reach || {};
+  const parts = { email: {}, mail: {}, none: {}, ...Object.fromEntries((reach.parts || []).map(p => [p.id, p])) };
+  let i = 0;
+  const qq = (sql, args) => q(sql.replace(/\?/g, () => "$" + (++i)), args);
+  const donors = await require("../shared/numbers/populations").population("donors").count({ query: (s, a) => { i = 0; return qq(s, a); }, orgId: ORG });
+  ok("§9 has an email, mail only and no way to reach add to all donors (DEFINE-1's Donors)",
+    reach.parts && reach.parts.length === 3 && parts.email.count + parts.mail.count + parts.none.count === donors && reach.total === donors && donors >= 3,
+    { parts: reach.parts, total: reach.total, donors });
+  const allSeg = (aud.segments || []).find(s => s.id === "all") || {};
+  ok("§9 Ulric (a street, a city, a state) is mail only, Vesna is no way to reach, and All donors is the email part",
+    parts.mail.count >= 1 && parts.none.count >= 1 && allSeg.count === parts.email.count, { mail: parts.mail, none: parts.none, all: allSeg.count });
+  const mailRows = await api("GET", "/figures/reach-part/rows?part=mail&pageSize=100", admin);
+  const gapSum = await api("GET", "/figures/reach-part/rows?part=mail&measure=sum&pageSize=1", admin);
+  ok("§9 mail only opens its people, and the biggest gap foots to what they gave",
+    mailRows.status === 200 && JSON.stringify(mailRows.body).includes("Ulric Penhale") && reach.gap && Math.round(Number(gapSum.body && gapSum.body.value) * 100) === Math.round(reach.gap.given * 100),
+    { rows: mailRows.status, gap: reach.gap, figure: gapSum.body && gapSum.body.value });
+
+  // §10 a zero Major card says why.
+  await q(`UPDATE donors SET stage=NULL WHERE org_id=$1`, [ORG]);
+  const major = ((await api("GET", "/communications/audience", admin)).body.segments || []).find(s => s.id === "major") || {};
+  ok("§10 Major donors at 0 names no stages set, with Set stages for your top 40",
+    major.count === 0 && major.zeroWhy && major.zeroWhy.noStages === true && /no one has a major-gift stage yet/i.test(major.zeroWhy.text) && major.zeroWhy.action && major.zeroWhy.action.to === "stage-top",
+    major.zeroWhy);
+  await q(`UPDATE donors SET stage='cultivate' WHERE id='d_c3_mail' AND org_id=$1`, [ORG]);
+  const major2 = ((await api("GET", "/communications/audience", admin)).body.segments || []).find(s => s.id === "major") || {};
+  ok("§10 once someone has a stage, it gives the other reason", major2.count === 0 && major2.zeroWhy && !major2.zeroWhy.noStages && !/stage yet/.test(major2.zeroWhy.text), major2.zeroWhy);
+}
+
 (async () => {
   try {
     const tok = await setup();
@@ -286,6 +371,7 @@ async function dismissDrafts({ admin }) {
     await invites();
     await oldDrafts();
     await dismissDrafts(tok);
+    await comms3(tok);
   } catch (e) { ok("the suite ran without throwing", false, e.stack || e.message); }
   finally { await wipe().catch(() => {}); await closeDb(); summary(); }
 })();

@@ -65,6 +65,7 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
     drafts: rows.map(r => ({ id: r.id, donorId: r.donor_id, giftId: r.gift_id, donorName: r.donor_name,
       donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
       fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
+      subject: "Thank you for your gift",   // COMMS-3: Open in my email's subject line
       // POLISH-2: signed by whoever is reading the queue, since she sends it.
       body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: (me && (BKq.personSignature(me) || me.name)), orgName: org && org.name, voiceUsed: r.voice,
         person: { salutation: r.donor_salutation, spouseName: r.donor_spouse, kind: r.donor_kind } }) })),
@@ -72,10 +73,15 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
 }));
 
 // Opening a draft is recorded, because "Mark all as sent" depends on it.
+// COMMS-3 item 1: it is a note that she looked, not a change any screen
+// re-reads for. It announced the "draft" topic, so Drafts to review re-read
+// under her click and the draft she had just opened closed again (staging,
+// 26 Nov: the list went to 0 rows twice and came back with nothing open).
 app.post("/thank-yous/:id/opened", requireAuth, wrap(async (req, res) => {
   const r = await run("UPDATE thank_you_drafts SET opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?",
     [req.params.id, req.user.orgId]);
   if (!r.changes) return res.status(404).json({ error: "Draft not found" });
+  res.setHeader("X-Steward-Changed", "none");
   res.json({ ok: true });
 }));
 
@@ -96,11 +102,13 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
   const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
   const actorName = (me && me.name) || act.name;
   const intId = newId("int");
+  // COMMS-3: what the gift said before, so Undo puts back only what this changed (thankYouUnsend.js).
+  const [prevGift] = await query("SELECT acknowledgement_sent, acknowledgement_sent_at, thanked_at FROM gifts WHERE id=? AND org_id=?", [d.gift_id, orgId]);
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorName, d.gift_id,
-     JSON.stringify({ via: "thank_you_queue", draftId: d.id })]);
+     JSON.stringify({ via: "thank_you_queue", draftId: d.id, previousGift: prevGift || null })]);
   await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
   await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
   // The thread cycle: a thank-you thread this closes closes as an OUTCOME.
@@ -110,6 +118,13 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
         AND next_step_type IN ('thank','thank_you_note') RETURNING id`,
     [intId, orgId, d.donor_id]);
   res.json({ ok: true, interactionId: intId, threadClosed: closed[0]?.id || null });
+}));
+
+// COMMS-3 item 1: Undo on "I sent it" (server/outreach/thankYouUnsend.js).
+const unsendThankYou = require("./thankYouUnsend").makeUnsend({ query, run });
+app.post("/thank-yous/:id/unsent", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await unsendThankYou(req.user.orgId, req.params.id);
+  res.status(r.status).json(r.body);
 }));
 
 // SKIP, with no reason asked. Sometimes a gift does not need a letter and

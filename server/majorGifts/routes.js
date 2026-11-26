@@ -290,6 +290,9 @@ app.post("/pipeline/add", requireAuth, requireCrm, checkWriteAccess, wrap(async 
   res.json({ added: result.changes });
 }));
 
+// COMMS-3: "Set stages for your top 40", from an Audience card at 0 (server/majorGifts/stageTop.js).
+require("./stageTop").mountStageTop(app, { query, run, requireAuth, requireCrm, checkWriteAccess, wrap });
+
 // POST /pipeline/remove — take a donor OFF the working board (single or bulk).
 // Assignment IS membership (BUILD-30), so removing from the board = unassigning;
 // the donor stays in the Directory with its stage label untouched. Team +

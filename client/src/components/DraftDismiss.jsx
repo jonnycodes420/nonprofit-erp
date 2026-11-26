@@ -20,14 +20,17 @@ const THANK_YOUS_CHANGED = "steward:thank-yous-changed";
 const bump = () => { try { window.dispatchEvent(new Event(THANK_YOUS_CHANGED)); } catch { /* no window */ } };
 
 // drafts: [{ kind: "milestone" | "agent" | "thank_you", id }]. Resolves true once dismissed.
-export async function dismissDrafts(drafts, { onRestored } = {}) {
+// COMMS-3: `confirm: false` for "Not sending this" on a thank-you: one press takes it away, and
+// Undo is the way back. `onGone` runs before the request, so the row leaves at once.
+export async function dismissDrafts(drafts, { onRestored, confirm = true, onGone } = {}) {
   const list = (drafts || []).filter(d => d && d.id && d.kind);
   if (!list.length) return false;
   const one = list.length === 1;
-  const yes = await askConfirm(one
+  const yes = !confirm || await askConfirm(one
     ? { title: "Dismiss this draft?", body: "It won't be sent.", yes: "Dismiss" }
     : { title: `Dismiss ${list.length} drafts?`, body: "They won't be sent.", yes: "Dismiss" });
   if (!yes) return false;
+  if (onGone) onGone();
   const r = await apiFetch("/drafts/dismiss", { method: "POST", body: JSON.stringify({ drafts: list }) });
   bump();
   const done = (r && r.dismissed) || list;
@@ -50,15 +53,16 @@ export function DismissX({ onClick, label = "Dismiss this draft", disabled, test
   );
 }
 
-// "Select" turns checkboxes on; "Dismiss selected" dismisses them together.
+// "Select several" turns checkboxes on; "Dismiss selected" dismisses them together.
+// COMMS-3: it says what it is for, and shows only when there are two or more drafts to pick from.
 export function SelectBar({ selecting, setSelecting, selected, onDismiss, total, testid = "drafts-select" }) {
-  if (!total) return null;
+  if (!selecting && !(total >= 2)) return null;
   const n = selected.length;
   const btn = { background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: T.ink, fontFamily: "inherit" };
   return (
     <div data-testid={testid} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       {!selecting
-        ? <button type="button" data-testid={testid + "-on"} style={btn} onClick={() => setSelecting(true)}>Select</button>
+        ? <button type="button" data-testid={testid + "-on"} style={btn} onClick={() => setSelecting(true)}>Select several</button>
         : <>
             <button type="button" data-testid={testid + "-dismiss"} disabled={!n} onClick={onDismiss}
               style={{ ...btn, background: n ? T.greenDk : T.white, color: n ? T.white : T.ink3, border: "1px solid " + (n ? T.greenDk : T.bg3) }}>
