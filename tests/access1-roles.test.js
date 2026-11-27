@@ -146,7 +146,7 @@ const fill = p => String(p).replace(/:\w+(\([^)]*\))?\??/g, "x").replace(/\*/g, 
     ok(`§1 a viewer reads ${p} (200)`, r.status === 200, r.status);
   }
   const ex1 = await api("GET", "/donors/export/csv", tok.viewer);
-  ok("§1 exports are allowed by default", ex1.status === 200, ex1.status);
+  ok("§1 with Viewers can export on, a viewer exports", ex1.status === 200, ex1.status);
   const off = await api("PUT", "/org/viewer-exports", tok.adminA, { on: false });
   ok("§1 an admin turns viewer exports off", off.status === 200 && off.body.on === false, off.body);
   const ex2 = await api("GET", "/donors/export/csv", tok.viewer);
@@ -156,6 +156,18 @@ const fill = p => String(p).replace(/:\w+(\([^)]*\))?\??/g, "x").replace(/\*/g, 
   await api("PUT", "/org/viewer-exports", tok.adminA, { on: true });
   const sw = await api("PUT", "/org/viewer-exports", tok.viewer, { on: false });
   ok("§1 a viewer can't change that switch", sw.status === 403, sw.status);
+  // POLISH-14 item 5: a NEW org starts with viewer exports off (an admin turns
+  // them on). Through the real sign-up. Red on main: the column defaulted false.
+  const runTag = Math.random().toString(36).slice(2, 8);
+  const reg = await fetch(process.env.BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orgName: `Acc1 Fresh Wren ${runTag}`, userName: "Odessa Brightwater", email: `fresh-${runTag}@acc1.local`, password: PW, provisioned: true, demoData: false }) });
+  const rb = await reg.json().catch(() => ({}));
+  const fresh = rb.token ? await api("GET", "/org/viewer-exports", rb.token) : { status: reg.status, body: rb };
+  ok("§1 a new org starts with Viewers can export off", fresh.status === 200 && fresh.body.on === false && /can't download/.test(fresh.body.description || ""), fresh.body);
+  if (rb.org && rb.org.id) {
+    const [{ off: freshOff }] = await q(`SELECT viewer_exports_off AS off FROM orgs WHERE id=$1`, [rb.org.id]);
+    ok("§1 …stored as off on the org", freshOff === true, freshOff);
+  }
 
   // ── §2 VIEWER'S ATLAS ───────────────────────────────────────────────────
   const ATLAS_WORDS = "Had lunch with Zzmarka Person today, it went well. Zzmarka Person gave $50 today.";

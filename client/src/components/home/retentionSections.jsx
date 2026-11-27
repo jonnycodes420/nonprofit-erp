@@ -35,7 +35,7 @@ export function retentionSection({ DonorChip, MoreChip, Sparkline, driftData, fi
           <div style={heroIsDrift?{borderTop:"1px solid "+T.bg3,paddingTop:14}:undefined}>
             <div onClick={openRetentionBreakdown} className="card-click" style={{display:"flex",flexWrap:"wrap",gap:20,alignItems:"center",cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
               <div style={{flex:"1 1 220px",minWidth:0}}>
-                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
+                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>Donor Retention Rate, so far this fiscal year</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                   <div style={{fontSize:retentionThin?17:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1.2}}>
                     {retentionTooEarly?"Not set":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
@@ -51,6 +51,12 @@ export function retentionSection({ DonorChip, MoreChip, Sparkline, driftData, fi
                 {/* Context line carries more of the weight here than the
                     numeral above it — a sentence about what the number means
                     for donor relationships, not a bare "vs. X%" field label. */}
+                {/* POLISH-14 item 4: last fiscal year's whole year beside the year so far, so 23% is not read as a collapse. */}
+                {!retentionTooEarly&&!retentionThin&&stewardMetrics.retentionRate.lastYearFull&&stewardMetrics.retentionRate.lastYearFull.current!=null&&(
+                  <div data-testid="home-retention-last-year" onClick={e=>e.stopPropagation()} style={{fontSize:12,color:T.ink3,marginTop:4}}>
+                    Last fiscal year{stewardMetrics.retentionRate.prevYearLabel?` (${stewardMetrics.retentionRate.prevYearLabel})`:""}, the full year: <Figure variant="inline" kind="percent" value={stewardMetrics.retentionRate.lastYearFull.current} label="Retention last fiscal year" definition="Of the people who gave the fiscal year before last, the share who gave again in last fiscal year." source={stewardMetrics.retentionRate.lastYearFull.source} figureKey="home.retention.lastYear"/>
+                  </div>
+                )}
                 {/* IMPORT-4: retention leaves out gifts with no date, and says so; the count opens them. */}
                 {stewardMetrics.undated&&stewardMetrics.undated.count>0&&(
                   <div data-testid="home-retention-undated" onClick={e=>e.stopPropagation()} style={{fontSize:12,color:T.ink3,marginTop:4}}>

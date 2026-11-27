@@ -1195,7 +1195,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <div style={{ fontSize:14, fontWeight:700, color:T.ink }}>Nothing is in the ledger yet</div>
               <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginTop:4, maxWidth:720 }}>
                 {summary.giftHistoryTotal > 0
-                  ? `Your ${fmtWhole(summary.giftHistoryTotal)} of giving across ${countLabel(summary.giftHistoryCount, "gift")} is giving history, so cash on hand, revenue, expenses and fund balances start at zero and fill as money moves through Steward. ${FIN_CONNECT}`
+                  ? `Your ${fmtWhole(summary.giftHistoryTotal)} of giving across ${countLabel(summary.giftHistoryCount, "gift")} is giving history, so cash on hand, revenue, expenses and fund balances start at zero and fill as money moves through Steward. ${summary.giftHistoryNote && !/^No gift/.test(summary.giftHistoryNote) ? summary.giftHistoryNote + " " : ""}${FIN_CONNECT}`
                   : `Cash on hand, revenue, expenses and fund balances fill as money moves through Steward. ${FIN_CONNECT}`}
               </div>
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop:12 }}>

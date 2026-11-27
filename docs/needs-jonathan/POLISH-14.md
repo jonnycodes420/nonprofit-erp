@@ -1,0 +1,2 @@
+- Decide whether existing orgs keep "Viewers can export" on: staging has 6 of 6 orgs on the old default (on); count prod with `DATABASE_URL=<prod> node scripts/ops/polish14-viewer-exports.js` (dry run), and only if you want them off, the same with `--apply --i-know-this-is-prod`.
+- After Ship moves POLISH-14 to prod, check Sentry NODE-34 (GET /dashboard/home) and NODE-35 (GET /dashboard/today) stop recurring, and that no false "Steward is returning server errors" email arrives.

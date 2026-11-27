@@ -14,6 +14,7 @@ const DF = require("../../shared/numbers/defaultFund");
 const { LEDGER_FUND_ROWS } = require("../../shared/numbers/fundLines");
 const { GAP_ROWS } = require("../../shared/numbers/fundGap");
 
+const AG = require("../../shared/numbers/allGifts");
 const STATUSES = ["posted", "waiting", "history"];
 
 module.exports = function ledgerSources({ FigureParamError }) {
@@ -52,6 +53,22 @@ module.exports = function ledgerSources({ FigureParamError }) {
           args: [fyFrom, p.status, orgId],
         };
       },
+    },
+    // POLISH-14 item 3: Reports' All time and Finance's gifts on file are one
+    // figure (shared/numbers/allGifts.js): every gift to today, dated or not.
+    "gifts-all": {
+      label: "Every gift on file",
+      measure: p => (p.measure === "count" ? "count" : "sum"),
+      params: { measure: "measure" },
+      sentence: () => AG.SENTENCE + " A gift with no date is in it, and in no year's total.",
+      sql: async (orgId, p) => ({
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                     CASE WHEN ${AG.UNDATED("g")} THEN 'No date on the gift' WHEN g.amount < 0 THEN 'Refund' ELSE COALESCE(f.name, 'Unrestricted') END AS detail
+                FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+               WHERE g.org_id = ? AND ${AG.ALL("g", "d")}${p.measure === "count" ? ` AND ${GIFT("g")}` : ""}`,
+        args: [orgId],
+      }),
     },
     // NUMBERS-9 item 1: the rows behind each line that says why a fund's gifts on the books and its
     // transactions in differ (shared/numbers/fundGap.js). A gift's row is the gift less its ledger row;
