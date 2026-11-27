@@ -13,14 +13,7 @@ const COVERS = (t = "t") => `(${t}.gift_id = ? OR ? = ANY(${t}.also_gift_ids))`;
 // SQL: draft `t` thanks any of the gift ids in array placeholder `?`.
 const COVERS_ANY = (t = "t") => `(${t}.gift_id = ANY(?) OR ${t}.also_gift_ids && ?::text[])`;
 
-// The same person's open draft for a gift on `date`, if there is one (never the gift itself).
-async function openDraftForDay(query, orgId, donorId, date, giftId) {
-  if (!date) return null;
-  const [d] = await query(
-    `SELECT t.id, t.gift_id, t.also_gift_ids FROM thank_you_drafts t JOIN gifts g ON g.id = t.gift_id AND g.org_id = t.org_id
-      WHERE t.org_id = ? AND t.donor_id = ? AND t.sent_at IS NULL AND t.skipped_at IS NULL AND g.date = ? AND t.gift_id <> ?
-      ORDER BY t.created_at LIMIT 1`, [orgId, donorId, String(date).slice(0, 10), giftId || ""]);
-  return d || null;
-}
+// The open draft for the same person's same day is found by queueThankYouDraft's own gift read
+// (server/boot/helpers-2.js), so a gift costs no extra statement (capture1-zero-day's budget).
 
-module.exports = { giftIdsOf, COVERS, COVERS_ANY, openDraftForDay };
+module.exports = { giftIdsOf, COVERS, COVERS_ANY };

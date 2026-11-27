@@ -610,7 +610,12 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
               MAX(date) FILTER (WHERE date IS NOT NULL) AS last_date
          FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0`,
       [orgId, donorId, giftId || ""]),
-    giftId ? query("SELECT date, recurring_subscription_id, campaign FROM gifts WHERE id=? AND org_id=?", [giftId, orgId]) : [],
+    // ONE-MOVE-1: the same read finds the person's open draft for that day (no extra statement per gift)
+    giftId ? query(`SELECT g.date, g.recurring_subscription_id, g.campaign, od.id AS day_draft_id, od.gift_id AS day_draft_gift, od.also_gift_ids AS day_draft_also
+                      FROM gifts g LEFT JOIN LATERAL (SELECT t.id, t.gift_id, t.also_gift_ids FROM thank_you_drafts t JOIN gifts tg ON tg.id = t.gift_id AND tg.org_id = t.org_id
+                        WHERE t.org_id = g.org_id AND t.donor_id = g.donor_id AND t.sent_at IS NULL AND t.skipped_at IS NULL AND tg.date = g.date AND t.gift_id <> g.id
+                        ORDER BY t.created_at LIMIT 1) od ON g.date IS NOT NULL
+                     WHERE g.id=? AND g.org_id=?`, [giftId, orgId]) : [],
   ]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
@@ -661,7 +666,7 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // the open draft (server/outreach/draftGifts.js), which is written again for the day's total.
   if (!replace && reason === "gift" && giftId && thisGift && thisGift.date) {
     const DG = require("../outreach/draftGifts");
-    const open = await DG.openDraftForDay(query, orgId, donorId, thisGift.date, giftId);
+    const open = thisGift.day_draft_id ? { id: thisGift.day_draft_id, gift_id: thisGift.day_draft_gift, also_gift_ids: thisGift.day_draft_also || [] } : null;
     if (open) {
       const ids = [...new Set([...DG.giftIdsOf(open), giftId])];
       const c = (await query(`SELECT ROUND(amount * 100)::bigint AS cents FROM gifts WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).reduce((n, r) => n + Number(r.cents), 0);
