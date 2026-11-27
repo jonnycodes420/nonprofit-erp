@@ -16,6 +16,15 @@
 //
 // A ledger row of any other type (neither income nor expense) is in no balance; it is counted in
 // `otherRows` so a screen can say so rather than sign it.
+//
+// NUMBERS-10 item 1 (W-1122-Finance-F7, fifth night). THIS IS THE FUND TOTAL, AND THE ONLY ONE. The card,
+// the dialog it opens, the transactions list's fund footer and Finance's fund balances all read
+// `fundLedger` below (the transactions list's lines are the same LEDGER_FUND_ROWS, so they net to it).
+// Every figure here counts a gift at what the donor was CHARGED: card fees donors covered are in
+// (`feesInCents` says how much of "in" they are). A gift whose ledger row was posted before the fee
+// leaves its fee out of "transactions in", and that figure then carries the fee line beside it (gap.fee,
+// fundGap.js). Staging's Harborlight had four such rows from the demo seed; scripts/ops/numbers10-fee-rows.js
+// moves them to the charge, and then gifts on the books and transactions in agree to the cent.
 "use strict";
 const { MONEY, LIVE } = require("./money");
 const { COUNTED } = require("./giftCount");
@@ -25,35 +34,55 @@ const { fundBooks } = require("./fundBooks");
 const FG = require("./fundGap");   // NUMBERS-9 item 1: why gifts on the books and transactions in differ
 
 const SENTENCES = {
-  balance: "The books: every income row on this fund less every expense row, in every year. The dialog lists those same rows.",
+  balance: "The books: every income row on this fund less every expense row, in every year. A gift's row counts what the donor was charged, so card fees donors covered are in. The dialog and Transactions list those same rows.",
   gap: FG.SENTENCE,
-  gifts: "Every gift that lands in this fund, in any year, by where it stands with the books. A gift that names no fund lands in the default fund, because that is where it posts.",
+  gifts: "Every gift that lands in this fund, in any year, by where it stands with the books, at what the donor was charged (card fees donors covered are in). A gift that names no fund lands in the default fund, because that is where it posts.",
 };
 
 const EMPTY = () => ({
-  balanceCents: 0, inCents: 0, outCents: 0, rows: 0, otherRows: 0, inPeriodCents: 0, outPeriodCents: 0,
+  balanceCents: 0, inCents: 0, outCents: 0, rows: 0, otherRows: 0, inPeriodCents: 0, outPeriodCents: 0, feesInCents: 0,
   receivedCents: 0, receivedCount: 0,
   gifts: { posted: { n: 0, cents: 0 }, waiting: { n: 0, cents: 0 }, history: { n: 0, cents: 0 }, total: { n: 0, cents: 0 }, noFundIn: 0 },
 });
 
+// THE LEDGER BY FUND, the one SQL every fund total reads. Map fundId -> { inCents, outCents,
+// balanceCents, rows, otherRows, inPeriodCents, outPeriodCents, feesInCents }. `feesInCents`: the card fees
+// donors covered inside "in" (a gift's row posted at the charge carries its gift's cover_fee_amount; a
+// split gift's cut row carries its share). `month` may be omitted (period figures are then 0).
+async function fundLedger(query, orgId, { month = null, fundId = null } = {}) {
+  const one = fundId ? " AND f.id = ?" : "";
+  const m = month || { from: "9999-12-31", to: "0001-01-01" };
+  const rows = await query(
+    `SELECT f.id AS fund_id,
+            COALESCE(SUM(CASE WHEN ft.type='income'  THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_all,
+            COALESCE(SUM(CASE WHEN ft.type='expense' THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_all,
+            COALESCE(SUM(CASE WHEN ft.type='income'  AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_period,
+            COALESCE(SUM(CASE WHEN ft.type='expense' AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_period,
+            COUNT(ft.id) FILTER (WHERE ft.type IN ('income','expense'))::int AS n,
+            COUNT(ft.id) FILTER (WHERE ft.type NOT IN ('income','expense'))::int AS other,
+            COALESCE(SUM(CASE WHEN ft.type='income' AND fg.cover_fee_amount > 0 AND ROUND(fr.amount*100) = ROUND(fg.amount*100)
+                              THEN ROUND(ROUND(fg.cover_fee_amount*100) * ft.amount / NULLIF(fr.amount, 0)) ELSE 0 END),0)::bigint AS fees_in
+       FROM fin_funds f
+       LEFT JOIN ${LEDGER_FUND_ROWS()} ft ON ft.fund_id = f.id AND ft.org_id = f.org_id
+       LEFT JOIN fin_transactions fr ON fr.id = ft.id AND fr.org_id = ft.org_id
+       LEFT JOIN gifts fg ON fg.id = ft.gift_id AND fg.org_id = ft.org_id
+      WHERE f.org_id = ?${one}
+      GROUP BY f.id`,
+    [m.from, m.to, m.from, m.to, orgId, orgId, orgId, ...(fundId ? [fundId] : [])]);
+  const out = new Map();
+  for (const r of rows) {
+    const inCents = Number(r.in_all), outCents = Number(r.out_all);
+    out.set(r.fund_id, { inCents, outCents, balanceCents: inCents - outCents, inPeriodCents: Number(r.in_period), outPeriodCents: Number(r.out_period),
+      rows: Number(r.n), otherRows: Number(r.other), feesInCents: Number(r.fees_in) });
+  }
+  return out;
+}
+
 // Map fundId -> the fund's figures above (every fund of the org, or only `fundId`). `.noFund` is
 // this fiscal year's gifts that name no fund (fundBooks.js).
 async function fundCard(query, orgId, { fyFrom, today, month, defaultId = null, fundId = null }) {
-  const one = fundId ? " AND f.id = ?" : "";
   const [ledger, gifts, books, gaps] = await Promise.all([
-    query(
-      `SELECT f.id AS fund_id,
-              COALESCE(SUM(CASE WHEN ft.type='income'  THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_all,
-              COALESCE(SUM(CASE WHEN ft.type='expense' THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_all,
-              COALESCE(SUM(CASE WHEN ft.type='income'  AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_period,
-              COALESCE(SUM(CASE WHEN ft.type='expense' AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_period,
-              COUNT(ft.id) FILTER (WHERE ft.type IN ('income','expense'))::int AS n,
-              COUNT(ft.id) FILTER (WHERE ft.type NOT IN ('income','expense'))::int AS other
-         FROM fin_funds f
-         LEFT JOIN ${LEDGER_FUND_ROWS()} ft ON ft.fund_id = f.id AND ft.org_id = f.org_id
-        WHERE f.org_id = ?${one}
-        GROUP BY f.id`,
-      [month.from, month.to, month.from, month.to, orgId, orgId, orgId, ...(fundId ? [fundId] : [])]),
+    fundLedger(query, orgId, { month, fundId }),
     query(
       `SELECT COALESCE(gf.fund_id, ?::text) AS fund_id, ${LS.STATUS("g")} AS status,
               COALESCE(SUM(ROUND(gf.amount * 100)), 0)::bigint AS cents,
@@ -69,12 +98,7 @@ async function fundCard(query, orgId, { fyFrom, today, month, defaultId = null, 
   ]);
   const out = new Map();
   const row = id => { if (!out.has(id)) out.set(id, EMPTY()); return out.get(id); };
-  for (const r of ledger) {
-    const f = row(r.fund_id);
-    f.inCents = Number(r.in_all); f.outCents = Number(r.out_all); f.balanceCents = f.inCents - f.outCents;
-    f.inPeriodCents = Number(r.in_period); f.outPeriodCents = Number(r.out_period);
-    f.rows = Number(r.n); f.otherRows = Number(r.other);
-  }
+  for (const [id, l] of ledger) Object.assign(row(id), l);
   for (const r of gifts) {
     if (!r.fund_id || (fundId && r.fund_id !== fundId)) continue;
     const g = row(r.fund_id).gifts;
@@ -96,7 +120,16 @@ const usd = c => (c < 0 ? "-" : "") + "$" + (Math.abs(c) / 100).toLocaleString("
 const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
 function balanceWords(f) {
   return `${usd(f.balanceCents)} from ${n(f.rows, "transaction", "transactions")} (${usd(f.inCents)} in, ${usd(f.outCents)} out), every year.`
-    + (f.otherRows ? ` ${n(f.otherRows, "row of another type is", "rows of another type are")} in no balance.` : "");
+    + (f.otherRows ? ` ${n(f.otherRows, "row of another type is", "rows of another type are")} in no balance.` : "")
+    + feeWords(f);
+}
+// NUMBERS-10 item 1: whether covered fees are in, said beside the figure. In: how much of "in" they are.
+// Left out (a row posted before the fee): the fee line, the same words as the gap line's.
+function feeWords(f) {
+  const fee = f.gap && f.gap.fee && f.gap.fee.n ? f.gap.fee : null;
+  const inWords = f.feesInCents ? ` Card fees donors covered are in: ${usd(f.feesInCents)} of the ${usd(f.inCents)} in.` : "";
+  const outWords = fee ? ` ${usd(fee.cents)} of card fees donors covered on ${n(fee.n, "gift", "gifts")} is not in it: ${fee.n === 1 ? "that gift's row was" : "those gifts' rows were"} posted before the fee.` : "";
+  return inWords + outWords;
 }
 function giftWords(f) {
   const g = f.gifts;
@@ -110,4 +143,4 @@ function giftWords(f) {
 // NUMBERS-9 item 1: the line that says why the two figures differ (fundGap.js), the same on card and dialog.
 const gapWords = f => FG.gapWords(f);
 
-module.exports = { fundCard, balanceWords, giftWords, gapWords, SENTENCES };
+module.exports = { fundCard, fundLedger, balanceWords, giftWords, gapWords, feeWords, SENTENCES };
