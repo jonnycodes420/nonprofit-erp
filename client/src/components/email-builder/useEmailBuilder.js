@@ -47,6 +47,11 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   // BUILDER-3 item 2: the blocks someone else is typing in, id -> their first name. Nothing here
   // changes one of them until they move on; the save keeps their version anyway.
   const held = useRef(new Map());
+  // FRESH-4 item 4 (Area 2): the parts of one ready-made or saved block (Event invite is a photo, words, a
+  // button and a line), by block id, for this session. Ids survive a save, so after one the parts are
+  // still one: ✕ on any of them takes the whole block out, as one undo step. Before, ✕ took only the
+  // part selected, and the other three were saved into the template (staging, 27 Nov: rev 2 kept them).
+  const groups = useRef(new Map());   // block id -> group key
   const heldBy = k => { const b = latest.current.find(x => x._k === k); return b && b.id && held.current.get(b.id) ? held.current.get(b.id) : null; };
   const heldSentence = who => `${who} is editing this. You can change it when ${who} moves on.`;
 
@@ -139,8 +144,12 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     }
     if (what === "remove") {
       if (b.locked || b.type === "footer") return;
-      change(bs => bs.filter(x => x._k !== key));
-      if (selKey === key) setSelKey(null);
+      const g = b.id ? groups.current.get(b.id) : null;
+      const gone = x => x._k === key || (g && x.id && groups.current.get(x.id) === g && !x.locked && x.type !== "footer" && !heldBy(x._k));
+      const keys = new Set(latest.current.filter(gone).map(x => x._k));
+      change(bs => bs.filter(x => !keys.has(x._k)));
+      if (keys.has(selKey)) setSelKey(null);
+      return keys.size;
     }
     if (what === "duplicate") {
       if (b.locked || b.type === "footer") return;
@@ -185,6 +194,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     const v = validateEmailBlocks([...stripKeys(latest.current), ...stripKeys(fresh)], allowed);
     if (!v.ok) return { error: v.error.replace(/^Block \d+: /, "") };
     const after = selKey;
+    if (fresh.length > 1) { const g = newKey(); for (const x of fresh) groups.current.set(x.id, g); }   // FRESH-4: one block, its parts
     change(bs => { const n = [...bs]; n.splice(placeOf(bs, at, after), 0, ...fresh); return n; });
     setSelKey(fresh[0]._k);
     return { key: fresh[0]._k, count: fresh.length };

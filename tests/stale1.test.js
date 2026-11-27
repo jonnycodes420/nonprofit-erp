@@ -17,7 +17,7 @@
 //   §6 a grant payment: the grant's Received, the Grants board and the
 //      funder's profile
 //   §7 an import undone: the Everyone count
-//   §8 the cost: opening Home and recording one gift there makes at most
+//   §8 the cost: opening Home and recording one gift there makes at most (FRESH-4: 16)
 //      MAX_EXTRA requests beyond the gift itself, in the next five seconds
 //   §9 the worker: a change only the server made (no browser write) reaches
 //      the screen on the bell's next poll, with no request added
@@ -43,7 +43,10 @@ const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward
 const optional = f => { try { return require(f); } catch { return null; } };
 // Opening Home and recording one gift there: the gift, then what the screen
 // reads again because of it. Named in the STALE-1 report.
-const MAX_EXTRA = Number(process.env.STALE1_MAX_EXTRA || 8);
+// FRESH-4 item 2: any write re-reads every surface on screen, not only the ones its kinds name. One gift
+// on Home was 6 to 8 re-reads; it is 15 now (each figure, the Thread, the deck, the bell and the worker's
+// thank-you draft heard after it, once each). The cap is that, plus one.
+const MAX_EXTRA = Number(process.env.STALE1_MAX_EXTRA || 16);
 const WAIT = 12000;
 
 async function freshOrg() {
@@ -402,7 +405,8 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
   const extra = asked.filter(a => !/^POST \/donors\/[^/]+\/gifts$/.test(a));
   ok("§8 the gift went in through the page", hooked, { hooked });
   ok(`§8 one gift on Home makes at most ${MAX_EXTRA} more requests (it made ${extra.length})`, hooked && extra.length <= MAX_EXTRA, extra);
-  const counted = await page.evaluate(() => (window.__stewardChanges || []).slice(-1)[0]);
+  // FRESH-4: the gift's own announcement (the bell's read in the same round may announce the worker's after it)
+  const counted = await page.evaluate(() => (window.__stewardChanges || []).filter(c => c.source === "write").slice(-1)[0]);
   ok("§8 …announced as a gift, a person and the totals", !!counted && ["gift", "person", "totals"].every(k => counted.kinds.includes(k)), counted);
 
   await stale2();   // §P1–§P4

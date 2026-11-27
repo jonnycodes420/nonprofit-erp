@@ -28,7 +28,8 @@ export function useProfileRefresh(donorId, fn) {
   useChanged(PROFILE_KINDS, c => {
     if (c.source === "told" || !fn) return;   // told() is heard above, at once
     const mine = c.kinds.has("person") && (!c.ids.person || c.ids.person.has(String(donorId)));
-    fn({ fromWrite: true, money: mine && (c.kinds.has("gift") || c.kinds.has("pledge")) });
+    // FRESH-4 item 2: a write that names neither this person nor money (wide) re-reads the figures too
+    fn({ fromWrite: true, money: !!c.wide || (mine && (c.kinds.has("gift") || c.kinds.has("pledge"))) });
   }, donorId ? { person: donorId } : null);
 }
 

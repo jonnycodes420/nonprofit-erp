@@ -12,6 +12,7 @@ import { T } from "../shared";
 import { AVAILABILITY } from "../../../../shared/volunteerApply.js";
 import { errorMessage } from "../../lib/domainError";
 import { displayDate } from "../../../../shared/displayDate";
+import { askConfirm } from "../ConfirmDialog";
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink, fontFamily: "inherit" };
 const btnQuiet = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
@@ -40,6 +41,11 @@ export function VolunteerStatusRecord({ donor, record, isReadOnly, onChanged }) 
     if (r) { setMsg(r.sentence); setUndo(false); }
   };
   const saveEdit = async () => {
+    // FRESH-4 item 4 (W-1126-Volunteers-01): an emptied Hours a week clears what was said. Ask first, never silently.
+    if (rec.hoursPerWeek != null && String(edit.hoursPerWeek || "").trim() === "") {
+      const ok = await askConfirm({ title: "Clear hours a week?", body: `${donor.name || "They"} said ${rec.hoursPerWeek} ${rec.hoursPerWeek === 1 ? "hour" : "hours"} a week. Saving with the box empty clears it.`, yes: "Clear it", no: "Keep it" });
+      if (!ok) return;
+    }
     const r = await call(`/donors/${donor.id}/volunteer-record`, { hoursPerWeek: edit.hoursPerWeek, availability: edit.availability, roles: edit.roles }, "PATCH");
     if (r) { setEdit(null); setMsg("Saved. " + r.sentence); setUndo(false); }
   };

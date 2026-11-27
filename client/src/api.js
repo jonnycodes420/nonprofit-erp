@@ -616,54 +616,60 @@ export const adaptFinancials = financials => ({
     })),
 });
 
+// FRESH-4 item 4 (Area 5): the org as the shell holds it, one adapter for the first read and the
+// re-read after a rename (lib/bootSlices.js), so Home's greeting follows the header's pill.
+export function adaptOrg(org) {
+  return {
+    id:         org.id,
+    name:       org.name,
+    org_slug:   org.org_slug || "",
+    mission:    org.mission || "",
+    focus_area: org.focus_area || "",
+    annual_budget: org.annual_budget || "",
+    founded_year: org.founded_year || "",
+    website:    org.website || "",
+    programs:   [],
+    ein:        org.ein || "",
+    plan:       org.plan || "",           // BUILD-58 W-2 — the shell branches on the portal tier
+    fiscalYear: "Jan-Dec",
+    logo:        org.logo_data || "",       // BUILD-13 branding
+    brandAccent: org.brand_accent || "",
+    brandAccentFg: org.brand_accent_fg || "",
+    // BUILD-84 — the zone every date in the product is read in, and whether
+    // a HUMAN chose it. The timed step reminder is unavailable until they do.
+    // BUILD-86 Part B — her words. The RAW stored value rides through; the
+    // pure module normalises it, so there is one place defaults are decided.
+    vocabulary:  org.vocabulary_json || null,
+    vocabularySetAt: org.vocabulary_set_at || null,
+    timezone:    org.timezone || "",
+    timezone_confirmed_at: org.timezone_confirmed_at || null,
+    // ── INCIDENT 2026-09-22 / BUILD-97 Part 0 — THE TWO FLAGS THAT DECIDE
+    // WHETHER MAIL LEAVES THIS ORGANISATION, ON THE SCREEN RATHER THAN ONLY
+    // IN THE DATABASE. `orgMaySendEmail()` has read them since the incident;
+    // nothing rendered them, so an org whose mail was off looked exactly like
+    // an org whose mail was on, and the only way to tell was a production
+    // query. A person cannot be held to a state they cannot see.
+    //
+    // THIS WHITELIST IS THE TRAP. `GET /org` returns `SELECT *`, so both
+    // columns were already crossing the wire and being thrown away HERE —
+    // the same shape as BUILD-89's adaptDonor defect, where assignedTo was
+    // dropped on every refresh because the adapter did not name it.
+    isDemoOrg:     org.demo === true,   // FIX-50: the server's one rule (orgKind.isDemoOrg)
+    emailsEnabled: org.emails_enabled !== false,
+    // FIX-55 item 6: what the server has connected, booleans only.
+    capabilities: {
+      geocoding: !!(org.capabilities && org.capabilities.geocoding),
+      ai:        !!(org.capabilities && org.capabilities.ai),
+      stripe:    !!(org.capabilities && org.capabilities.stripe),
+  },
+    };
+}
+
 export function adaptData({ org, donors, grants, volunteers, tasks, board, financials }) {
   // FIX-14 Part 1 — the org's zone, for every client "today" (lib/orgToday.js).
   setOrgTimezone(org && org.timezone);
   return {
-    org: {
-      id:         org.id,
-      name:       org.name,
-      org_slug:   org.org_slug || "",
-      mission:    org.mission || "",
-      focus_area: org.focus_area || "",
-      annual_budget: org.annual_budget || "",
-      founded_year: org.founded_year || "",
-      website:    org.website || "",
-      programs:   [],
-      ein:        org.ein || "",
-      plan:       org.plan || "",           // BUILD-58 W-2 — the shell branches on the portal tier
-      fiscalYear: "Jan-Dec",
-      logo:        org.logo_data || "",       // BUILD-13 branding
-      brandAccent: org.brand_accent || "",
-      brandAccentFg: org.brand_accent_fg || "",
-      // BUILD-84 — the zone every date in the product is read in, and whether
-      // a HUMAN chose it. The timed step reminder is unavailable until they do.
-      // BUILD-86 Part B — her words. The RAW stored value rides through; the
-      // pure module normalises it, so there is one place defaults are decided.
-      vocabulary:  org.vocabulary_json || null,
-      vocabularySetAt: org.vocabulary_set_at || null,
-      timezone:    org.timezone || "",
-      timezone_confirmed_at: org.timezone_confirmed_at || null,
-      // ── INCIDENT 2026-09-22 / BUILD-97 Part 0 — THE TWO FLAGS THAT DECIDE
-      // WHETHER MAIL LEAVES THIS ORGANISATION, ON THE SCREEN RATHER THAN ONLY
-      // IN THE DATABASE. `orgMaySendEmail()` has read them since the incident;
-      // nothing rendered them, so an org whose mail was off looked exactly like
-      // an org whose mail was on, and the only way to tell was a production
-      // query. A person cannot be held to a state they cannot see.
-      //
-      // THIS WHITELIST IS THE TRAP. `GET /org` returns `SELECT *`, so both
-      // columns were already crossing the wire and being thrown away HERE —
-      // the same shape as BUILD-89's adaptDonor defect, where assignedTo was
-      // dropped on every refresh because the adapter did not name it.
-      isDemoOrg:     org.demo === true,   // FIX-50: the server's one rule (orgKind.isDemoOrg)
-      emailsEnabled: org.emails_enabled !== false,
-      // FIX-55 item 6: what the server has connected, booleans only.
-      capabilities: {
-        geocoding: !!(org.capabilities && org.capabilities.geocoding),
-        ai:        !!(org.capabilities && org.capabilities.ai),
-        stripe:    !!(org.capabilities && org.capabilities.stripe),
-      },
-    },
+    org: adaptOrg(org),
     donors: donors.map(adaptDonor),
     grants: grants.map(adaptGrant),
     volunteers: volunteers.map(adaptVolunteer),

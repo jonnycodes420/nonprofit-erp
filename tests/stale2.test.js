@@ -42,6 +42,18 @@
 //   §8 Communications → Overview → Recent sends drops a deleted campaign, no reload
 //   §9 Volunteers: a volunteer deleted elsewhere in this browser leaves the header and the list
 //   §10 Home's rail person view (the mini-profile): Lifetime moves with a gift
+//   §L FRESH-4 item 3: a write, then a read in the same tick, is the answer read once the queue has
+//      finished (a person's scores, their record, the Directory's counts, Fundraising's overview)
+//   §M FRESH-4 item 5, the census: every write route of the live router in a family the fleet saved
+//      (gift, pledge, recurring, hours, shift, meeting, journey, template, the org's name, Can give)
+//      names a step of the walk (tests/lib/fresh4Walk.js), so a new route can't skip it
+//   §K FRESH-4 item 5, the walk: each of those writes with real clicks, and the visible number or line
+//      changes within 1.5 s with no reload; the template's Event invite taken out stays out (item 4)
+//
+// FRESH-4 plants (each red, then taken back out; the FRESH-4 report names them):
+//   · the scores bypass taken out of server/donors/people.js (a stale cache back) → §L red
+//   · isWide() in client/src/lib/changes.js answering false (the missing re-read back) → §K red (the gift)
+//   · ✕ taking only the selected part of the Event invite → §K's template step red
 //
 // Planted defects (each turned this suite red, then was taken back out; the
 // STALE-2 report names them):
@@ -415,6 +427,30 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   ok("§D …by whole words: 'gal' and 'offee' find nobody", (await textN("gal")) === 0 && (await textN("offee")) === 0, [await textN("gal"), await textN("offee")]);
   ok("§D …and what she typed is a word, never a pattern: '(' and '.*' find nobody and do not fail", (await textN("(")) === 0 && (await textN(".*")) === 0, [await textN("("), await textN(".*")]);
 
+  // ── §L · FRESH-4 item 3: A READ AFTER A WRITE IS NEVER OLDER THAN THE WRITE ──
+  {
+    const F4 = require("./lib/fresh4Walk");
+    const { drainQueue } = require("./lib/drainQueue");
+    const post = async (u, b) => (await fetch((process.env.BASE || "http://localhost:5601") + u, { method: "POST", body: JSON.stringify(b),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok } })).status;
+    const r = await F4.sameTick({ api, tok, donorId: P("ada"), post, drain: () => drainQueue(q, { orgId: ORG, scores: true, timeout: 20000 }),
+      gift: { amount: 9100, date: today, type: "one-time", payment_method: "check", confirmFarOutside: true } });
+    for (const row of r.rows) ok(`§L ${row.what}: read in the same tick as the gift, it is the answer after the queue finished`, r.write < 300 && row.status === 200 && row.same, { write: r.write, ...row });
+  }
+
+  // ── §M · FRESH-4 item 5: THE CENSUS. EVERY WRITE ROUTE IN A FAMILY NAMES A STEP OF THE WALK ──
+  {
+    const F4 = require("./lib/fresh4Walk");
+    const routes = require("./lib/routeInventoryFile").load().routes;
+    const left = F4.census(routes);
+    ok("§M every write route of the live router in the fleet's families names a step of the walk", left.length === 0, left);
+    const fams = JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(F4.FAMILIES).map(([k, f]) => [k, { routes: f.routes }]))));
+    for (const k of Object.keys(fams)) fams[k].re = F4.FAMILIES[k].re;
+    fams.gift.routes = fams.gift.routes.filter(x => x !== "POST /gifts/:id/refund");
+    const planted = F4.census(routes, fams);
+    ok("§M …and a write route with no entry fails it (the refund, taken out of the list)", planted.length === 1 && planted[0] === "POST /gifts/:id/refund", planted);
+  }
+
   const why = (() => {
     if (!optional(PW)) return "(playwright is not installed at " + PW + ")";
     if (!fs.existsSync(path.join(DIST, "index.html")) && !fs.existsSync(path.join(DIST, "app.html"))) return "(no client dist at " + DIST + ")";
@@ -730,6 +766,31 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     const bOrg = await tabB.evaluate(() => { try { return JSON.parse(localStorage.getItem("npe_org")).id; } catch { return null; } });
     ok("§11 …and tab B, reloaded, is in the org it switched to", bOrg === ORG + "_two" && !/\/login/.test(tabB.url()), { bOrg, url: tabB.url() });
     await ctx11.close();
+  }
+
+  // ── §K · FRESH-4 item 5: THE WALK. EACH WRITE THE FLEET SAVED, REAL CLICKS, ON SCREEN IN 1.5 S ──
+  {
+    const F4 = require("./lib/fresh4Walk");
+    await person("f4ivy", "Ivy Calloway");
+    await person("f4jun", "Jun Arbogast");
+    await q(`UPDATE donors SET person_types='["volunteer"]'::jsonb WHERE id=$1`, [P("f4jun")]);
+    await api("POST", "/journeys", tok, { name: "Fresh Four Care", trigger: "by_hand", enabled: true, priority: 10, steps: [{ type: "follow_up", label: "Call them", offsetDays: 2 }] });
+    const lgK = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
+    const ctxK = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    await ctxK.addInitScript(([tk, u, o]) => { localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [lgK.body.token, JSON.stringify(lgK.body.user), JSON.stringify(lgK.body.org)]);
+    const pageK = await ctxK.newPage();
+    const [yy, mm, dd] = today.split("-");
+    const fx = { app: APP, todayUs: `${mm}/${dd}/${yy}`, journeyName: "Fresh Four Care", newOrgName: "Stale Two Kestrel Society",
+      people: { gift: P("f4ivy"), giftName: "Ivy Calloway", pledge: P("bram"), vol: P("f4jun") } };
+    const steps = await F4.walk(pageK, fx);
+    for (const st of steps) ok(`§K ${st.label}, within ${F4.SEEN_MS} ms, no reload`, st.ok, st);
+    const tp = await F4.templateInvite(pageK, fx, { api, tok });
+    const ev = ["image", "richtext", "button", "richtext"];
+    ok("§K template: the Event invite went in as its four parts and was saved (item 4, Area 2)", tp.saved1 && tp.before && tp.saved1.length === tp.before.length + ev.length, tp);
+    ok("§K …and taken out with ✕, none of its parts is left in the saved template", JSON.stringify(tp.saved2) === JSON.stringify(tp.before), tp);
+    await q(`UPDATE orgs SET name='Stale Two Heron Society' WHERE id=$1`, [ORG]);
+    await ctxK.close();
   }
 
   await browser.close();

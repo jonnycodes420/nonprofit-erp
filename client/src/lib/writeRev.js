@@ -21,6 +21,7 @@ const KINDS_OF = new Map([[VOLUNTEER_WRITES, ["volunteer"]], [GROUP_WRITES, ["gr
 
 export function writeTouches(test, c) {
   if (!c) return false;
+  if (c.wide) return true;   // FRESH-4 item 2: a write no test names still re-reads the screen
   if (!c.path) { const k = KINDS_OF.get(test); return !k || k.some(x => c.kinds && c.kinds.has(x)); }
   const path = String(c.path);
   return typeof test === "function" ? !!test(path, c) : test instanceof RegExp ? test.test(path) : false;

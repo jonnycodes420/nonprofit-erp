@@ -276,7 +276,7 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
     focusChange: f => { typing.current = f; if (!f) setTimeout(() => { if (!typing.current && stale.current) { stale.current = false; setRev(r => r + 1); } }, 120); },
     caret: c => { caret.current = c; lastInput.current = "frame"; },
     select: i => { setPlusAt(null); select(i); },
-    action: (what, i) => { const k = keyAt(i); if (k) { b.act(what, k); force(); } },
+    action: (what, i) => { const k = keyAt(i); if (k) { const n = b.act(what, k); force(); if (what === "remove" && n > 1) say(`Taken out, all ${n} parts of that block. Undo puts them back.`); } },   // FRESH-4
     undo: () => b.undo(),
     redo: () => b.redo(),
     // BUILDER-2B: a drop on the line, the "+", copy and paste.

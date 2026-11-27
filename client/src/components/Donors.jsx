@@ -602,8 +602,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // count, the directory and the whole-org list re-read, so "No donors yet"
   // never outlives the file that filled the page.
   useStewardTold(()=>{reloadDonors();});
-  // STALE-1: and a write anywhere that adds, removes or merges people (not every
-  // write to one person's record: their profile re-reads itself).
+  // STALE-1: and a write anywhere that adds, removes or merges people. FRESH-4 item 2: and any
+  // write from this browser (c.wide): a gift moved the list's Lifetime and Last gift, and the list
+  // waited for the dialog to close (1.6 to 2.2 s on staging, 27 Nov).
   // SCALE-6 item 3 (W-1112-Volunteers-01X): the portfolio totals (each owner's people and
   // dollars) re-read after a gift, a delete, an owner change or the worker's after-change.
   useLive("donors.officers",["gift","person","totals"],c=>{
@@ -614,7 +615,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(!orgPeople||!named.length||named.length>200)return;
     peopleById(named).then(fresh=>{if(Object.keys(fresh).length)setOrgPeople(list=>Array.isArray(list)?list.map(d=>fresh[d.id]?{...d,...fresh[d.id]}:d):list);}).catch(()=>{});
   });
-  useLive("donors.list",["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||ADDS_PEOPLE.test(c.path||"")||/^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
+  useLive("donors.list",["person","import"],c=>{if(c.source==="told")return;if(c.wide||c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||ADDS_PEOPLE.test(c.path||"")||/^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
 
   // FRESH-2 item 5: the open record itself (the Notes summary line, "Fresh has given $100 in all",
   // and every effect keyed on it) re-reads when a change reaches this person; the profile's own
