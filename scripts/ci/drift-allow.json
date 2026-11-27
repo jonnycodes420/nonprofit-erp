@@ -24,6 +24,7 @@
   { "name": "WORKER", "reason": "an old prod switch; staging sets STEWARD_PROCESS instead" },
   { "name": "DEMO_NOTIFY_EMAIL", "reason": "demo mail: staging captures all mail, nothing is delivered" },
   { "name": "DEMO_SMTP_FROM", "reason": "demo mail: staging captures all mail, nothing is delivered" },
+  { "name": "DEMO_ADMIN_PASSWORD", "reason": "SECURE-DEMO: only a production seed run reads it (scripts/lib/demoPassword.js); staging's demo keeps the scratch password" },
   { "name": "FOUNDER_EMAIL", "reason": "founder notices go from prod only" },
   { "name": "RESEND_DOMAIN_VERIFIED", "reason": "staging sends nothing through Resend" },
   { "name": "DONOR_ACCOUNTS_ENABLED", "reason": "prod switches; staging runs on the code defaults" },
