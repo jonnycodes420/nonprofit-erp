@@ -127,8 +127,8 @@ async function planRenewal(orgId, grantId, who) {
   try { hist = JSON.parse(g.history || "[]"); } catch { hist = []; }
   const statuses = (Array.isArray(hist) ? hist : []).map(x => (typeof x === "string" ? x : x && (x.status || x.to || x.stage))).filter(Boolean);
   const kind = R.renewalKind({ milestoneKinds: ms.map(m => m.kind), statuses });
-  const awardedC = money.toCents(g.amount_awarded) || 0;
-  const requestedC = money.toCents(g.amount_requested != null ? g.amount_requested : g.amount) || 0;
+  const awardedC = money.storedCentsOr0(g.amount_awarded);
+  const requestedC = money.storedCentsOr0(g.amount_requested != null ? g.amount_requested : g.amount);
   const askC = awardedC || requestedC;
 
   const out = await withTransaction(async c => {

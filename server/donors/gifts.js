@@ -176,6 +176,8 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
   try { amt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
   { const neg = require("../money/negativeGift").giftAmountRefusal(amt); if (neg) return res.status(400).json(neg); }   // INPUT-1
+  // IMPORT-11: a gift far above both this person's giving and the org's largest asks first (shared/numbers/giftOutlier.js)
+  if (req.body.confirmFarOutside !== true) { const ask = await require("../../shared/numbers/giftOutlier").askFor(query, { orgId: req.user.orgId, donorId: req.params.id, cents: Math.round(amt * 100) }); if (ask) return res.status(409).json(ask); }
 
   // PLEDGES-2 · A PAYMENT ABOVE WHAT IS STILL OWED ASKS (W-1107-Finance-25X):
   // record what is over as an extra gift, or reduce the payment to the balance.
@@ -352,6 +354,8 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
     // INPUT-1: an edit can't turn a gift negative; a refund row keeps its sign.
     if (!g.refund_of) { const neg = require("../money/negativeGift").giftAmountRefusal(newAmt); if (neg) return res.status(400).json(neg); }
+    // IMPORT-11: raised far outside the pattern, it asks first; her usual includes this gift as it stood
+    if (!g.refund_of && req.body.confirmFarOutside !== true && Number(newAmt) > Number(g.amount)) { const ask = await require("../../shared/numbers/giftOutlier").askFor(query, { orgId: req.user.orgId, donorId: g.donor_id, cents: Math.round(newAmt * 100) }); if (ask) return res.status(409).json(ask); }
   }
   // GIFTS-1: the event is editable; "" or null clears it, undefined keeps it.
   const eventIn = req.body.eventId !== undefined ? req.body.eventId : req.body.event_id;

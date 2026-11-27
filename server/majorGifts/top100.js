@@ -29,6 +29,7 @@
 //
 // Nothing here sends anything. Every write is recorded by the one audit write.
 "use strict";
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const P = require("../../prospect");
 const { newId } = require("../shared/newId");
@@ -119,9 +120,9 @@ async function listRows(orgId, listId, today, visible) {
       people: [{ id: p.id, name: p.name, photoUrl: photoUrl(p.photo_asset_id) }],
       // WEALTH-1: the Wealth Score she sets (1 to 5), never the old automatic wealth_score.
       wealthScore: p.wealth_rating == null ? null : Number(p.wealth_rating), wealthWord: null,
-      lifetimeCents: toCents(p.total_giving) || 0, lifetimeSource: { key: "donor-lifetime", params: { donor: p.id } },
+      lifetimeCents: storedCentsOr0(p.total_giving), lifetimeSource: { key: "donor-lifetime", params: { donor: p.id } },
       thisYearCents: spans.get(p.id) || 0, thisYearSource: { key: "donor-gifts-between", params: { donor: p.id, from: span.from, to: span.to } },
-      lastGift: p.last_gift_date ? { date: String(p.last_gift_date).slice(0, 10), cents: toCents(p.last_gift_amount) || 0, donorId: p.id } : null,
+      lastGift: p.last_gift_date ? { date: String(p.last_gift_date).slice(0, 10), cents: storedCentsOr0(p.last_gift_amount), donorId: p.id } : null,
       lastGiftSource: p.last_gift_date ? { key: "donor-last-gift", params: { donor: p.id } } : null,
       owner: p.assigned_to ? { id: p.assigned_to, name: p.assigned_to_name || "" } : null,
       stage: p.stage || null,

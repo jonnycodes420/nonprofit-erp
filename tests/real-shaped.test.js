@@ -59,7 +59,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, mailTypesOn } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, mailTypesOn, drainQueue } = require("./helpers");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import", "real-shaped");
@@ -166,6 +166,9 @@ async function importJob(tok, body) {
 async function main() {
   // TRASH-1: REAL_SHAPED_ONLY=T runs §T alone (a quick local loop); CI runs everything.
   if (process.env.REAL_SHAPED_ONLY === "T") { await trashMoney(); await closeDb(); summary(); return; }
+  // IMPORT-11: REAL_SHAPED_ONLY=I11 runs §I11 alone (tests/lib/import11Checks.js); CI runs everything.
+  const i11 = () => require("./lib/import11Checks").import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drainQueue });
+  if (process.env.REAL_SHAPED_ONLY === "I11") { await i11(); await closeDb(); summary(); return; }
   const ORG = "org_hs1real";
   const tok = await freshOrg(ORG, "Real-shaped (test)");
   const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
@@ -576,6 +579,7 @@ async function main() {
 
   // §T TRASH-1: one meaning of delete, for people and everything with money on it.
   await trashMoney();
+  await i11();
 
   await closeDb();
   summary();

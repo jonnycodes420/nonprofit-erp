@@ -303,6 +303,18 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   makes no second person the household already holds.
 
 - **An import foots in rows AND dollars, once (MONEY-4).** `server/imports/footing.js` is the one footing: "File $X = imported $Y + set aside $Z (future-dated …; matches deleted people …)". The receipt's lines, its findings and the Imports list's flag all read it, so they cannot disagree; never a stored "reconciled".
+- **A gift sheet keyed by the people sheet's ID is gifts, with or without a name column (IMPORT-11).** A table of amounts
+  with no name whose ID column holds a people table's IDs is that list's gifts (`shared/sheetWorkbook.js`), read by
+  the one reader (`wantsAdaptiveReading` sends it there, never to the workbook screen). The preview says "60 people
+  and 136 gifts ($8,005.00) joined on Constituent ID", names every sheet set aside and why, and she can correct
+  each sheet: People, Gifts or Leave this sheet out (`answers.sheetKinds`).
+- **Every gift row clears four checks, each listed under its own heading (IMPORT-11, `shared/importRowChecks.js`).**
+  Over $100,000,000 (`money.js` MAX_CENTS) is set aside, "over $100,000,000, the most one gift can be in Steward".
+  An exact copy of another row (every cell) is set aside by default on a sheet with dates ("Skip the copies"), and
+  imported on a sheet with no date column (two $25 cash rows at a dinner are two gifts); `answers.copies` decides
+  either way. Far outside the pattern (`server/imports/outliers.js`, the gift form's rule) is listed and imported
+  unless she says "Set them aside" (`answers.outliers`). Future-dated rows are listed with their dates. The receipt
+  (`summary.rowChecks`) and the import check page count all four whichever way she chose.
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make

@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
@@ -355,7 +356,7 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     portfolioCount: parseInt(portfolioRows[0]?.cnt || 0),
     visitsYtd: parseInt(visitsRows[0]?.cnt || 0),
     madeYtd: parseInt(movesRows[0]?.cnt || 0),
-    giftsYtd: toDollars(toCents(giftsRows[0]?.total) || 0),
+    giftsYtd: toDollars(storedCentsOr0(giftsRows[0]?.total)),
     // NUMBERS-2: the year these "YTD" figures cover, shown once on Home.
     yearLabel: NUMBERS.fiscalYear.period(await orgTz(orgId), "fiscal", 0).periodLabel,   // ORG_TZ_SEAM_OK
     pipelineValue: parseInt(pipelineRows[0]?.total || 0),
@@ -595,7 +596,7 @@ app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res
   res.json({
     // BUILD-73 Part 2 — was Math.round(): a drill-down total is money, and
     // rounding it here made the panel disagree with the ledger it drills into.
-    total: toDollars(toCents(totalRow[0]?.total) || 0),
+    total: toDollars(storedCentsOr0(totalRow[0]?.total)),
     count: parseInt(totalRow[0]?.cnt || 0),
     rows: rows.map(r => ({
       id: r.id, donorId: r.donor_id, donorName: r.donor_name,
@@ -623,7 +624,7 @@ app.get("/dashboard/my-stats/pipeline/breakdown", requireAuth, wrap(async (req, 
   ]);
   res.json({
     // BUILD-73 Part 2 — was Math.round(); see the sibling drill-down above.
-    total: toDollars(toCents(totalRow[0]?.total) || 0),
+    total: toDollars(storedCentsOr0(totalRow[0]?.total)),
     count: parseInt(totalRow[0]?.cnt || 0),
     rows: rows.map(d => ({
       donorId: d.id, donorName: d.name,
@@ -1128,7 +1129,7 @@ app.get("/dashboard/stewardship-debt/breakdown", requireAuth, OS.cached("debt-br
     percentOfTotal: total > 0 ? Math.round((d.contribution / total) * 1000) / 10 : 0,
   }));
   // BUILD-73 Part 2 — was Math.round(total); the headline of a money breakdown.
-  res.json({ total: toDollars(toCents(total) || 0), count: breakdown.length, rows });
+  res.json({ total: toDollars(storedCentsOr0(total)), count: breakdown.length, rows });
 }));
 
 // Ranked drill-down behind the Retention Rate headline number — the actual
