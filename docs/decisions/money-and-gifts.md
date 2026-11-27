@@ -146,6 +146,10 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   (`source='grant'`) and unlinks (never deletes) an adopted manual row. (FIX entity-routing, LEDGER-2)
 - **Count a gift once, on the person whose money it was.** Soft credit is a row pointing at a gift
   (`gift_soft_credits`); no total, ledger or bookkeeper export reads it; reports add it only via `?credit=soft`. (BUILD-98)
+- **Gives through is soft credit from an organization's own gifts** (`softThrough.js` `CREDITED_THROUGH`): an explicit
+  soft credit at its amount, or the whole gift when the person is linked as the organization's Owner or its program
+  officer. Works at credits nothing. The person's Gives through, the organization's Given through it and the
+  `gives-through` rows are one table; none of it is in the person's own lifetime. (NUMBERS-8, NUMBERS-9, NUMBERS-10)
 - **A soft or matching credit is in no "own giving" figure.** Lifetime, This year and the census's "Their own
   giving" leave credit rows out; the census lines are `creditTotals.js`, the header's two figures. (FIX-49, FIX-51)
 - **A matching gift is a pledge on the employer's record, never money.** `pledges.is_match`; excluded

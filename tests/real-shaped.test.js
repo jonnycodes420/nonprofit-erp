@@ -211,6 +211,9 @@ async function main() {
   if (process.env.REAL_SHAPED_ONLY === "I11") { await i11(); await closeDb(); summary(); return; }
   // NUMBERS-10 item 1: REAL_SHAPED_ONLY=N10A runs §N10A alone (one fund total, covered fees said).
   if (process.env.REAL_SHAPED_ONLY === "N10A") { await n10Fund(); await closeDb(); summary(); return; }
+  // NUMBERS-10 items 3 and 5: REAL_SHAPED_ONLY=N10C runs §N10C alone (tests/lib/numbers10SoftEventChecks.js); CI runs everything.
+  const n10c = () => require("./lib/numbers10SoftEventChecks").n10SoftEvent({ ok, api, q, freshOrg, surfaces });
+  if (process.env.REAL_SHAPED_ONLY === "N10C") { await n10c(); await closeDb(); summary(); return; }
   const ORG = "org_hs1real";
   const tok = await freshOrg(ORG, "Real-shaped (test)");
   const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
@@ -623,6 +626,7 @@ async function main() {
   await trashMoney();
   await i11();
   await n10Fund();   // NUMBERS-10 item 1
+  await n10c();
 
   await closeDb();
   summary();
