@@ -23,12 +23,14 @@
 const { AWAITING } = require("./thanks");
 // IMPORT-11: a gift dated after today (TRUTH-6, scheduled.js) waits for no thanks until its day:
 // the rail read "No draft yet" for a gift that had not come in.
-const { DUE } = require("./scheduled");
+// NUMBERS-10: a gift dated after today with no scheduled_on (an older row, or one written straight to the
+// table) waits for no thanks either, so Home's tile and the backlog report, which ends today, give one count.
+const { DUE, ORG_TODAY } = require("./scheduled");
 
 // SQL: gift `g` of person `d` waits to be thanked; `since` is a bound placeholder for the start day.
 const WAITING = (g = "g", d = "d", since = "?") =>
   `(${AWAITING(g)} AND ${g}.is_sample IS NOT TRUE AND ${d}.is_sample IS NOT TRUE AND ${d}.deleted_at IS NULL
-    AND ${g}.date IS NOT NULL AND ${g}.date >= ${since} AND ${DUE(g)})`;
+    AND ${g}.date IS NOT NULL AND ${g}.date >= ${since} AND ${g}.date <= ${ORG_TODAY(g)} AND ${DUE(g)})`;
 
 // SQL: gift `g` has a thank-you draft ready (not sent, not skipped).
 const DRAFTED = (g = "g") =>
