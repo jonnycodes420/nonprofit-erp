@@ -8,8 +8,9 @@
 //   A gift is far outside the pattern when it is at least 100 times the
 //   person's usual gift (the median of their gifts above zero) AND at least
 //   10 times the largest gift the org has (any other gift row of money). A
-//   person with no gifts yet is judged on the org's largest alone; an org with
-//   no gifts yet asks nothing (there is no pattern to be outside).
+//   person with no gifts yet, or an org with none, asks nothing: there is no
+//   pattern of theirs to be outside (a new business's first $10,500 gift is not
+//   a mistake; an amount no gift can be is the cap's, money.js).
 //
 // It asks; it never refuses. The answer is hers ("Record it").
 "use strict";
@@ -21,11 +22,9 @@ const ORG_TIMES = 10;
 // The rule, on cents already read.
 function farOutside({ cents, usualCents, largestCents }) {
   const c = Math.abs(Number(cents) || 0);
-  if (!c || !(largestCents > 0)) return null;
-  const orgX = c / largestCents;
-  if (orgX < ORG_TIMES) return null;
-  const personX = usualCents > 0 ? c / usualCents : null;
-  if (personX != null && personX < PERSON_TIMES) return null;
+  if (!c || !(largestCents > 0) || !(usualCents > 0)) return null;
+  const orgX = c / largestCents, personX = c / usualCents;
+  if (orgX < ORG_TIMES || personX < PERSON_TIMES) return null;
   return { personTimes: personX, orgTimes: orgX };
 }
 

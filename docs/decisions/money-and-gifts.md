@@ -10,7 +10,7 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   which turned a stored $1,000,000,000 into $0. Old rows: `scripts/ops/import11-over-cap.js`.
 - **A gift far outside the pattern asks first (IMPORT-11, `shared/numbers/giftOutlier.js`).** At least 100 times the
   person's usual gift (the median of their gifts above zero) and at least 10 times the org's largest gift; a person
-  with no gifts is judged on the org's largest alone. The form gets a 409 `far_outside` with "This is 81,000 times
+  with no gifts yet asks nothing. The form gets a 409 `far_outside` with "This is 81,000 times
   their usual gift and 20 times the largest gift your org has. Record it?"; `confirmFarOutside: true` saves it.
 - **A scheduled gift has no refund until its date (IMPORT-11).** `POST /gifts/:id/refund` answers 409 `scheduled`, and
   the profile shows no Refund button.

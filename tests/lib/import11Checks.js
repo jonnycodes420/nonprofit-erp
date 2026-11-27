@@ -161,7 +161,7 @@ async function import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drain
     // on import: the row is listed under its own heading, and "set them aside" sets it aside
     const ob = { fileName: "outlier.csv", sheets: [{ name: "Sheet1", grid: [["Name", "Email", "Amount", "Date"], ["Bea Largegift", "bea@i11.test", "$480.00", "2025-06-01"], ["Cy Newcomer", "cy@i11.test", "$400,000,000.00", "2025-06-02"]] }] };
     const capped = (await api("POST", "/sheet-import/understand", tok3, ob)).body || {};
-    const ob2 = { fileName: "outlier.csv", sheets: [{ name: "Sheet1", grid: [["Name", "Email", "Amount", "Date"], ["Bea Largegift", "bea@i11.test", "$480.00", "2025-06-01"], ["Cy Newcomer", "cy@i11.test", "$9,000,000.00", "2025-06-02"]] }] };
+    const ob2 = { fileName: "outlier.csv", sheets: [{ name: "Sheet1", grid: [["Name", "Email", "Amount", "Date"], ["Bea Largegift", "bea@i11.test", "$480.00", "2025-06-01"], ["Edge Smallgift", "edge@i11.test", "$9,000,000.00", "2025-06-02"]] }] };
     const ou = (await api("POST", "/sheet-import/understand", tok3, ob2)).body || {};
     const orow = ou.rowChecks && ou.rowChecks.outliers && ou.rowChecks.outliers.rows.find(r => r.line === 3);
     const skip = (await api("POST", "/sheet-import/understand", tok3, { ...ob2, answers: { outliers: "skip", outlierRows: ["Sheet1:3"] } })).body || {};
