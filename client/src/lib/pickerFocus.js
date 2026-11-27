@@ -7,20 +7,13 @@
 // such a field inside the dialog has the focus (its picker may be open), the
 // first press outside only takes the focus off it, closing the picker; the
 // dialog stays. A second press outside closes the dialog as before.
-const PICKER_TYPES = new Set(["time", "date", "datetime-local", "month", "week", "color"]);
-
+// One regex for the native pickers' field types (smaller on Home's first look than a Set).
 export function pickerFieldFocused(dialogEl) {
-  const a = typeof document !== "undefined" ? document.activeElement : null;
+  const a = document.activeElement;
   if (!a || !dialogEl || !dialogEl.contains(a)) return null;
-  const tag = String(a.tagName || "").toLowerCase();
-  if (tag === "select") return a;
-  if (tag === "input" && PICKER_TYPES.has(String(a.type || "").toLowerCase())) return a;
-  // A list a field draws itself (the one time box's hours) says so while it is open.
-  if (a.closest && a.closest("[data-own-picker='open']")) return a;
-  return null;
+  // A select, a native picker input, or a list a field draws itself (the time box's hours) while it is open.
+  return a.tagName === "SELECT" || (a.tagName === "INPUT" && /^(time|date|datetime-local|month|week|color)$/.test(a.type)) || a.closest("[data-own-picker='open']") ? a : null;
 }
 
 // Escape inside a field's own open list closes the list, not the dialog.
-export function escapeIsLocal(target) {
-  return !!(target && target.closest && target.closest("[data-own-picker='open']"));
-}
+export const escapeIsLocal = t => !!(t && t.closest && t.closest("[data-own-picker='open']"));
