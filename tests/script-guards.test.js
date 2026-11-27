@@ -296,6 +296,8 @@ const PROD_READONLY = [
   "numbers7-lapse-why",
   // NUMBERS-9: lists letters marked sent whose printed deductible was one gift's, not the total (ids and figures, no names); READ ONLY session, no --apply.
   "numbers9-letter-deductible",
+  // NUMBERS-10: lists open thank-you drafts that say a day's gifts as one gift (ids and amounts, no names); READ ONLY session, no --apply.
+  "numbers10-merged-drafts",
   // FLOWS-18: lists saved drafts and email templates still naming a field the block engine can't fill; SELECTs only, no --apply.
   "flows18-starter-tags",
   // FLOWS-15: lists saved Atlas answers whose count is money, and unsent campaigns that now leave never-givers out; READ ONLY session, no --apply.
