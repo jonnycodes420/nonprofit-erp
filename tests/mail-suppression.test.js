@@ -618,8 +618,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     // too; someone added before keeps exactly what they had. Red on main: the
     // column had no default, so a new person read the daily email on, and
     // there was no weekly email.
-    ok("§12a a new person: the weekly email on, every other staff email off, the daily one too",
-      n.morningEmail === false && n.weekly === true && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => n[k] === false), n);
+    // HONEST-3 item 2: a new org's first admin also starts with "A connection stops working" on.
+    ok("§12a a new person: the weekly email on, every other staff email off, the daily one too (a new org's first admin: connection alerts on)",
+      n.morningEmail === false && n.weekly === true && n.connectionAlerts === true && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport"].every(k => n[k] === false), n);
     {
       const myId = me.body?.user?.id;
       // A row from before this build: the two columns NULL, as the deploy leaves them.
@@ -685,14 +686,15 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const civil = d => d.toISOString().slice(0, 10);
     const monday = (() => { const d = new Date(civilDay() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return civil(d); })();
     const tuesday = (() => { const d = new Date(monday + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1); return civil(d); })();
-    const wantNew = x => x && x.weekly === true && x.morningEmail === false
-      && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => x[k] === false);
+    // HONEST-3 item 2: a new org's first admin (a signup) starts with connection alerts on; an invitee doesn't.
+    const wantNew = (x, firstAdmin = false) => x && x.weekly === true && x.morningEmail === false && x.connectionAlerts === firstAdmin
+      && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport"].every(k => x[k] === false);
 
     let signupEmail;
     const signup = await fetch(BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgName: "SM2 New Org " + uniq(), userName: "Nia New", email: (signupEmail = `sm2-new-${uniq()}@test.local`), password: "loadtest1234" }) }).then(r => r.json());
     const sNotes = (await api("GET", "/me", signup.token)).body?.notifications;
-    ok("§13a a new signup: the weekly email on, the daily email and everything else off", wantNew(sNotes), sNotes);
+    ok("§13a a new signup: the weekly email on, connection alerts on (HONEST-3), the daily email and everything else off", wantNew(sNotes, true), sNotes);
 
     const inviteeEmail = `sm2-invitee-${uniq()}@test.local`;
     const inv = await api("POST", "/auth/invite", tok, { email: inviteeEmail, role: "member" });
