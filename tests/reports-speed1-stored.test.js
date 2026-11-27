@@ -90,7 +90,9 @@ async function get(tok, path) {
 const asksFor = () => {
   const y = Number(civilDay().slice(0, 4));
   return ["/reports/retention", "/reports/retention?yearMode=fiscal", "/reports/retention?yearMode=calendar",
-    "/reports/annual", `/reports/annual?year=${y}&yearMode=calendar`, "/reports/sybunt", `/reports/sybunt?year=${y}&yearMode=calendar`];
+    "/reports/annual", `/reports/annual?year=${y}&yearMode=calendar`, "/reports/sybunt", `/reports/sybunt?year=${y}&yearMode=calendar`,
+    // SPEED-4: Three-year and Year over year joined the store.
+    "/reports/three-year", `/reports/three-year?year=${y}&yearMode=fiscal`, "/reports/year-over-year", `/reports/year-over-year?year=${y}&yearMode=calendar`];
 };
 
 (async () => {
@@ -129,9 +131,14 @@ const asksFor = () => {
   for (const [name, door] of doors) {
     await get(tok, P); await get(tok, S);
     const before = await get(tok, P), sBefore = await get(tok, S);
+    const [{ t: tDoor }] = rows(await q(`SELECT clock_timestamp() AS t`));
     await door();
     const after = await get(tok, P), sAfter = await get(tok, S);
-    ok(`§2 ${name}: the next read is fresh, not the stored answer from before`, before.stored && !after.stored && !sAfter.stored, { before: before.stored, after: after.stored, sybunt: sAfter.stored });
+    // SPEED-4: the refresh after a change runs at once, so the next read may already be a stored answer;
+    // never the one from before the gift: computed live, or stored by a computation after it.
+    const notOld = async (a, path) => !a.stored || rows(await q(`SELECT 1 FROM org_summary WHERE org_key=$1 AND key=$2 AND computed_at >= $3`,
+      [ORG, `report|*|${path.includes("?") ? path : path + "?"}`, tDoor])).length === 1;
+    ok(`§2 ${name}: the next read is fresh, not the stored answer from before`, before.stored && (await notOld(after, P)) && (await notOld(sAfter, S)), { before: before.stored, after: after.stored, sybunt: sAfter.stored });
     ok(`§2 ${name}: and the answer moved with the gift`, after.body !== before.body || sAfter.body !== sBefore.body);
     await drainQueue(q, { orgId: ORG });
     const next = await get(tok, P);
