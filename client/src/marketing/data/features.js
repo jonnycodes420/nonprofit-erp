@@ -81,7 +81,7 @@ export const FEAT = {
     problem: "Development says one number, finance says another, and month end turns into a hunt for the difference.",
     steps: [["Gifts flow in", "From Stripe and your other giving tools."], ["Payouts matched", "Every payout checked against its gifts, fees included."], ["Hand off the file", "A clean monthly file for your bookkeeper, by fund."]],
     ui: ["Month end · September", "finance", null, [["Gifts recorded", "all sources", "412"], ["Stripe payouts", "matched", "$31,204.55", 1], ["Fees", "card processing", "$912.10"], ["Bookkeeper file", "ready", "Download"]]],
-    incl: ["Stripe payouts matched", "Fees shown per gift", "Gifts by fund", "Monthly bookkeeper file", "Xero, connected from Settings", "QuickBooks direct, coming"] },
+    incl: ["Stripe payouts matched", "Fees shown per gift", "Gifts by fund", "Monthly bookkeeper file"]   /* HONEST-3: no tool listed before it connects */ },
   "receipts": { name: "Receipts and statements", icon: "receipts", short: "Thank-yous and year-end statements in a batch.", h: "Thank people properly, <b>in a batch.</b>", lede: "Acknowledgment letters, labels and year-end statements for everyone at once, in your own words and letterhead, with the deductible amount stated correctly.", photo: "table-papers",
     problem: "Year-end statements take a week of mail merge. Thank-you letters wait until someone finds an afternoon.",
     steps: [["Write it once", "Letters in your words, with merge fields from the donor record."], ["Batch the week", "Everyone who gave this week, ready to print or email."], ["Year-end in an afternoon", "Statements for every donor with the deductible amount correct."]],

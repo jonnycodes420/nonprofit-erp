@@ -23,7 +23,8 @@ export function giftDeleteDialog({ receipts = [], refunds = 0, pairButton = "" }
   if (refunds > 0) parts.push(refunds === 1 ? "Its refund comes off with it, so nothing is left standing alone." : `Its ${refunds} refunds come off with it, so nothing is left standing alone.`);
   if (rc) parts.push(rc);
   // THANKS-1 item 3: the delete is a Recent changes line with Undo (none when its refunds go too).
-  if (!(refunds > 0)) parts.push("Recent changes keeps an Undo for 30 days. Nothing is added to their timeline.");
+  // NUMBERS-10: a delete that cancels a thank-you Steward made for the gift writes one timeline line, and Undo takes it away.
+  if (!(refunds > 0)) parts.push("Recent changes keeps an Undo for 30 days. If Steward made a thank-you step or task for this gift, it is cancelled and one line on their timeline says so; Undo brings both back.");
   return {
     title: "Delete this gift?",
     body: parts.join("\n\n"),

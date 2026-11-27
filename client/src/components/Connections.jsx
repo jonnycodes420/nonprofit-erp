@@ -72,7 +72,9 @@ function ItemMapping({ isReadOnly, isAdmin }) {
   if (!d) return null;
   if (!(d.items || []).length) return null;
   const set = (key, patch) => setDraft(x => ({ ...x, [key]: { ...(x[key] || {}), ...patch } }));
-  const valueOf = it => ({ ...it, ...(draft[it.itemKey] || {}) });
+  // HONEST-3 item 3: an item nobody classified shows as "Not classified yet", never as the default
+  // class it is counted under, so the review and the count above it name the same items.
+  const valueOf = it => ({ ...it, ...(it.mapped ? {} : { class: "" }), ...(draft[it.itemKey] || {}) });
   const save = async () => {
     const items = Object.entries(draft).map(([k, v]) => {
       const it = d.items.find(i => i.itemKey === k) || {};
@@ -86,13 +88,14 @@ function ItemMapping({ isReadOnly, isAdmin }) {
   // FIX-9 Part A.1 — folded to one line until somebody opens it. The summary
   // still carries the number that matters, so folding hides no count.
   const mapped = d.items.filter(i => i.mapped).length;
+  const unclassified = d.items.filter(i => !i.mapped).map(i => i.itemName);
   if (!open) return (
     <Card data-testid="pos-mapping" data-open="false" style={{ padding: "12px 16px" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
         <strong style={{ fontSize: 13.5, color: T.ink }}>What the register sells</strong>
         <span style={{ fontSize: 12.5, color: d.unmapped ? T.gold700 : T.ink3 }}>
           {mapped} {mapped === 1 ? "item" : "items"} mapped
-          {d.unmapped ? `, ${d.unmapped} not classified` : ""}.
+          {unclassified.length ? `, ${unclassified.length} not classified: ${unclassified.join(", ")}` : ""}.
         </span>
         <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="pos-mapping-open"
           onClick={() => setOpen(true)}>Review</button>
@@ -107,8 +110,7 @@ function ItemMapping({ isReadOnly, isAdmin }) {
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: "6px 0 10px" }}>{d.definition}</div>
       {d.unmapped > 0 && (
         <div style={{ fontSize: 13, color: T.ink, marginBottom: 10 }}>
-          {d.unmapped} {d.unmapped === 1 ? "item has" : "items have"} not been classified. Until somebody says, they are
-          counted as revenue and never as a gift.
+          {`${unclassified.length === 1 ? `${unclassified[0]} has` : `${unclassified.join(", ")} have`} not been classified. Until somebody says, ${unclassified.length === 1 ? "it is" : "they are"} counted as revenue and never as a gift.`}
         </div>)}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginBottom: 8 }}>{msg}</div>}
       {d.items.map(it => {
@@ -116,11 +118,12 @@ function ItemMapping({ isReadOnly, isAdmin }) {
         return (
           <div key={it.itemKey} data-testid="pos-item-row" style={{ display: "flex", gap: 10, alignItems: "center",
             flexWrap: "wrap", padding: "7px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
-            <strong style={{ minWidth: 150, color: it.mapped ? T.ink : T.gold700 }}>{it.itemName}</strong>
+            <strong data-testid="pos-item-name" data-mapped={it.mapped ? "1" : "0"} style={{ minWidth: 150, color: it.mapped ? T.ink : T.gold700 }}>{it.itemName}</strong>
             <span style={{ color: T.ink3, minWidth: 130 }}>{it.times} {it.times === 1 ? "sale" : "sales"} · {money(it.cents)}</span>
             <select disabled={isReadOnly || !isAdmin} value={v.class}
-              onChange={e => set(it.itemKey, { class: e.target.value })}
+              onChange={e => e.target.value && set(it.itemKey, { class: e.target.value })}
               style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 8px", fontSize: 12.5 }}>
+              {!v.class && <option value="">Not classified yet</option>}
               {Object.values(d.classes || {}).map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
             {v.class === "event" && (
@@ -580,8 +583,9 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: dotOf(c) || T.ink3, display: "inline-block" }} />
             <strong style={{ fontSize: 15, color: T.ink }}>{c.label}</strong>
-            <span data-testid="connection-status" style={{ fontSize: 11.5, fontWeight: 800, 
-              color: dotOf(c) || T.ink3 }}>{c.flow ? c.flow.label : (d.statuses?.[c.status]?.label) || c.status}</span>
+            <span data-testid="connection-status" data-state={c.badge ? c.badge.state : undefined} style={{ fontSize: 11.5, fontWeight: 800,
+              color: c.badge ? (c.badge.state === "attention" ? T.gold700 : c.badge.state === "connected" ? T.greenDk : T.ink3) : dotOf(c) || T.ink3 }}>
+              {c.badge ? c.badge.words : c.flow ? c.flow.label : (d.statuses?.[c.status]?.label) || c.status}</span>
             {!isReadOnly && isAdmin && c.connected && c.kind === "source" && (
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>History</button>
@@ -842,12 +846,22 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
                 <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.gifts30 === 1 ? "gift" : "gifts"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSyncedAt || c.lastGiftDate)}</div>
-                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.lastSyncedAt ? "last successful check" : "last gift"}</div>
+                {/* HONEST-3: the newest daily check, never a stamp no check made (the demo's seed wrote one). */}
+                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate((c.checks && c.checks[0] && c.checks[0].at) || (c.credentialHeld === false ? null : c.lastSyncedAt) || c.lastGiftDate)}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.checks && c.checks[0] ? (c.checks[0].ok ? "last check, passed" : "last check, needs attention") : c.lastSyncedAt && c.credentialHeld !== false ? "last successful check" : "last gift"}</div>
               </div>
             </>}
           </div>
           {c.heldSentence && <div style={{ fontSize: 12.5, color: T.gold700, marginTop: 6 }}>{c.heldSentence}</div>}
+          {/* HONEST-3 item 1: the daily check's last three runs, with what each one read. */}
+          {c.connected && c.badge && c.badge.state !== "file" && (
+            <div data-testid="connection-checks" style={{ marginTop: 10, borderTop: "1px solid " + T.bg2, paddingTop: 8 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4 }}>Last three checks</div>
+              {(c.checks || []).length ? c.checks.slice(0, 3).map(k => (
+                <div key={k.at} data-testid="connection-check-row" data-ok={k.ok ? "1" : "0"}
+                  style={{ fontSize: 12.5, color: k.ok ? T.ink : T.gold700, lineHeight: 1.6 }}>{k.sentence}</div>))
+                : <div data-testid="connection-check-none" style={{ fontSize: 12.5, color: T.ink3 }}>Steward's daily check hasn't run on this one yet.</div>}
+            </div>)}
 
           {openId === c.id + ":gifts" && (
             <div data-testid="connection-rows" style={{ marginTop: 12, background: T.bg2, border: "1px solid " + T.bg3,
@@ -972,8 +986,11 @@ const PAGE_CSS = `.conn-grid{display:grid;grid-template-columns:repeat(2,minmax(
 
 function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
   const Icon = CONN_ICON[card.icon] || FileText;
-  const att = isBrass(card.status);
-  const bucket = bucketOf(card.status);
+  // HONEST-3 item 1: the badge is the server's one badge (server/connections/checks.js badgeOf) when the
+  // card carries one: Connected only with a sign-in held, connecting on and a passing check today.
+  const badge = card.badge || null;
+  const att = badge ? badge.state === "attention" : isBrass(card.status);
+  const bucket = badge ? (badge.state === "connected" ? "working" : badge.state === "attention" ? "needs_you" : "off") : bucketOf(card.status);
   const isConnect = card.button && card.button.kind === "connect" && card.status === "not_connected";
   const canPress = card.button && !(card.button.adminOnly && !isAdmin) && !(card.button.writes && isReadOnly);
   return (
@@ -1006,8 +1023,10 @@ function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
           <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, flexShrink: 0, boxSizing: "border-box",
             background: att ? T.gold600 : bucket === "working" ? T.ink : "transparent",
             border: bucket === "waiting" ? "1.5px solid " + T.ink : card.status === "not_connected" ? "1.5px solid " + T.ink3 : "none" }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: att ? T.gold700 : card.status === "not_connected" ? T.ink3 : T.ink }}>
-            {card.flow && card.flow.example ? card.flow.label : STATUS_WORD[card.status]}</span>
+          <span data-testid="conn-badge" data-state={badge ? badge.state : card.status} title={badge ? badge.definition : undefined}
+            style={{ fontSize: 12, fontWeight: 700, color: att ? T.gold700 : card.status === "not_connected" ? T.ink3 : T.ink }}>
+            {badge ? badge.label : STATUS_WORD[card.status]}</span>
+          {badge && badge.reason && <span data-testid="conn-badge-reason" style={{ fontSize: 12, color: att ? T.gold700 : T.ink3 }}>· {badge.reason}</span>}
           {bucket === "working" && !card.flow && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
         </div>
         {card.flow && card.status !== "not_connected"
@@ -1125,7 +1144,8 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     if (c.provider === "square" && (status === "not_connected" || status === "unavailable") && oauthNotReady(c)) continue;
     cards.push({ key, section: isFile || c.kind === "statements" ? "files" : sectionOf(c), provider: c.provider, flow: status === "attention" ? null : c.flow,
       icon: c.kind === "own_stripe" ? "stripe" : c.kind === "source" || c.kind === "statements" ? key : c.kind,
-      name: c.label, line: c.subtitle, status, reason: reason || (c.kind === "statements" ? lastFileLine(c) : "") || (isFile && c.flow && c.connected ? c.flow.sentence : ""),
+      name: c.label, line: c.subtitle, status, badge: status === "attention" ? { state: "attention", label: "Needs attention", reason: null } : c.badge,
+      reason: reason || (c.kind === "statements" ? lastFileLine(c) : "") || (isFile && c.flow && c.connected ? c.flow.sentence : ""),
       synced: sinceWord(c.lastSyncedAt || c.lastSentAt || c.lastGiftDate), button });
   }
   // DONORBOX HAS NO ADAPTER (LANDING-3). It is listed because people ask for
@@ -1141,9 +1161,12 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     const conn = ps.filter(p => p.connected);
     const last = conn.map(p => p.lastSyncedAt).filter(Boolean).sort().pop();
     const st = broken ? "attention" : mail.connected ? "connected" : "not_connected";
+    // HONEST-3 item 1: the server's one badge (checks.js mailboxBadge); the worst of the connected ones.
+    const badges = conn.map(p => p.badge).filter(Boolean);
+    const inboxBadge = badges.find(b => b.state === "attention") || badges[0] || null;
     cards.push({ key: "inbox", section: "inbox", icon: "inbox", name: "Gmail and Outlook",
       line: "Emails and meetings with people on file land on their timeline. Each person connects their own.",
-      status: st, reason: broken ? broken.lastError : st === "connected" ? `Connected as ${conn.map(p => p.address).filter(Boolean).join(", ")}.` : "",
+      badge: inboxBadge, status: inboxBadge && inboxBadge.state === "attention" ? "attention" : st, reason: broken ? broken.lastError : st === "connected" ? `Connected as ${conn.map(p => p.address).filter(Boolean).join(", ")}.` : "",
       synced: sinceWord(last), note: privacy && privacy.on ? <PrivacyLine data={privacy} /> : null,
       button: { kind: st === "attention" ? "fix" : st === "connected" ? "manage" : "connect", label: st === "attention" ? "Fix" : st === "connected" ? "Manage" : "Connect",
         opens: true, onClick: () => toggle("inbox"),

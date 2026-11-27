@@ -71,14 +71,18 @@ async function publicConnections() {
 
 const GROUP_WORDS = {
   connects: { title: "Connects", sentence: "Connect it yourself from Settings today, or with us on your setup call." },
-  files: { title: "Bring in a file", sentence: "No account to connect: its export comes in as a file, and Steward reads the file." },
+  files: { title: "Import from a file", sentence: "Not a connection: its export comes in as a file, and Steward reads the file." },
   notYet: { title: "Not available yet", sentence: "Steward can't connect to these yet. Tell us you need one and we'll say when it's ready." },
 };
 
 function mount(app, { wrap }) {
   app.get("/public/connections", wrap(async (req, res) => {
     res.set("Cache-Control", "public, max-age=300");
-    res.json({ groups: await publicConnections(), words: GROUP_WORDS });
+    // HONEST-3 item 3 (W-1126-Integrations-05): "public pages still list file-only and unavailable tools
+    // as connections". The site lists only what connects today, file tools under their own "Import from
+    // a file" heading, and nothing that isn't available. Settings keeps its third group.
+    const { connects, files } = await publicConnections();
+    res.json({ groups: { connects, files }, words: { connects: GROUP_WORDS.connects, files: GROUP_WORDS.files } });
   }));
 }
 

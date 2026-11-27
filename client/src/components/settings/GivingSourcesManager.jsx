@@ -356,7 +356,8 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
           // only while nothing is connected: once this org has connected one,
           // what its own connection is doing is the more useful truth.
           const verifying=state==="none"&&VERIFYING[k];
-          const status=state==="connected"?checkedPhrase(s.lastSyncedAt)+gifts
+          // HONEST-3: no sign-in held means nothing checks it, so the tile never says "checked just now".
+          const status=state==="connected"?(s.hasCredentials===false?"No sign-in held, so Steward can't check it"+gifts:checkedPhrase(s.lastSyncedAt)+gifts)+(s.weekWhy?". "+s.weekWhy:"")
             :state==="waiting"||state==="failed"?triedPhrase(s.lastTriedAt||s.lastErrorAt||s.lastSyncedAt)
             :verifying?VERIFYING_LINE
             :"Steward checks every six hours once it is connected.";

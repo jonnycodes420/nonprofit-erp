@@ -22,7 +22,7 @@ const {
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
   runDigestsForOrg, runSavedReportScheduleForOrg,
   runStepRemindersForOrg, runThreadNudgesForOrg, runWeeklyEmailForOrg, snapshotMetricsForOrg, syncGmail,
-  weekBounds, recomputeAllScores,
+  weekBounds, recomputeAllScores, orgTz, orgToday,   // HONEST-3: the daily connection check
 } = ctx;
 
 // SCALE-1 · A PERIODIC JOB IS A ROW ON THE QUEUE, NOT A TIMER IN THIS PROCESS.
@@ -71,8 +71,15 @@ if (!backgroundTicksDisabled()) {
   every("processGivingSources", GIVING_SOURCE_SYNC_INTERVAL_MS, () => recordTick("processGivingSources", processGivingSources), 90000);
   // HONEST-1 item 2: A QUIET FEED RAISES ITS HAND. Nothing scheduled this sweep (docs/defects.md
   // P3), so a Givebutter silent 66 days opened no task. Live orgs only (SCALE-5); one task per
-  // incident for the org's admin; no email.
-  every("sweepQuietConnections", GIVING_SOURCE_SYNC_INTERVAL_MS, () => recordTick("sweepQuietConnections", () => sweepQuietConnections({ live: true, notify: false })), 5 * 60 * 1000);
+  // incident for the org's admin. HONEST-3 item 2: and one email per incident to that admin when
+  // they have "A connection stops working" on and the org's staff email is on (notifyUserOnce asks
+  // both); when it isn't, the task and Home say plainly that nobody is being emailed.
+  every("sweepQuietConnections", GIVING_SOURCE_SYNC_INTERVAL_MS, () => recordTick("sweepQuietConnections", () => sweepQuietConnections({ live: true, notify: true })), 5 * 60 * 1000);
+  // HONEST-3 item 1: the daily connection check. Hourly, and each org is checked once a day (its
+  // newest run older than 23 hours), so a deploy never skips a day. Every org holding a connection,
+  // the demo included: a connection with no sign-in held fails its check and says why.
+  every("runConnectionChecks", 60 * 60 * 1000, () => recordTick("runConnectionChecks",
+    () => require("../server/connections/checks").runChecks({ query, run, orgTz, orgToday, orgTime })), 6 * 60 * 1000);
 }
 
 // ── INT-5 · WEBHOOK DELIVERY ───────────────────────────────────────────────

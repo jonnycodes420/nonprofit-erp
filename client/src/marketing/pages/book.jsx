@@ -18,7 +18,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API } from "../../api";
 import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1: the /book funnel, never her answers
-import { SlotPicker, SlotFrame } from "../booking/slots";
+import { SlotPicker, SlotFrame, DirectLine, SLOW_MS } from "../booking/slots";
+import { BOOKING_URL } from "../booking/config";
 import { showTestimonial, CUSTOMER_QUOTE, FOUNDER_PHOTO } from "../booking/config";
 
 export const BOOK_FALLBACK = "That did not go through. Please email jonathan@stewardapp.dev and he will set up a time with you.";
@@ -54,7 +55,9 @@ function Card({ code }) {
     let alive = true;
     fetch(API + "/public/book/times").then(r => (r.ok ? r.json() : { source: "embed" })).catch(() => ({ source: "embed" }))
       .then(j => { if (!alive) return; setT(j); const first = (j.days || []).findIndex(d => d.slots.length); setDayI(first < 0 ? 0 : first); });
-    return () => { alive = false; };
+    // HONEST-3 item 6: the button never sits on "Loading times…": after 5 s the card goes on without them.
+    const slow = setTimeout(() => { if (alive) setT(x => x || { source: "embed" }); }, SLOW_MS);
+    return () => { alive = false; clearTimeout(slow); };
   }, []);
 
   const live = !!t && t.source === "calendly";
@@ -95,6 +98,7 @@ function Card({ code }) {
   return <form className="bk-card" onSubmit={submit} onFocus={startedOnce} data-book-card data-book-form data-book-source={t ? t.source : "loading"}>
     <h2 className="bk-h2">Pick a time</h2>
     <div className="bk-sub">All times Eastern · Google Meet</div>
+    <DirectLine href={BOOKING_URL} />
     <div className="bk-two">
       <label htmlFor="book-name" className="bk-f">Your name<input id="book-name" required name="name" autoComplete="name" placeholder="Your name" value={f.name} onChange={set("name")} /></label>
       <label htmlFor="book-email" className="bk-f">Work email<input id="book-email" type="email" required name="email" autoComplete="email" placeholder="you@yourorg.org" value={f.email} onChange={set("email")} /></label>

@@ -1340,8 +1340,10 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
       // WIRE-1: this used to read tasks.completed and write tasks.due_date,
       // columns the table does not have (it has done and due), and the catch
       // swallowed the error, so the task was never made. One opener now.
+      // HONEST-3 item 2: the task says plainly when nobody will be emailed about it.
+      const reach = await require("../connections/alertReach").alertReach(query, s.org_id).catch(() => null);
       const made = await openAdminTask(s.org_id, { title: line, due: today || orgToday(org), priority: "high",   // ORG_TZ_SEAM_OK
-        assignee: admin, actorId: SYS_SOURCE.id, actorName: SYS_SOURCE.name });
+        assignee: admin, actorId: SYS_SOURCE.id, actorName: SYS_SOURCE.name, notes: reach });
       if (made) out.tasksOpened++;
       if (notify) {
         const r = await notifyUserOnce({

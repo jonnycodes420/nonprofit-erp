@@ -207,7 +207,7 @@ async function main() {
   const ov5 = (await api("GET", "/fundraising/overview", tok)).body || {};
   const pub = await api("GET", "/org/fr2-screens/giving-page/dinner-gifts/public", null);
   ok("§5 with no payments connected the page is not live and its address says it is not open yet",
-     ov5.givingPages && ov5.givingPages.count === 0 && ov5.givingPages.takesGifts === false && pub.status === 404 && pub.body.notOpen === true && /isn't open yet/.test(pub.body.error || ""),
+     ov5.givingPages && ov5.givingPages.count === 0 && ov5.givingPages.takesGifts === false && pub.status === 404 && pub.body.notOpen === true && /isn't published yet/.test(pub.body.error || ""),
      JSON.stringify([ov5.givingPages, pub.status, pub.body]).slice(0, 300));
   await q(`UPDATE orgs SET stripe_connected=true, stripe_account_id='acct_fr2screens' WHERE id=$1`, [ORG]);
   const ov5b = (await api("GET", "/fundraising/overview", tok)).body || {};

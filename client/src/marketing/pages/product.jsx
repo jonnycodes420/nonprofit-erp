@@ -119,7 +119,7 @@ export function Connections() {
     <section className="pricing"><div className="wrap">
       <div className="eyebrow">Every connection, honestly labeled</div>
       <h2 className="mix h-m" style={{ marginTop: 22 }}>What connects today, <b>and what doesn't yet.</b></h2>
-      <p className="lede" style={{ marginTop: 18 }}>The same three groups you see in Settings, Connections: what connects, what comes in as a file, and what isn't available yet.</p>
+      <p className="lede" style={{ marginTop: 18 }}>What connects today, and, under its own heading, what you import from a file. Nothing here is listed before it works.</p>
       <ConnectionGroups />
     </div></section>
     <FaqS items={[["Do we have to stop using our giving platform?", "No. Keep it. Steward pulls the gifts in and watches the connection."], ["What does Steward read from my inbox?", "Only emails with people who are already in Steward. Everything else is ignored, and you can pause or hide any thread."], ["Can our developer build on Steward?", "Yes. The open API has scoped keys and webhooks. See the developer page."]]} />

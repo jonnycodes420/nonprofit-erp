@@ -164,9 +164,10 @@ async function run({ ok, login, api, q }) {
 
   // ── §2 (public giving page) · Not open yet shows whose page it is ─────────
   const pub = await api("GET", "/org/honest-two-demo/public", null);
-  ok("§2 a giving page that isn't open carries the org's name, its mission line and Opens soon",
-    pub.status === 404 && pub.body.notOpen === true && pub.body.brand && /Honest Two Demo/.test(pub.body.brand.name || "")
-    && /^We teach sailing to kids on the harbor\./.test(pub.body.brand.mission || "") && pub.body.brand.opensSoon === "Opens soon", pub.body);
+  // HONEST-3 item 4: a DEMO org's page is drawn whole as an example (a real org's closed page: honest3 §4).
+  ok("§2 a demo org's giving page carries the org's name and its mission, marked an example",
+    pub.status === 200 && /^This is an example page/.test(pub.body.example || "") && /Honest Two Demo/.test(pub.body.org.name || "")
+    && /^We teach sailing to kids on the harbor\./.test(pub.body.org.mission || ""), pub.body);
   ok("§2 no placeholder video ships in the seed or default content",
     !/aqz-KE-bpKQ|eRsGyueVLvQ|R6MlUcmOul8/.test(read("scripts/ci/seed-demo.js") + read("scripts/seed/email1-demo.js")));
   await reset(q);

@@ -40,7 +40,8 @@ app.get("/org/public-list", wrap(async (req, res) => {
 // did for giving pages: the public read and the editor's preview of the
 // org-wide Donation form build it here, so the page and the preview cannot be
 // handed two different shapes. The org's facts ride along for the trust panel.
-const NOB = require("../give/notOpenBrand");   // FLOWS-13 item 2: a not-open page still draws its header
+const NOB = require("../give/notOpenBrand");
+const EXP = require("../give/examplePage");   // HONEST-3 item 4: the demo's pages are whole examples   // FLOWS-13 item 2: a not-open page still draws its header
 const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
@@ -74,7 +75,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // the org's white-label display name (portal_settings.display_name) when
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(orgPageSql("o.org_slug = $1"), [req.params.orgSlug]);
-  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  if (!orgs.length) return res.status(404).json({ error: "We couldn't find that organization. Check the link, or ask the organization for it.", unknownOrg: true });   // HONEST-3 item 5
   // FIX-58: the org's own donation form is gated like its giving pages: until
   // payments are connected it is not open, and its address says so. The
   // memberships page reads the same payload for the org's brand and asks with
@@ -82,8 +83,10 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // own until payments are connected, so that page never takes money either.
   const org = orgs[0];
   if (req.query.memberships !== "1" && !orgTakesGifts(org)) {
+    // HONEST-3 item 4: the demo's page is drawn whole, as an example that takes nothing.
+    if (await EXP.isDemo(query, org.id)) return res.json({ ...(await orgPagePublicPayload(org, req.params.orgSlug)), example: EXP.EXAMPLE });
     const name = String(org.display_name || "").trim() || org.name;
-    return res.status(404).json({ notOpen: true, orgName: name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)), error: `${name}'s giving page isn't open yet. Please check back soon.` });
+    return res.status(404).json({ notOpen: true, orgName: name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)), error: `${name}'s giving page isn't published yet. Please check back later.` });
   }
   res.json(await orgPagePublicPayload(org, req.params.orgSlug));
 }));
@@ -176,7 +179,7 @@ async function pageThemeOf(page) {
 }
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const orgs = await query(gpOrgSql("o.org_slug = ?"), [req.params.orgSlug]);
-  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  if (!orgs.length) return res.status(404).json({ error: "We couldn't find that organization. Check the link, or ask the organization for it.", unknownOrg: true });   // HONEST-3 item 5
   const org = orgs[0];
   const pageRows = await query(gpPageSql("gp.org_id = ? AND gp.slug = ? AND gp.status = 'active' AND COALESCE(gp.page_kind,'give') = 'give'"),
     [org.id, req.params.pageSlug]);
@@ -189,8 +192,12 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   // FUNDRAISING-2: a page is not open to the public until the org can take
   // money through it. Until payments are connected it is a draft, and its
   // address says so kindly instead of showing a form that cannot work.
-  if (!orgTakesGifts(org)) return res.status(404).json({ notOpen: true, orgName: org.name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)),   // FLOWS-13 item 2
-    error: `${org.name}'s giving page isn't open yet. Please check back soon.` });
+  if (!orgTakesGifts(org)) {
+    // HONEST-3 item 4: the demo's page is drawn whole, as an example that takes nothing.
+    if (await EXP.isDemo(query, org.id)) return res.json({ ...(await givingPagePublicPayload(org, pageRows[0], req.query)), example: EXP.EXAMPLE });
+    return res.status(404).json({ notOpen: true, orgName: org.name, ...(await NOB.notOpenBrandFull(query, org, giveThemePayload)),   // FLOWS-13 item 2
+      error: `${org.name}'s giving page isn't published yet. Please check back later.` });
+  }
   res.json(await givingPagePublicPayload(org, pageRows[0], req.query));
 }));
 async function p2pIndividualBoard(orgId, pageId) {

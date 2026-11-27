@@ -2783,6 +2783,7 @@ async function provisionOrgFromCloseLink(session) {
     "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, email, hash, inviteeDisplayName(email), "admin"]
   );
+  await require("../server/connections/alertReach").newOrgAlertDefaults(run, userId);   // HONEST-3 item 2
   await provisionNewOrgWorkflows(orgId).catch(e => console.error("[close-link] provision workflows:", e.message));
 
   await run(

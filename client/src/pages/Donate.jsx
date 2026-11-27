@@ -34,6 +34,7 @@ import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 // said once and read by this page AND the editor's preview of it.
 import { resolvePageTheme } from "../../../shared/pageTheme.js";
 import { PageNotOpen } from "./OrgBrandHeader";   // FLOWS-13 item 2: "Not open yet" still says whose page it is
+import { ProgressBar, ExampleNote } from "./giveParts";   // HONEST-3: the bar moved out; the demo's example line
 import { layoutFor, storyParagraphs, impactFor as designImpact, trustLines, waysLines, READ_MORE_AFTER } from "../../../shared/givingPageDesign.js";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
@@ -458,16 +459,7 @@ function DonorSignIn({ orgSlug, enabled, signedInAs, th, returnTo = null }) {
 }
 
 // ── PARITY-2 Part 2 · THE PEER-TO-PEER PAGE ─────────────────────────────────
-// A thin progress bar in the org's own colour. Every bar on these pages is
-// this one, so a fundraiser's, a team's and the campaign's look alike.
-function ProgressBar({ raised, goal, th }) {
-  if (!(goal > 0)) return null;
-  return (
-    <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
-      <div style={{ height: "100%", width: `${Math.min(100, Math.round((raised / goal) * 100))}%`, background: th.primary, borderRadius: 99 }} />
-    </div>
-  );
-}
+// The progress bar every p2p page shares is giveParts.jsx's ProgressBar.
 
 // The leaderboard: Individuals | Teams, the top ten from the page payload,
 // and "See all" reads every active row from the one public board query, so
@@ -868,7 +860,7 @@ export default function Donate({ preview = null }) {
   // The page's payload, put into state. One function for a fetched page and a
   // preview, so the two cannot be read differently.
   function applyPayload(d, params) {
-    setOrg(d.org);
+    setOrg(d.example ? { ...d.org, example: d.example } : d.org);   // HONEST-3 item 4: a demo's page is a whole example that takes no gift
     setFunds(d.funds || []);
     // Pre-select the second tier of the active (monthly) ladder now that
     // the org's ladders are known.
@@ -1039,7 +1031,7 @@ export default function Donate({ preview = null }) {
     catch { return String(Date.now()) + String(Math.random()).slice(2, 10); }
   }, []);
   const postDonation = async (payload) => {
-    if (preview) return;   // the editor's preview takes no gift
+    if (preview || org?.example) return org?.example ? setSubmitErr(org.example) : undefined;   // the editor's preview takes no gift; HONEST-3: nor the demo's example
     setSubmitting(true); setSubmitErr("");
     try {
       const r = await fetch(`${API}/donate/${orgSlug}`, {
@@ -1064,7 +1056,7 @@ export default function Donate({ preview = null }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (preview) return;   // the editor's preview takes no gift
+    if (preview || org?.example) return org?.example ? setSubmitErr(org.example) : undefined;   // the editor's preview takes no gift; HONEST-3: nor the demo's example
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
       setSubmitErr("Please fill in your name and email."); return;
     }
@@ -1408,6 +1400,7 @@ export default function Donate({ preview = null }) {
         </div>
       ) : null}
 
+      <ExampleNote text={org?.example} />
       {/* Form. FIXED — it is not a widget and cannot be removed, because a
           giving page that stopped taking gifts says nothing on screen. She
           chooses only whether it leads the page or follows the story. */}

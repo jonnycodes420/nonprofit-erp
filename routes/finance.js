@@ -1331,6 +1331,7 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
           : `Connect your own ${p.label} and your conversations with people on file will log themselves.`,
     };
   });
+  for (const p of providers) p.badge = require("../server/connections/checks").mailboxBadge(p, { demo, row: byProvider[p.key] });   // HONEST-3 item 1
   // YOUR TEAM: who has connected, which provider, and when it last read.
   // Names only. A colleague's address, list and switches stay hers.
   const teamRows = await query(
