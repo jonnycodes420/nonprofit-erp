@@ -19,9 +19,11 @@ slowest call, and nobody could tell a slow report from a slow runner.
   floored), shared by every org's refresh (10,631 waits in one run), and the 2 s refresh recomputed the same answers
   beside it. Giving summary, stored with no table list, was thrown away by every logged call (25% from the store) and
   recomputed after each on that one place.
-- **What changed.** `server/reports/storedRefresh.js`: a handler of its own on `gift.recorded` and `donor.changed`
-  recomputes the answers that name their tables at once, two at a time, quickest first, skipping one a read already
-  stored fresh; one per org at a time in a process. `orgSummaryRefresh` (2 s later) now does only the answers that name
+- **What changed.** `server/reports/storedRefresh.js`: the relay of an org's `gift.recorded` and `donor.changed` events
+  queues one folded job per org (`outbox.onRelayed`, new), which recomputes the answers that name their tables, two
+  at a time, quickest first, skipping one a read already stored fresh. (The first version was an outbox handler: a job
+  per event, and every suite's drain waits on handler jobs. In CI import8, import9 and integrity1 passed their 300 s
+  deadline; locally import9 took 42 s, not 7, with 2,005 handler jobs for one org's import. Moved before merge.) `orgSummaryRefresh` (2 s later) now does only the answers that name
   no tables, and `scheduleRefresh` asks for both. The report lane is a third rounded (worker 2, web still 3). Giving
   summary names its tables (captured over a year, a range, a fund and a campaign, plus the old-report baseline branch CI caught). Nothing stale is ever served: a read
   before the refresh lands computes the answer, as before.
@@ -41,3 +43,8 @@ slowest call, and nobody could tell a slow report from a slow runner.
   gift written straight into the table; the handler a no-op, 0 of 10 from the store; main's code, 0 of 10, nothing
   current within 2 s). `tests/reports-speed1-stored.test.js` §1 covers the two new keys; §2 now accepts a stored answer
   computed after the gift (the refresh can win the race), never one from before it.
+- **After merge (2a7045e, 27 Nov).** Four nightly-shaped runs on the runner the same afternoon all FAILED, including the
+  code from before SPEED-4. With SPEED-4: Annual from the store 80 to 86%, SYBUNT 76 to 87%. The 95% bar was never
+  reached on the runner: 89 to 92% on the branch's one run that morning. SYBUNT p95 983 to 2,403 ms; profile 1,021 to
+  1,348 ms. A follow-up that kept the refresh job going while gifts arrived did no better on one run and was not merged.
+  The laptop runs met the bar; the runner is the open question for the next brief.
