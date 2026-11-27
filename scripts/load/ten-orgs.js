@@ -2,12 +2,12 @@
 // this no test ran more than one at a time.
 //
 //   node scripts/load/ten-orgs.js seed [--fresh]   # 10 orgs of made-up people
-//   node scripts/load/ten-orgs.js run              # 20 users, 5 minutes, the table
+//   node scripts/load/ten-orgs.js run              # 20 users, 7 minutes, the table
 //
 // seed: orgs of 1k, 2k, 5k x4, 10k x2, 15k and 25k people, with gifts, calls,
 // tasks, journeys, scores and rhythms, every value a hash of the row number
 // (scripts/load/seed-many.js seedOrg, the same generator SCALE-1 uses).
-// run: USERS (20) simulated staff, two per org, for DURATION seconds (300),
+// run: USERS (20) simulated staff, two per org, for DURATION seconds (420; SPEED-4),
 // each doing a realistic mix with THINK_MS (3 s) to read each screen: open Home, open Donors,
 // filter, search, open a profile, log a call, record a gift, open
 // Fundraising, run one report (and, since SCALE-3, any other report). It prints a table per route (count, p50, p95,
@@ -15,6 +15,12 @@
 // when set, and exits 1 when the bar fails:
 //   p95 under 1 s for every API route (retention 800 ms) · a whole profile open under 1.5 s (p95)
 //   · nothing over 10 s · zero waits for a connection that gave up · zero 5xx
+// SPEED-4: a p95 is judged only from JUDGE_MIN (20) calls or more. Under that
+// the route is listed as "too few to judge", neither passing nor failing (a
+// 5xx or a call over 10 s still fails, at any count). Each report has a fixed
+// share of the reports turns, enough for 30 or more calls a run, and the
+// table prints n beside p95 and, for a stored answer, how many were served
+// from the store.
 //
 // Refuses any BASE or DATABASE_URL that is not loopback. Never run it against prod.
 "use strict";
@@ -127,22 +133,28 @@ const profileLists = (id) => {
     `/donors/${id}/relationships`, `/donors/${id}/pledges`, `/donors/${id}/custom-fields`, `/donors/${id}/attachments`];
   return { top, below: PROFILE_MANY(id).filter(p => !top.includes(p) && !GIVING_TAB(id).includes(p)) };
 };
-// SCALE-3: the rest of REPORT_HANDLERS (server/reports/handlers.js), one picked per "reports" turn.
+// SCALE-3: the rest of REPORT_HANDLERS (server/reports/handlers.js). SPEED-4: each user walks
+// them in order from its own place, so every report has the same fixed share of the "reports"
+// turns (a random pick gave some five calls a night, and p95 of five calls is the slowest one).
 const OTHER_REPORTS = ["giving-summary", "deposits", "non-cash", "by-group", "sybunt", "top-donors", "three-year", "year-over-year",
   "annual", "solicitations", "bookkeeper", "grant-deadlines", "grant-restricted", "members-directory", "members-by-level",
   "members-expiring", "members-lapsed", "members-new-renewed", "membership-revenue", "p2p-fundraisers", "p2p-teams"];
+// The reports served from the per-org store (server/reports/storedReports.js KEYS, and giving-summary).
+const STORED_REPORTS = ["retention", "annual", "sybunt", "three-year", "year-over-year", "giving-summary"];
 const pick = (arr, r) => arr[Math.floor(r() * arr.length)];
 const routeOf = (path) => (/\/bundle\?/.test(path) ? path.split("?")[0] + (path.includes(encodeURIComponent("/status")) ? " (above the fold)" : " (below the fold)") : path.split("?")[0]).replace(/\/org_ten\d+_[a-z]+\d+/g, "/:id").replace(/\/(d|g|i|t)_[0-9a-f]{8,}/g, "/:id");
 
 async function run() {
   const USERS = Number(process.env.USERS || 20);
-  const DURATION = Number(process.env.DURATION || 300) * 1000;
+  const DURATION = Number(process.env.DURATION || 420) * 1000;
   // A person reads a screen before the next click: THINK_MS on average (half
   // to one and a half of it). 0 is SCALE-2's zero-think run, which measures
   // how much one process can take rather than what twenty people see.
   const THINK_MS = Number(process.env.THINK_MS ?? 3000);
   const stats = new Map();   // route -> [ms]
   const fivexx = new Map(), slowest = { ms: 0 };
+  const storedHits = new Map();   // SPEED-4: route -> answers served from the per-org store (X-Org-Summary: stored)
+  const liveOfStored = new Map();   // SPEED-4: route -> ms of each answer a stored route computed on the request
   const profileOpens = [];
   const note = (route, ms, status) => {
     (stats.get(route) || stats.set(route, []).get(route)).push(ms);
@@ -156,6 +168,9 @@ async function run() {
       const r = await fetch(BASE + path, { method, headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
         body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000) });
       status = r.status; await r.arrayBuffer();
+      const k = `${method} ${routeOf(path)}`;
+      if (r.headers.get("x-org-summary") === "stored") storedHits.set(k, (storedHits.get(k) || 0) + 1);
+      else if (method === "GET" && STORED_REPORTS.some(x => path.split("?")[0] === `/reports/${x}`)) (liveOfStored.get(k) || liveOfStored.set(k, []).get(k)).push(performance.now() - t0);
     } catch { status = 0; }
     note(`${method} ${routeOf(path)}`, performance.now() - t0, status);
     return status;
@@ -181,13 +196,28 @@ async function run() {
     tokens.push({ tok: signedIn.get(o.id), o });
   }
   const today = new Date().toISOString().slice(0, 10);
+  // SPEED-4: the morning's first visit, before the clock starts. On prod the
+  // nightly pass (storedReports.nightly) leaves each stored report ready for
+  // the day; here each org asks each stored report once, untimed, so the run
+  // measures what follows a gift, not the first ask of the day.
+  if (process.env.WARM !== "0") {
+    const t0 = Date.now();
+    await Promise.all([...signedIn.values()].map(async tok => {
+      for (const k of STORED_REPORTS) await fetch(`${BASE}/reports/${k}`, { headers: { authorization: `Bearer ${tok}` } }).then(r => r.arrayBuffer()).catch(() => {});
+    }));
+    console.log(`warmed ${STORED_REPORTS.length} stored reports in ${signedIn.size} orgs in ${((Date.now() - t0) / 1000).toFixed(1)}s (untimed)`);
+  }
   const sampler = require("./poolSampler").startPoolSampler(BASE);   // PROFILE-SPEED-1: how full the pool got
   const until = Date.now() + DURATION;
-  const MIX = [["home", 3], ["donors", 3], ["filter", 2], ["search", 2], ["profile", 5], ["call", 1], ["gift", 1], ["fundraising", 1], ["report", 1], ["reports", 1]];
+  // SPEED-4: the reports turn weighs 9, not 1, and the run is 420 s, not 300, so
+// each of the 21 reports gets 30 or more calls while every other turn keeps the
+// count it had (300 s x 1/20 = 420 s x 1/28).
+const MIX = [["home", 3], ["donors", 3], ["filter", 2], ["search", 2], ["profile", 5], ["call", 1], ["gift", 1], ["fundraising", 1], ["report", 1], ["reports", 9]];
   const bag = MIX.flatMap(([k, w]) => Array(w).fill(k));
   await Promise.all(tokens.map(async ({ tok, o }, u) => {
     let seedN = u * 7919 + 1;
     const r = () => { seedN = (seedN * 48271) % 2147483647; return seedN / 2147483647; };
+    let nextReport = u;   // SPEED-4: this user's place in OTHER_REPORTS
     const person = () => `${o.id}_d${1 + Math.floor(r() * o.donors)}`;
     while (Date.now() < until) {
       if (THINK_MS) await new Promise(res => setTimeout(res, THINK_MS * (0.5 + r())));
@@ -205,53 +235,61 @@ async function run() {
       else if (what === "fundraising") await call(tok, "GET", "/fundraising/overview");
       else if (what === "report") await call(tok, "GET", `/reports/${pick(["lybunt", "retention"], r)}`);
       // SCALE-3: every other report on the Reports tab, so a slow one shows in the same run.
-      else if (what === "reports") await call(tok, "GET", `/reports/${pick(OTHER_REPORTS, r)}`);
+      else if (what === "reports") await call(tok, "GET", `/reports/${OTHER_REPORTS[nextReport++ % OTHER_REPORTS.length]}`);
     }
   }));
   const health1 = await (await fetch(`${BASE}/health`)).json();
   const lim = (h) => (h.pool && h.pool.limits) || {};
   const checkoutTimeouts = (lim(health1).checkoutTimeouts || 0) - (lim(health0).checkoutTimeouts || 0);
   const poolSeen = await sampler.stop();
-  return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS, pool: poolSeen });
+  return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS, pool: poolSeen, storedHits, liveOfStored });
 }
 
 const RETENTION_BAR_MS = 800;
+// SPEED-4: under this many calls a p95 is one of the slowest few calls, not a
+// percentile, so the route is "too few to judge" rather than a pass or a miss.
+const JUDGE_MIN = 20;
 const pct = (arr, p) => { if (!arr.length) return 0; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil(p / 100 * s.length) - 1)]; };
-function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS = 0, pool = null }) {
-  const rows = [...stats].map(([route, ms]) => ({ route, count: ms.length, p50: Math.round(pct(ms, 50)), p95: Math.round(pct(ms, 95)), max: Math.round(Math.max(...ms)), fivexx: fivexx.get(route) || 0 }))
+function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS = 0, pool = null, storedHits = null, liveOfStored = null }) {
+  const rows = [...stats].map(([route, ms]) => ({ route, count: ms.length, p50: Math.round(pct(ms, 50)), p95: Math.round(pct(ms, 95)), max: Math.round(Math.max(...ms)), fivexx: fivexx.get(route) || 0,
+    stored: storedHits ? storedHits.get(route) || 0 : null, judged: ms.length >= JUDGE_MIN }))
     .sort((a, b) => b.p95 - a.p95);
   const profile = { count: profileOpens.length, p50: Math.round(pct(profileOpens, 50)), p95: Math.round(pct(profileOpens, 95)), max: Math.round(Math.max(0, ...profileOpens)) };
   const misses = [];
+  const tooFew = rows.filter(r => !r.judged).map(r => `${r.route} (n=${r.count})`);
   for (const r of rows) {
-    if (r.p95 >= 1000) misses.push(`${r.route} p95 ${r.p95} ms`);
+    if (r.judged && r.p95 >= 1000) misses.push(`${r.route} p95 ${r.p95} ms, n=${r.count}`);
     if (r.max > 10000) misses.push(`${r.route} max ${r.max} ms`);
     if (r.fivexx) misses.push(`${r.route} ${r.fivexx} 5xx or no answer`);
   }
   // SCALE-3: retention's own bar is tighter, 800 ms, so it has room under the 1 s.
-  for (const r of rows) if (r.route === "GET /reports/retention" && r.p95 >= RETENTION_BAR_MS && r.p95 < 1000) misses.push(`${r.route} p95 ${r.p95} ms (its bar is ${RETENTION_BAR_MS} ms)`);
-  if (profile.p95 >= 1500) misses.push(`profile open p95 ${profile.p95} ms`);
+  for (const r of rows) if (r.judged && r.route === "GET /reports/retention" && r.p95 >= RETENTION_BAR_MS && r.p95 < 1000) misses.push(`${r.route} p95 ${r.p95} ms (its bar is ${RETENTION_BAR_MS} ms), n=${r.count}`);
+  if (profile.p95 >= 1500) misses.push(`profile open p95 ${profile.p95} ms, n=${profile.count}`);
   if (checkoutTimeouts) misses.push(`${checkoutTimeouts} waits for a connection gave up`);
   const pass = misses.length === 0;
+  const storedCell = r => (r.stored ? `${r.stored} (${Math.round(r.stored / r.count * 100)}%)` : "");
   const lines = [
     `### Load test: ${USERS} users, 10 orgs, ${Math.round(DURATION / 1000)} s, ${THINK_MS / 1000} s to read each screen · ${pass ? "PASS" : "FAIL"}`, "",
-    "| route | count | p50 ms | p95 ms | max ms | 5xx |", "|---|---:|---:|---:|---:|---:|",
-    ...rows.map(r => `| ${r.route} | ${r.count} | ${r.p50} | ${r.p95} | ${r.max} | ${r.fivexx} |`),
-    `| **profile open (all its requests)** | ${profile.count} | ${profile.p50} | ${profile.p95} | ${profile.max} | |`, "",
+    "| route | p50 ms | p95 ms | n | max ms | 5xx | from the store |", "|---|---:|---:|---:|---:|---:|---:|",
+    ...rows.map(r => `| ${r.route} | ${r.p50} | ${r.p95}${r.judged ? "" : " (too few to judge)"} | ${r.count} | ${r.max} | ${r.fivexx} | ${storedCell(r)} |`),
+    `| **profile open (all its requests)** | ${profile.p50} | ${profile.p95} | ${profile.count} | ${profile.max} | | |`, "",
     `Connection waits that gave up: ${checkoutTimeouts}. Slowest single request: ${slowest.route} ${Math.round(slowest.ms)} ms.`,
     ...(pool && pool.samples ? [`Pool (PROFILE-SPEED-1, ${pool.samples} samples): most in use at once ${pool.peak} of ${pool.max} (${pool.peakPct}%); at 70% or more ${pool.pctAt70}% of the time, full ${pool.pctAtFull}%.` +
       (pool.perRequestPeak != null ? ` Most one request held: ${pool.perRequestPeak} (cap ${pool.perRequestMax}).` : "")] : []),
-    pass ? "Every route is inside the bar." : `Misses: ${misses.join("; ")}.`,
+    ...(liveOfStored && liveOfStored.size ? [`Stored reports computed on the request (not from the store): ${[...liveOfStored].map(([k, ms]) => `${k} ${ms.length}, slowest ${Math.round(Math.max(...ms))} ms`).join("; ")}.`] : []),
+    ...(tooFew.length ? [`Too few to judge (under ${JUDGE_MIN} calls, neither a pass nor a miss): ${tooFew.join("; ")}.`] : []),
+    pass ? "Every route judged is inside the bar." : `Misses: ${misses.join("; ")}.`,
   ];
   const md = lines.join("\n");
   console.log(md);
-  const out = { at: new Date().toISOString(), pass, users: USERS, seconds: Math.round(DURATION / 1000), thinkMs: THINK_MS, rows, profile, checkoutTimeouts,
+  const out = { at: new Date().toISOString(), pass, users: USERS, seconds: Math.round(DURATION / 1000), thinkMs: THINK_MS, rows, profile, checkoutTimeouts, tooFew, judgeMin: JUDGE_MIN,
     slowest: { route: slowest.route, ms: Math.round(slowest.ms) }, pool, misses };
   if (process.env.OUT) fs.writeFileSync(process.env.OUT, JSON.stringify(out, null, 2));
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + "\n");
   return out;
 }
 
-module.exports = { ORGS, routeOf, report, extras };
+module.exports = { ORGS, OTHER_REPORTS, JUDGE_MIN, routeOf, report, extras };
 if (require.main === module) {
   (MODE === "seed" ? seed() : MODE === "run" ? run().then(o => process.exit(o.pass ? 0 : 1)) : Promise.reject(new Error("usage: ten-orgs.js seed|run")))
     .catch(e => { console.error(e.stack || e.message); process.exit(1); });

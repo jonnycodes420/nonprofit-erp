@@ -30,7 +30,11 @@ const { AsyncLocalStorage } = require("async_hooks");
 const LIMITS = require("./requestLimits");
 const { POOL_MAX } = require("./pools");
 
-const LANE_MAX = Math.max(1, Math.floor(POOL_MAX / 3));
+// SPEED-4: a third rounded, not floored. The web's 10 keep 3; the worker's 5 get
+// 2, not 1: every stored report the worker recomputes after a gift, for every
+// org, queued for that one place (10,631 waits in one load run), so the answer
+// stayed stale for 3 to 7 s after each gift even in a 1,000-person org.
+const LANE_MAX = Math.max(1, Math.round(POOL_MAX / 3));
 const TOO_LONG = "This report took too long to run. Try a smaller date range, or try again in a minute.";
 
 const lane = new AsyncLocalStorage();
