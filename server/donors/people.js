@@ -56,6 +56,12 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
   const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
   let [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]);
+  // FRESH-4 item 3: a row the queue is about to rewrite for this person is scored on the fly too
+  const pending = row ? await require("./scoresPending").rescorePending(orgId, d.id).catch(() => false) : false;
+  if (pending) {
+    const [s] = (await engagementMod.scorePeople(query, orgId, orgToday(await orgTz(orgId)), [d.id])).scores;   // ORG_TZ_SEAM_OK
+    if (s) row = { ...row, engagement: s.engagement, generosity: s.generosity, band: s.band, reason: s.reason, last_touch: s.lastTouch, parts: s.parts };
+  }
   if (!row) {
     const [s] = (await engagementMod.scorePeople(query, orgId, orgToday(await orgTz(orgId)), [d.id])).scores;   // ORG_TZ_SEAM_OK
     if (s) row = { engagement: s.engagement, generosity: s.generosity, band: s.band, reason: s.reason, last_touch: s.lastTouch, parts: s.parts, computed_for: null, computed_at: null };

@@ -52,6 +52,19 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   `org_id` gets a rule there or a SILENT entry, or the tenant matrix fails
   (`tests/lib/changedHeaderGuard.js`). Don't reach past `requestLimits.checkout` for a request's
   connection: a statement on a connection it didn't check out is not in the header.
+- **FRESH-4 (2026-11-27): any write re-reads every surface on screen; kinds only order it.** A write
+  from this tab, or another tab on the same org (the BroadcastChannel), reaches every mounted
+  `useChanged` / `useLive` view: the views its kinds name re-read at 120 ms, every other one in the
+  same round by `WIDE_MS` (250 ms). Every such change carries `wide: true`, and a view's own test
+  never vetoes it (if a view filters a change, `c.wide` passes). An answer whose header says `none`
+  reaches nobody; the worker's marks and `told()` reach only their kinds, as before. The cost is
+  capped by visibility, never by skipping: a page in a hidden tab re-reads when it is shown.
+  A server answer a screen reads after a write is never older than the write: a stored answer
+  follows REPORTS-SPEED-1's rule (never served stale), and a row the queue rewrites after a change
+  (a person's scores) is computed on the fly while that rescore is waiting or running
+  (`server/donors/scoresPending.js`). A new cache that a GET reads gets the same: cleared before
+  the write's answer, or bypassed until its refresh lands. The guard is the browser walk in
+  `tests/stale2.test.js` §K, with a census (§M) of every write route in the families it walks.
 - **SCALE-6 (2026-11-20): no request waits long for a connection, and the web keeps two.**
   A web request whose statement has waited `CONNECTION_WAIT_MS` (3 s) on the pool itself answers
   503 `{ code: "busy" }`, "Steward is busy, try again.", with `Retry-After: 1`; the browser asks a

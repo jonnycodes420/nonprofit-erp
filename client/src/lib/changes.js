@@ -147,9 +147,15 @@ const log = [];   // the last few announcements, for tests (window.__stewardChan
 // did not make itself (told(), the worker), before any view asks again.
 const first = new Set();
 export function onAnyChange(fn) { first.add(fn); return () => first.delete(fn); }
+// FRESH-4: the last write this tab (or another on the org) announced, so the bell's read that the
+// write's own re-read round sets off does not announce the write's tables a second time (it doubled
+// Home's figures: 20 requests a gift). The worker's later rows move the marks again and are heard then.
+let lastWrite = { at: 0, kinds: new Set() };
+const RECENT_WRITE_MS = 1500;
 export function announce(change) {
   const c = { kinds: change.kinds instanceof Set ? change.kinds : new Set(change.kinds || []), ids: change.ids || {}, source: change.source || "write", path: change.path || null, method: change.method || null };
   log.push({ kinds: [...c.kinds], source: c.source, path: c.path, at: Date.now() }); if (log.length > 50) log.shift();
+  if (c.source === "write" || c.source === "tab") lastWrite = { at: Date.now(), kinds: new Set([...(Date.now() - lastWrite.at < RECENT_WRITE_MS ? lastWrite.kinds : []), ...c.kinds]) };
   for (const f of first) { try { f(c); } catch { /* never stops the announcement */ } }
   for (const s of subs) { try { s(c); } catch { /* one view's re-read never stops another */ } }
   // FRESH-3: the browser's other tabs on this org hear this tab's write at once, not at the bell's next minute.
@@ -194,20 +200,47 @@ export function mergeChanges(a, b) {
   return { kinds, ids, source: lead.source, path: w.path, method: w.method };
 }
 
+// FRESH-4 item 2 · ANY WRITE RE-READS EVERY SURFACE ON SCREEN. Kinds narrow it, they don't gate it.
+// Eight builds wired one surface at a time to the kinds its write announced, and a new route, a
+// renamed one or a missed kind left a screen stale (W-1112-Volunteers-01X, every night since 12 Nov).
+// Now a write from this tab or another tab on this org (api.js, the BroadcastChannel) reaches EVERY
+// mounted view: the ones its kinds name re-read first (delayMs), every other one in the same round,
+// by WIDE_MS. Every such change carries `wide: true`, named or not, so a view's own test (writeRev,
+// the boot slices, the Donors list's "only adds and deletes", the profile's money) never vetoes it. An answer that says it wrote
+// nothing ("none": no kinds) reaches nobody, and neither does the worker's marks or a told() beyond
+// their kinds (told() is every kind already). The cost is capped by visibility, never by skipping:
+// a page in a background tab re-reads when it is shown again.
+export const WIDE_MS = 250;
+export function isWide(change) {
+  return !!change && (change.source === "write" || change.source === "tab") && change.kinds && change.kinds.size > 0;
+}
+const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 export function useChanged(kinds, fn, ids = null, delayMs = 120) {
   const ref = useRef({ fn, kinds, ids });
   ref.current = { fn, kinds, ids };
   useEffect(() => {
-    let t = null, last = null;
+    let t = null, last = null, due = 0, waiting = false;
+    const fire = () => {
+      t = null;
+      if (hidden()) { waiting = true; return; }
+      const m = last; last = null; due = 0;
+      if (ref.current.fn) ref.current.fn(m);
+    };
     const on = c => {
       const r = ref.current;
-      if (!reaches(c, r.kinds, r.ids)) return;
-      last = mergeChanges(last, c);
+      const named = reaches(c, r.kinds, r.ids);
+      if (!named && !isWide(c)) return;
+      const heard = isWide(c) ? { ...c, wide: true } : c;
+      last = last ? { ...mergeChanges(last, heard), wide: !!(last.wide || heard.wide) } : heard;
+      const at = Date.now() + (named ? delayMs : Math.max(delayMs, WIDE_MS));
+      if (t && due <= at) return;   // one round: the earlier of the two stands
       if (t) clearTimeout(t);
-      t = setTimeout(() => { t = null; const m = last; last = null; if (ref.current.fn) ref.current.fn(m); }, delayMs);
+      due = at; t = setTimeout(fire, at - Date.now());
     };
+    const shown = () => { if (waiting && !hidden()) { waiting = false; fire(); } };
     subs.add(on);
-    return () => { subs.delete(on); if (t) clearTimeout(t); };
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", shown);
+    return () => { subs.delete(on); if (t) clearTimeout(t); if (typeof document !== "undefined") document.removeEventListener("visibilitychange", shown); };
   }, [delayMs]);
 }
 
@@ -250,6 +283,7 @@ let seen = null;
 // LAG-1: `covered` is the kinds a write just announced itself (lib/catchUp.js):
 // its own rows moved those tables, so they are not announced a second time.
 export function noteServerChanges(changes, covered = null) {
+  if (!covered && Date.now() - lastWrite.at < RECENT_WRITE_MS) covered = lastWrite.kinds;
   const tables = changes && changes.tables;
   if (!tables || typeof tables !== "object") return;
   if (!seen) { seen = { ...tables }; loadTopics().catch(() => {}); return; }
