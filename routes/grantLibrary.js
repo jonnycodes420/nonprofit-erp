@@ -68,7 +68,7 @@ const kindLabel = k => (KINDS.find(x => x.key === k) || {}).label || "Other";
 const iso = d => (d instanceof Date ? d.toISOString() : d || null);
 const clip = (v, n) => String(v == null ? "" : v).trim().slice(0, n);
 const isDay = s => DAY_RE.test(String(s || "")) && !Number.isNaN(Date.parse(String(s)));
-const cents = v => money.toCents(v) || 0;
+const cents = v => money.storedCentsOr0(v);
 const fmt = c => (c < 0 ? "-" + money.formatCentsPlain(-c) : money.formatCentsPlain(c));
 const tokens = t => String(t || "").toLowerCase().split(/[^a-z0-9']+/).filter(Boolean);
 function hasRun(ts, run) {

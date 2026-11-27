@@ -485,7 +485,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         // inferred is a suggestion and `stage` stays NULL until a human places
         // them. (The post-insert pass below fills suggested_stage from history.)
         d._stageExplicit ? (d.stage || null) : null,
-        toDollars(toCents(d.total)||0), toDollars(toCents(d.lastAmount)||0),  // BUILD-73: cents preserved
+        toDollars(require("../../money").inputCentsOr0(d.total, "total")), toDollars(require("../../money").inputCentsOr0(d.lastAmount, "lastAmount")),  // BUILD-73: cents preserved
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
         d.notes||"", d.city||null, d.state||null,
@@ -501,7 +501,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         d.doNotSolicit === true, d.doNotMail === true, d.doNotEmail === true,
         d.deceasedDate || null, d.address || null, d.zip || null,
         d.importedSustainer === true,
-        d.importedSustainerAmount != null ? toDollars(toCents(d.importedSustainerAmount) || 0) : null,
+        d.importedSustainerAmount != null ? toDollars(require("../../money").inputCentsOr0(d.importedSustainerAmount, "importedSustainerAmount")) : null,
         d.importedSustainerLastGift || null,
         // BUILD-78 — validated through the ONE seam above; raw never lands.
         d._cfValidated && Object.keys(d._cfValidated).length ? JSON.stringify(d._cfValidated) : null,

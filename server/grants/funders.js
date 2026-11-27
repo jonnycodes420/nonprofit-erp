@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const { requireAuth404 } = require("../../auth");   // FIX-20 Part 0: the file doors
 const { fileLimiter } = require("../shared/fileLimiter");   // one limiter, shared by the two file doors
@@ -62,9 +63,9 @@ app.get("/funders", requireAuth, wrap(async (req, res) => {
       funderTypeLabel: G.funderTypeLabel(r.funder_type), email: r.email || null,
       city: r.city || null, state: r.state || null,
       grantCount: r.grant_count,
-      openRequested: toDollars(toCents(r.open_requested) || 0),
-      awardedTotal: toDollars(toCents(r.awarded_total) || 0),
-      lifetimeGiving: toDollars(toCents(r.total_giving) || 0),
+      openRequested: toDollars(storedCentsOr0(r.open_requested)),
+      awardedTotal: toDollars(storedCentsOr0(r.awarded_total)),
+      lifetimeGiving: toDollars(storedCentsOr0(r.total_giving)),
     })),
     funderTypes: G.FUNDER_TYPES,
   });

@@ -580,6 +580,8 @@ async function buildUnderstanding(req, body) {
   const events = eventPick.events;
   // IMPORT-10 item 6: the same file within 30 days is asked, never one click from a second import
   u.importedBefore = await require("../server/imports/importedBefore").importedBefore({ query, orgId, fileKey: fileFingerprint(body), fileName: body.fileName, u, answers: body.answers });
+  // IMPORT-11 item 3: gifts far outside the pattern, under their own heading (import them, or set them aside)
+  if (u.rowChecks) u.rowChecks.outliers = await require("../server/imports/outliers").importOutliers(query, orgId, u, matches).catch(() => null);
   u.ready = u.questions.filter(q => !q.optional).length === 0;
   const button = Rm.importButtonSentence(u, { matched: matchedPeople, waiting: waitingPeople });
   if (!u.ready) button.text = `Answer ${u.questions.filter(q => !q.optional).length === 1 ? "1 question" : u.questions.filter(q => !q.optional).length + " questions"} first`;
@@ -1092,6 +1094,7 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.eventId = eventId;
   summary.notesSheets = u.notesSheets;
   summary.figureChecks = u.figureChecks;
+  summary.rowChecks = u.rowChecks || null;   // IMPORT-11: copies, over the cap, far outside, future-dated, counted either way
   summary.verifyFile = require("../server/onboard/sheetVerify").fileFacts({ u, personId, dupLines, duplicateCents, pledgeCents, installmentCents });   // ONBOARD-1
   await run(`INSERT INTO imports (id, org_id, name, source_filename, shape, started_at, rows_in, gifts_created, donors_created,
                                   rows_set_aside, rows_errored, dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json)
@@ -1113,7 +1116,7 @@ async function writePlan({ req, body, importId, who, report }) {
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
     columnAccount: u.columnAccount, button: summary.button, reconciled: true, giftLine: summary.giftLine,
-    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents, sheetRows: summary.sheetRows, connections: summary.connections } };
+    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents, sheetRows: summary.sheetRows, connections: summary.connections, rowChecks: summary.rowChecks } };
 }
 
 // IMPORT-7 · EACH SHEET'S ROWS, EACH COUNT NAMED. Every row the reader read

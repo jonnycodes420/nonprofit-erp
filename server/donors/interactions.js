@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
@@ -200,7 +201,7 @@ async function briefRowsFor(orgId, donorId) {
   const givingWord = t("giver_singular") || "donor";
 
   lines.push(`person:${donor.id} · ${donor.name}${donor.kind === "organisation" ? " (an organization)" : ""}, `
-    + `${money.formatCentsPlain(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
+    + `${money.formatCentsPlain(storedCentsOr0(donor.total_giving))} given in total across ${Number(donor.gift_count) || 0} gifts, `
     + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
     + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}.`);   // ATLAS-3: the org's word is an instruction (briefFast.vocabularyRule), not a row
 
@@ -222,7 +223,7 @@ async function briefRowsFor(orgId, donorId) {
   facts.gifts = gifts;
   for (const g of gifts) {
     refs.add(`gift:${g.id}`);
-    lines.push(`gift:${g.id} · ${money.formatCentsPlain(toCents(g.amount) || 0)} on ${g.date}`
+    lines.push(`gift:${g.id} · ${money.formatCentsPlain(storedCentsOr0(g.amount))} on ${g.date}`
       + `${g.fund_name ? ` to ${t("fund_singular") || "fund"} "${g.fund_name}"` : ""}`
       + `${g.campaign ? `, appeal "${g.campaign}"` : ""}${g.payment_method ? `, by ${g.payment_method}` : ""}.`);
   }
@@ -231,7 +232,7 @@ async function briefRowsFor(orgId, donorId) {
   for (const p of await query(
     `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC NULLS LAST LIMIT 6`, [orgId, donorId])) {
     refs.add(`pledge:${p.id}`); facts.pledges.push(p);
-    lines.push(`pledge:${p.id}, a pledge of ${money.formatCentsPlain(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
+    lines.push(`pledge:${p.id}, a pledge of ${money.formatCentsPlain(storedCentsOr0(p.amount))} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
   }
 
   // HOUSEHOLD AND RELATED PEOPLE.
@@ -252,7 +253,7 @@ async function briefRowsFor(orgId, donorId) {
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST LIMIT 6`, [orgId, donorId]).catch(() => [])) {
     refs.add(`softcredit:${sc.id}`); facts.softCredits.push(sc);
-    lines.push(`softcredit:${sc.id}: soft-credited for ${money.formatCentsPlain(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
+    lines.push(`softcredit:${sc.id}: soft-credited for ${money.formatCentsPlain(storedCentsOr0(sc.amount))} given by ${sc.giver} on ${sc.date}`
       + `${sc.role ? ` as ${sc.role}` : ""}. The money was ${sc.giver}'s; this is recognition, not their own giving.`);
   }
 
@@ -264,7 +265,7 @@ async function briefRowsFor(orgId, donorId) {
       WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
       ORDER BY o.expected_close NULLS LAST LIMIT 3`, [orgId, donorId, P.OPEN_STAGE_KEYS])) {
     refs.add(`proposal:${o.id}`); facts.proposals.push({ ...o, stageLabel: P.stageLabel(o.proposal_stage) });
-    lines.push(`proposal:${o.id}: an open ask of ${money.formatCentsPlain(toCents(o.target_amount) || 0)} for "${o.name}"`
+    lines.push(`proposal:${o.id}: an open ask of ${money.formatCentsPlain(storedCentsOr0(o.target_amount))} for "${o.name}"`
       + `${o.fund_name ? ` (${o.fund_name})` : ""}, at stage "${P.stageLabel(o.proposal_stage)}"`
       + `${o.probability != null ? `, which the officer put at ${o.probability} per cent` : ", with no probability set"}`
       + `${o.expected_close_civil ? `, expected to close ${o.expected_close_civil}` : ""}`

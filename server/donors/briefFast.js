@@ -15,6 +15,7 @@
 //     not as a row to repeat, and a sentence about what "this organization
 //     calls" anyone is dropped whatever the model wrote.
 "use strict";
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const crypto = require("crypto");
 
 const BRIEF_MODEL = () => process.env.BRIEF_MODEL || "claude-sonnet-4-6";
@@ -51,7 +52,7 @@ function openingLines(ctx, money, toCents) {
   const first = String(d.name).split(/\s+/)[0];
   const n = Number(d.gift_count) || 0;
   const out = [n
-    ? `${first} has given ${money.formatCentsPlain(toCents(d.total_giving) || 0)} across ${n} ${n === 1 ? "gift" : "gifts"}, most recently on ${longDay(d.last_gift_date) || "a date not on record"}.`
+    ? `${first} has given ${money.formatCentsPlain(storedCentsOr0(d.total_giving))} across ${n} ${n === 1 ? "gift" : "gifts"}, most recently on ${longDay(d.last_gift_date) || "a date not on record"}.`
     : `${first} has no gifts on record yet.`];
   if (String(d.about_them || "").trim()) out.push(`About ${first}: ${String(d.about_them).trim()}`);   // ATLAS-4: in full, never cut
   return out;

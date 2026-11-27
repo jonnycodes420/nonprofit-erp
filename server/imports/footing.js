@@ -19,6 +19,10 @@ const money = require("../../money");
 
 // The words for why a row was set aside, short, in the receipt's order.
 const REASONS = [
+  // IMPORT-11: a row over the cap, an exact copy, a gift far outside the pattern
+  ["cap", "over $100,000,000", /most one gift can be/i],
+  ["copy", "exact copies", /exact copy/i],
+  ["outlier", "far above the pattern", /far above/i],
   ["future", "future-dated", /after today|future/i],
   ["deleted", "matches deleted people", /someone you deleted/i],
   ["here", "already here", /already here|duplicate|same gift listed twice/i],
@@ -46,7 +50,8 @@ const usd = c => money.formatCents(c).replace(/\.00$/, "");
 
 function importFooting(row, summary) {
   const n = v => Number(v) || 0;
-  const c = v => money.toCents(v) ?? 0;
+  // IMPORT-11: stored figures read exactly; toCents refused a $1,000,000,000 file and the receipt read "File $0"
+  const c = v => money.storedCentsOr0(v);
   const s = summary && typeof summary === "object" ? summary : {};
   const sc = s.counts && typeof s.counts === "object" && row.shape === "sheet" ? s.counts : {};
   // Rows (FIX-52: a pledge is a row the file brought in, as much as a gift is).

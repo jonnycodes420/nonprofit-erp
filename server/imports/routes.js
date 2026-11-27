@@ -164,8 +164,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         // a gift-less file takes, which is exactly the file whose stages are
         // pure guesswork) was still writing them into `stage` as decisions.
         d._stageExplicit ? (d.stage || null) : null,
-        toDollars(toCents(d.total)      || 0),   // BUILD-73: cents preserved, was Math.round
-        toDollars(toCents(d.lastAmount) || 0),   // BUILD-73: cents preserved, was Math.round
+        toDollars(require("../../money").inputCentsOr0(d.total, "total")),   // BUILD-73: cents preserved, was Math.round
+        toDollars(require("../../money").inputCentsOr0(d.lastAmount, "lastAmount")),   // BUILD-73: cents preserved, was Math.round
         d.lastGift || null,
         parseInt(d.gifts) || (d.total ? 1 : 0),
         JSON.stringify(Array.isArray(d.tags) ? d.tags : []),
