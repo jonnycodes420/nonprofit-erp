@@ -48,6 +48,9 @@
 // any real single gift and below the point where integer arithmetic in JS gets
 // interesting (Number.MAX_SAFE_INTEGER is ~9e15 cents).
 const MAX_CENTS = 100_000_000_00;
+// IMPORT-11: the one sentence for a gift over it, on the gift form, the import
+// preview and the receipt alike (shared/importRowChecks.js keeps the same words).
+const OVER_CAP_WORDS = "over $100,000,000, the most one gift can be in Steward";
 
 // Parse ANYTHING that arrived from outside — a JSON body, a CSV cell, a Stripe
 // payload, a form field — into an integer number of cents.
@@ -82,6 +85,31 @@ function toCents(input) {
 function roundHalfUp(cents) {
   const eps = Math.abs(cents) * Number.EPSILON * 4;
   return Math.round(cents + (cents >= 0 ? eps : -eps));
+}
+
+// IMPORT-11 · A VALUE STEWARD STORED ITSELF. toCents() refuses anything over
+// the cap, which is right for input and wrong for a NUMERIC column or a SUM
+// Steward already holds: `toCents(stored) || 0` turned a $1,000,000,000 gift
+// into "Lifetime $0" and an import receipt into "File $0". A stored value is
+// read exactly, whatever its size; only a value that is not a number at all
+// (null, "", "abc") is null, and the caller says what it does with that.
+function storedCents(input) {
+  if (input === null || input === undefined || input === "") return null;
+  if (typeof input === "bigint") return Number(input) * 100;
+  const n = typeof input === "number" ? input : Number(String(input).trim().replace(/[$\s,]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return roundHalfUp(n * 100);
+}
+
+// Cents for a stored value, 0 for no value. For a figure that adds stored
+// columns, where a missing column means nothing was there: never for input.
+const storedCentsOr0 = input => storedCents(input) ?? 0;
+
+// True when an amount from outside reads as money but is over the cap.
+function isOverCap(input) {
+  if (toCents(input) !== null) return false;
+  const c = storedCents(typeof input === "string" ? input.trim().replace(/[$\s,]/g, "") : input);
+  return c !== null && Math.abs(c) > MAX_CENTS;
 }
 
 function clamp(cents) {
@@ -157,6 +185,12 @@ function hasCents(value) {
 // NaN. This is the function the eight former Math.round() sites call.
 function parseMoneyOrThrow(input, field = "amount") {
   const cents = toCents(input);
+  if (cents === null && isOverCap(input)) {
+    const err = new Error(`This gift is ${OVER_CAP_WORDS}.`);
+    err.code = "over_cap";
+    err.field = field;
+    throw err;
+  }
   if (cents === null) {
     const err = new Error(`${field} is not a valid money amount: ${JSON.stringify(input)}`);
     err.code = "invalid_money";
@@ -166,9 +200,18 @@ function parseMoneyOrThrow(input, field = "amount") {
   return cents;
 }
 
+// IMPORT-11 · AN AMOUNT FROM OUTSIDE THAT MAY BE BLANK (a total column on a
+// person's row). Blank is no amount, 0; an unreadable or over-cap amount is
+// refused the way parseMoneyOrThrow refuses it, never written as $0.
+function inputCentsOr0(input, field = "amount") {
+  if (input === null || input === undefined || (typeof input === "string" && input.trim() === "")) return 0;
+  return parseMoneyOrThrow(input, field);
+}
+
 module.exports = {
+  inputCentsOr0,
   formatCentsPlain,
-  MAX_CENTS,
+  MAX_CENTS, OVER_CAP_WORDS, storedCents, storedCentsOr0, isOverCap,
   toCents, toDollars, sumDollars,
   formatCents, hasCents, parseMoneyOrThrow,
 };

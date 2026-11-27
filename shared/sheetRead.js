@@ -33,6 +33,8 @@ import { AUCTION_HEADER_ROLES, AUCTION_ROLE_LABELS, tidyAuctionColumns, auctionF
 import { moneyOf, looksMoney, hasCurrencyMark, serialToIso } from "./sheetCells.js";
 import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf } from "./importRows.js";
 import { readTotalRow, checkHeadline } from "./totalRows.js";
+import { applySheetKinds, linkGiftSheetsById, joinSentence, sheetsSetAside } from "./sheetWorkbook.js";   // IMPORT-11
+import { rowChecks, rowCheckLists } from "./importRowChecks.js";   // IMPORT-11: the cap, copies, far outside, future-dated
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
   demotePeopleSheetAmounts, mergedLinesOf, partnersAndHouseholds, spouseQuestion, choiceLines, amountChecks, importButtonSentence,
   notePreferences, personFields, peopleSheetGiftsOf } from "./sheetReadLines.js";
@@ -902,6 +904,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   }
   const roleOf = (t, r) => t.cols.find(c => c.role === r);
   const cellOf = (t, b, c) => (b.raw ? b.raw[c.index] : b.cells[c.index]);
+  const sheetKindRefused = applySheetKinds(tables, answers, (t, r) => !!roleOf(t, r));   // IMPORT-11: her answer per sheet
+  const isNamed = t => ["name", "first", "last", "lastFirst", "org", "email"].some(r => roleOf(t, r));
+  const join = linkGiftSheetsById(tables, { roleOf, dataRows, cellOf, isNamed });
   // IMPORT-8 · A GIFT IS COUNTED ONCE (shared/sheetReadLines.js)
   demotePeopleSheetAmounts(tables, { cellOf, dataRows });
   // HARDEN-1: does a column hold more than one value for one person's rows?
@@ -1118,7 +1123,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // ("Ivy (send with Harlan's) Brooks", "**Gideon Pratt") is moved off it.
   const noteRows = [], namesCleaned = [];
   const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list
-  const occ = new Map();
+  const occ = new Map(), rowCk = rowChecks(answers);
   const sourceFile = s(fileName) || "your file";
   const personGiftCents = new Map();   // for "Gave at dinner" checks
   const keptHeaders = new Map();       // header → { header, sheet, count }
@@ -1174,7 +1179,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const amtCol = moneyCols.find(m => m.role === "amount");
       if (readTotalRow({ t, b, cells, moneyHere, amtCol, nameText, sums: { table: tableSums, since: sinceSubtotal }, totals, checks: totalChecks, answers, cellOf, moneyOf, cents, fmt$ })) continue;
       t.readCount++;
-      if (!nameText) {
+      if (!nameText && !(t.linkedById && byId.has(s(get(b, "externalId")).toLowerCase()))) {   // IMPORT-11: the ID names the person
         for (const m of moneyHere) { const v = cents(moneyOf(cellOf(t, b, m))); tableSums[m.index] += v; sinceSubtotal[m.index] += v; }
         const v = amtCol ? moneyOf(cellOf(t, b, amtCol)) : null;
         aside.push({ sheet: t.sheet, line: b.line, reason: "no name, email or organization on this row", cells: filled.slice(0, 6), cents: v != null ? cents(v) : null });
@@ -1381,6 +1386,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const type = s(get(b, "type"));
       if (type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
       if (status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
+      const rk = rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}` });   // IMPORT-11
+      if (rk.aside) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rk.aside }); continue; }
       // when: a gift with a person and an amount always lands. No date, or a
       // date Steward cannot place in a day, is a gift with no date, flagged.
       let date = null, dateNote = null;
@@ -1474,7 +1481,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
                      fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
-                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags,
+                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark,
                      // ASKS-1: an auction purchase: the item and what it was worth
                      auction: role("item") ? auctionFactsOf({ itemRaw: get(b, "item"), fmvRaw: get(b, "fmv"), hasFmvColumn: !!role("fmv"), answers, moneyOf }) : null };
       const person = ensure();
@@ -1721,7 +1728,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   }
   const result = {
     fileKind, ready, knownShape: knownShapeSentence(tables.filter(t => t.kind === "gifts" || t.kind === "people").map(t => t.shape)),
-    tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles, isVolunteer: !!t.isVolunteer,
+    tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles, isVolunteer: !!t.isVolunteer, linkedById: !!t.linkedById,
       rows: t.readCount != null ? t.readCount : dataRows(t).length,
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
@@ -1729,7 +1736,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, totalChecks, checkLine: checkHeadline(usable.reduce((a, t) => a + (t.readCount || 0), 0), totalChecks), peopleSheetGifts, merged, rowAccount, rowLedger, commsLines, prefNotes, mergedLines, countLines: null, householdGroups: [...householdGroups].map(([k, g]) => ({ key: k, ...g })), householdLine,
     nearDuplicates: nearDupes, noteRows, namesCleaned, giftsDeposited: answers.giftsDeposited === "no" ? "no" : "yes",
     addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
-    columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
+    columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks, sheetKindRefused,
+    joinSentence: join.linked.length ? joinSentence({ persons, gifts: gifts.length, giftCents: gifts.reduce((a, g) => a + (g.cents || 0), 0), joinHeader: join.joinHeader }) : null,
+    sheetsSetAside: sheets.length > 1 ? sheetsSetAside(sheets.map(sh => sh.name), tables) : [],
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
                    ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size, why: placeholderWhy.get(v) }))],
     event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement, named: eventNamed } : null,
@@ -1763,6 +1772,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     dateGuesses, tidiedAmounts: tidier.result(new Set([...gifts, ...pledges].map(g => `${g.sheet}:${g.line}`))),
   };
   result.countLines = countLines(result);
+  result.rowChecks = rowCheckLists({ gifts, aside, today: T });   // IMPORT-11
   return result;
 }
 
@@ -1891,6 +1901,7 @@ export function wantsAdaptiveReading(sheets, roled = null) {
   const LAYER_ROLES = new Set([...ENGAGE_ROLES, ...COMMS_ROLES, ...ROLE_FLAG_ROLES]);
   if (u0.tables.some(tb => tb.isVolunteer || tb.columns.some(c => LAYER_ROLES.has(c.role)))) return true;
   if (u0.counts.undatedGifts > 0) return true;
+  if (u0.tables.some(tb => tb.linkedById)) return true;   // IMPORT-11: gifts joined to people by ID, no name on them
   // a workbook the workbook flow already reads (a donors sheet and a gifts
   // sheet, every sheet with a role) stays there
   if (roled && roled.filter(s => s.rowCount > 0 && s.role !== "chrome").length > 1) return false;

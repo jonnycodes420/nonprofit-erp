@@ -14,6 +14,7 @@
 //     before; a relative require()/import() reads "../x" because it resolves
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const NUMBERS = require("../shared/numbers");   // NUMBERS-3: one core, many faces (the portal's numbers are the profile's)
 const ItemRefs = require("../itemRefs");   // THREAD-2: names in staff email are links
@@ -4602,7 +4603,7 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
     return res.status(409).send(proposalPageHtml({ orgName, title: "This gift can't be changed right now", bodyHtml: "<p>The subscription is no longer in a state that can be changed. Ask the organization for help.</p>" }));
   }
   const newInterval = p.kind === "frequency" ? p.proposed_interval : (rs.interval === "year" ? "year" : "month");
-  const newCents = p.kind === "amount" ? toCents(p.proposed_amount) : (toCents(rs.amount) || 0);   // BUILD-73: the money seam
+  const newCents = p.kind === "amount" ? toCents(p.proposed_amount) : (storedCentsOr0(rs.amount));   // BUILD-73: the money seam
   await withAdvisoryLock(`portal-sub:${rs.id}`, async () => {
     const stripeSub = await stripe.subscriptions.retrieve(rs.stripe_subscription_id, {}, { stripeAccount: p.stripe_account_id });
     const item = stripeSub.items?.data?.[0];
@@ -4819,9 +4820,9 @@ app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
   const F = await footingMod();
   const gifts = giftRows.map(g => {
     const f = F.giftFooting({
-      grossCents: toCents(g.amount) || 0,
-      feeCents: toCents(g.processor_fee_amount) || 0,
-      coveredCents: toCents(g.cover_fee_amount) || 0,
+      grossCents: storedCentsOr0(g.amount),
+      feeCents: storedCentsOr0(g.processor_fee_amount),
+      coveredCents: storedCentsOr0(g.cover_fee_amount),
       feeSource: g.processor_fee_source,
     });
     return { id: g.id, date: g.date, donorId: g.donor_id, donorName: g.donor_name,
@@ -5533,7 +5534,7 @@ app.post("/express/:orgSlug/open", portalLinkIpLimiter, wrap(async (req, res) =>
   if (!donor) return res.status(400).json({ error: "no_saved_card", message: "There is no saved card for this address any more." });
   const S = await smartAmountsMod();
   const R = await ratesMod();
-  const ladder = S.ladderFromLastGift(toCents(donor.last_gift_amount) || 0);
+  const ladder = S.ladderFromLastGift(storedCentsOr0(donor.last_gift_amount));
   res.json({
     session: signExpressSession(donor.id, org.id),
     expiresInMinutes: EXPRESS_SESSION_MINUTES,
@@ -5739,7 +5740,7 @@ app.get("/portal/:orgSlug/give-default", requireMembershipSession, wrap(async (r
   // the change-my-amount form, so rounding it told a $33.33/mo donor they give
   // $33 and would then have changed their subscription to exactly that. Cents
   // are kept; the floor stays $1.00, expressed in cents.
-  const baseCentsNow = Math.max(100, (toCents(s.amount) || 0) - (toCents(s.cover_fee_amount) || 0));
+  const baseCentsNow = Math.max(100, (storedCentsOr0(s.amount)) - (storedCentsOr0(s.cover_fee_amount)));
   res.json({ signedInAs, membership, prefill, arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: toDollars(baseCentsNow) } });
 }));
 

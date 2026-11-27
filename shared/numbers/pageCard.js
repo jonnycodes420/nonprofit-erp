@@ -27,8 +27,8 @@ function campaignLineSentence(name, cents) {
 // The admin list's card row (routes/give.js GET /giving-pages), after its
 // figures are read: the sentence, and a linked campaign's own line.
 function sayCard(r) {
-  r.through_page_sentence = throughPageSentence(money.toCents(r.raised_amount) || 0, r.gifts_count);
-  if (r.campaign_id) r.campaign_line_sentence = campaignLineSentence(r.campaign_name, money.toCents(r.campaign_raised) || 0);
+  r.through_page_sentence = throughPageSentence(money.storedCentsOr0(r.raised_amount), r.gifts_count);
+  if (r.campaign_id) r.campaign_line_sentence = campaignLineSentence(r.campaign_name, money.storedCentsOr0(r.campaign_raised));
   return r;
 }
 

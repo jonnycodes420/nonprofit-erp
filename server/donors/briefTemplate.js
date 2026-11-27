@@ -14,6 +14,7 @@
 // the About note first and in full. WHY-1: with AI off, the same answer shows
 // in template sentences. Nothing here calls a model.
 "use strict";
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const BF = require("./briefFast");
 const BC = require("./briefComplete");
 const money = require("../../money");
@@ -27,7 +28,7 @@ const q = t => `${OPEN}${String(t || "").replace(/\s+/g, " ").trim()}${CLOSE}`;
 // The brief, in the shape the model answers in (shared/briefShape.js), from rows.
 function templateBrief(ctx, toCents) {
   const d = ctx.donor, f = ctx.facts || {};
-  const $ = v => money.formatCentsPlain(toCents(v) || 0);
+  const $ = v => money.formatCentsPlain(storedCentsOr0(v));
   const first = String(d.name || "").split(/\s+/)[0] || "They";
   const person = `person:${d.id}`;
   const sec = (key, title, sentences) => (sentences.length ? [{ key, title, sentences }] : []);

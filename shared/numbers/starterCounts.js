@@ -57,7 +57,7 @@ function starterCountsSql(o) {
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)} AND ${M.MONEY("g")}), 0) AS prior_money,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)} AND ${M.MONEY("g")}), 0) AS cur_money,
         BOOL_OR(${M.GIFT("g")}) AS gave,   -- TRUTH-4: a counted gift, as groups.js given=never reads it
-        BOOL_OR(g.date >= ${p(since)} AND COALESCE(g.is_sample,false) = false AND ${require("./thanks").AWAITING("g")}) AS unthanked   -- FLOWS-14: the one rule
+        BOOL_OR(g.date >= ${p(since)} AND COALESCE(g.is_sample,false) = false AND ${require("./thanks").AWAITING("g")} AND ${require("./scheduled").DUE("g")}) AS unthanked   -- FLOWS-14: the one rule; IMPORT-11: not before its day
       FROM gifts g WHERE g.org_id = ${p(orgId)} GROUP BY g.donor_id`;
   const st = status.sql; args.push(...status.args);
   const rest = `

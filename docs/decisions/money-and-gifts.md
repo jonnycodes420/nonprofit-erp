@@ -3,6 +3,17 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+- **No gift over $100,000,000, by any door (IMPORT-11).** `money.js` MAX_CENTS is the most `toCents` reads. Input over
+  it is refused in one sentence ("This gift is over $100,000,000, the most one gift can be in Steward.",
+  `parseMoneyOrThrow` code `over_cap`), and `ck_gifts_amount_within_cap` (NOT VALID, so old rows stay as they are)
+  refuses the write. A value Steward stored is read with `storedCents` / `storedCentsOr0`, never `toCents(x) || 0`,
+  which turned a stored $1,000,000,000 into $0. Old rows: `scripts/ops/import11-over-cap.js`.
+- **A gift far outside the pattern asks first (IMPORT-11, `shared/numbers/giftOutlier.js`).** At least 100 times the
+  person's usual gift (the median of their gifts above zero) and at least 10 times the org's largest gift; a person
+  with no gifts yet asks nothing. The form gets a 409 `far_outside` with "This is 81,000 times
+  their usual gift and 20 times the largest gift your org has. Record it?"; `confirmFarOutside: true` saves it.
+- **A scheduled gift has no refund until its date (IMPORT-11).** `POST /gifts/:id/refund` answers 409 `scheduled`, and
+  the profile shows no Refund button.
 - **A removed gift is a change to the record, not something that happened with the donor.**
   DELETE /gifts/:id writes nothing on the timeline: one Recent changes line (write_effects, kind
   `gift_delete`, with the gift's snapshot) and the same sentence on the audit row. Its Undo,

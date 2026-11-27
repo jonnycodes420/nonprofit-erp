@@ -20,7 +20,7 @@ const routers = { r0: express.Router() };
 const SCRIPT_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const day = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : ""; };
-const usd = v => money.formatCentsPlain(money.toCents(v) || 0);
+const usd = v => money.formatCentsPlain(money.storedCentsOr0(v));
 
 const SCRIPT_TOOL = {
   name: "call_script",
