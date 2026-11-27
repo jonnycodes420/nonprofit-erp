@@ -13,8 +13,8 @@ import { NAV_PURPOSE, NEVER_HIDDEN } from "../lib/navGroups";
 export function NavAddList({ groups, labelOf, onAdd, testId = "nav-add-list", empty }) {
   const off = (groups || []).flatMap(g => g.items.filter(i => !i.visible && !NEVER_HIDDEN.has(i.id)));
   return (
-    <div data-testid={testId} style={{ margin: "4px 0 14px" }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>Add to your sidebar</div>
+    <div data-testid={testId} style={{ margin: "0 0 14px" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 6 }}>Add to your sidebar</div>
       {off.length === 0
         ? <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{empty || "Everything is on the sidebar."}</div>
         : off.map(it => {

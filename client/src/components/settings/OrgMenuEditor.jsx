@@ -53,11 +53,15 @@ export function OrgMenuCard({ load, save, canEdit = true, who = "Everyone in you
       <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Menu</div>
       <p style={note}>{who} sees the sidebar this way. Taking an entry off is the menu only: its pages and links still work,
         and nothing is deleted. Each person can still take more off for themselves.</p>
-      <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 6 }}>On your sidebar</div>
-      <div style={{ opacity: canEdit ? 1 : 0.6, pointerEvents: canEdit ? "auto" : "none" }}>
-        <NavLayoutList groups={groups} labelOf={labelOf} testId="org-menu-list"
-          onMove={(gid, id, d) => write(moveNavItem(groups, gid, id, d))}
-          onToggle={(id, v) => write(setNavVisible(groups, id, v))} />
+      {/* NAV-2: the two parts side by side at desktop width, so Add is on the first screen; stacked on a phone */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "0 28px", alignItems: "start",
+        opacity: canEdit ? 1 : 0.6, pointerEvents: canEdit ? "auto" : "none" }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 6 }}>On your sidebar</div>
+          <NavLayoutList groups={groups} labelOf={labelOf} testId="org-menu-list"
+            onMove={(gid, id, d) => write(moveNavItem(groups, gid, id, d))}
+            onToggle={(id, v) => write(setNavVisible(groups, id, v))} />
+        </div>
         <NavAddList groups={groups} labelOf={labelOf} testId="org-menu-add" onAdd={id => write(setNavVisible(groups, id, true))} />
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>

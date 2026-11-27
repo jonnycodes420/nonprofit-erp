@@ -307,6 +307,7 @@ const call = async (tok, method, p, body) => {
   ok("§9 …the old Pipeline tab lands there too", r3.tab === "fundraising" && r3.opts.frSection === "pipeline", r3);
   const r4 = MG.routeMajorGifts("fundraising", { frSection: "plans" }, true, { onRail: true, views: off.views });
   ok("§9 on the rail, it opens its own page as before (ASKS-1)", r4.tab === "majorgifts" && r4.opts.subtab === "plans", r4);
+  ok("§9 while the permission is unknown, nothing is drawn in Fundraising: the rail page waits", MG.routeMajorGifts("majorgifts", { subtab: "pipeline" }, null, off).tab === "majorgifts");
   ok("§9 without the permission, neither: Home", MG.routeMajorGifts("majorgifts", {}, false, off).tab === "dashboard" && MG.routeMajorGifts("fundraising", { frSection: "pipeline" }, false, off).tab === "dashboard");
   ok("§9 Fundraising adds the views only off the rail and only with the permission", MG.mgInFundraising(true, false, off.views).map(v => v.id).join() === "portfolios,pipeline,plans"
     && MG.mgInFundraising(false, false, off.views) === null && MG.mgInFundraising(null, false, off.views) === null && MG.mgInFundraising(true, true, off.views) === null && MG.mgInFundraising(true, null, off.views) === null);

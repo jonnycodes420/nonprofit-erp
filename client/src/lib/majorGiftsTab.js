@@ -59,7 +59,8 @@ export function routeMajorGifts(tab, opts, can, place = {}) {
     t = MG_TAB; o = { ...rest, subtab: frSection };
   }
   if (t === MG_TAB && can === false) return { tab: "dashboard", opts: {} };
-  if (t === MG_TAB && place && place.onRail === false) {
+  // only once the permission is known: until then the rail page waits (it draws nothing), and App moves it
+  if (t === MG_TAB && can === true && place && place.onRail === false) {
     const { subtab, ...rest } = o;
     return { tab: "fundraising", opts: { ...rest, frSection: mgViewIn(mgView(subtab), mgShownViews(place.views)) } };
   }
