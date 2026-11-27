@@ -98,7 +98,18 @@ async function opsAlert(kind, subject, body) {
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 427
-function noteServerError() {
+// POLISH-14 item 1: only an answer that will be a 5xx counts. A request the
+// browser abandoned (499, request_abandoned) is nobody's error, and a refusal
+// with its own 4xx is the sender's: 25 people leaving Home sent Jonathan
+// "Steward is returning server errors" at 04:27 UTC on 27 Nov with 0 real 5xx.
+function countsAsServerError(err) {
+  if (!err) return true;
+  if (err.code === "request_abandoned") return false;
+  const st = Number(err.status || err.statusCode);
+  return !(st >= 400 && st < 500);
+}
+function noteServerError(err) {
+  if (arguments.length && !countsAsServerError(err)) return;
   const now = Date.now();
   _fiveXXWindow = _fiveXXWindow.filter(t => now - t < 10 * 60000); __share({ _fiveXXWindow });
   _fiveXXWindow.push(now);

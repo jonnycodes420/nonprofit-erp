@@ -425,8 +425,11 @@ async function reportTopDonors(orgId, p) {
     // one computation and cannot drift.
     const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
     const figures = await reportFigures(orgId, { topTotal: { key: "top-lifetime", params: { top: p.limit } },
-      allTime: { key: "gifts", params: { from: "1900-01-01", to: today } } });
-    return { figures, scope: "lifetime", credit: p.credit,
+      allTime: { key: "gifts-all", params: {} } });
+    // POLISH-14 item 3: the same all-time rule as Finance, and where its undated gifts are.
+    const AG = require("../../shared/numbers/allGifts");
+    const allTimeNote = AG.undatedWords((await AG.allGifts(query, orgId)).undated, "reports");
+    return { figures, allTimeNote, scope: "lifetime", credit: p.credit,
       periodWords: "Lifetime: every gift each person has ever given, with any total an import stated. The same figure as the Directory and the profile.", rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
       ...(p.credit === "soft" ? { softCredit: soft.get(r.id) || 0 } : {}) })) };
   }
@@ -1406,8 +1409,9 @@ const STD_PERSON = {
   "members-expiring": r => r.donor_id, "members-lapsed": r => r.donor_id,
 };
 
-async function runStandardReport(orgId, std) {
+async function runStandardReport(orgId, std, opts = {}) {
   if (std.kind === "builder") return runBuilderDef(orgId, std.def);
+  if (std.handler === "ack-backlog") return require("./ackBacklogReport").ackBacklogReport(orgId, opts);   // POLISH-14 item 6
   if (std.handler === "lost") return require("./lostReport").lostReport(orgId);   // COUNTS-1: lapse.js lostSql, Re-engage's Lost & Found
   const p = parseReportParams({ ...std.params }, await orgForYears(orgId));   // ORG_TZ_SEAM_OK
   if (std.handler === "by-month-vs-last-year") {
@@ -1443,8 +1447,8 @@ async function savedReportFor(orgId, userId, id) {
   return { id: r.id, name: r.name, question: r.question, standard: false, kind: "builder", def: asJson(r.definition, {}), row: r };
 }
 
-async function runSaved(orgId, rep) {
-  return rep.standard ? runStandardReport(orgId, rep.std) : runBuilderDef(orgId, rep.def);
+async function runSaved(orgId, rep, opts = {}) {
+  return rep.standard ? runStandardReport(orgId, rep.std, opts) : runBuilderDef(orgId, rep.def);
 }
 return { REPORT_HANDLERS, buntPredicate, dashboardsMod, parseReportParams, reportToCsv, runSaved, samePointLastYearSource, savedReportFor };
 }

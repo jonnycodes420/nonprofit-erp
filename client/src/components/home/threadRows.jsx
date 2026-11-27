@@ -1,6 +1,7 @@
 import { T, PersonMark, firstNameOf, fmtFull, daysDiff } from "../shared";
 import { openReadout } from "./ReadoutPanel";   // HOME-6: a readout row opens its readout
 import { displayDateShort } from "../../../../shared/displayDate";
+import { orgTodayCivil } from "../../lib/orgToday";   // POLISH-14 item 2: the org's year, not the browser's
 import { rowClick } from "../../lib/appUrls";
 import { DonorLink } from "../RecordLink";
 import { displayName } from "../../../../shared/displayName.js";
@@ -31,7 +32,7 @@ export function threadReadoutRow({ ro }) {
             </div>
           </div>
           <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
-            <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{displayDateShort(ro.forDate,new Date())}</div>
+            <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{displayDateShort(ro.forDate,orgTodayCivil())}</div>
             <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>readout</div>
           </div>
         </a>
@@ -133,7 +134,7 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
           </div>
           {moreOpen===t.donorId&&t.moreSteps?.length>0&&(
             <ul data-testid="thread-steps-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
-              {t.moreSteps.map(m=><li key={m.id}>{m.stepRef?<RefLink refItem={m.stepRef}>{m.label}</RefLink>:m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
+              {t.moreSteps.map(m=><li key={m.id}>{m.stepRef?<RefLink refItem={m.stepRef}>{m.label}</RefLink>:m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),orgTodayCivil())}`:""}</li>)}
             </ul>)}
           {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
           {t.suggestedAsk&&<SuggestedAskLine ask={t.suggestedAsk} style={{marginTop:3,fontSize:12.5}}/>}
@@ -149,7 +150,7 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
           )}
           <div className="attn-meta" style={{marginTop:3,fontSize:11,color:T.ink3}}>
             {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Logged")}
-            {(t.lastTouch?.date||t.openedOn)?` · ${displayDateShort(t.lastTouch?.date||t.openedOn,new Date())}`:""}
+            {(t.lastTouch?.date||t.openedOn)?` · ${displayDateShort(t.lastTouch?.date||t.openedOn,orgTodayCivil())}`:""}
             {/* Who logged it, then who owns it — and one name when they are
                 the same person, which in a one-officer shop they always are.
                 "Mike · Mike" is the software talking to itself. */}
@@ -158,7 +159,7 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
             {/* A deferred step says so, and says what it was first promised
                 for. Moving the due date without saying you moved it would be
                 the product quietly editing somebody's commitment. */}
-            {t.nextStep.originalDue?` · moved from ${displayDateShort(t.nextStep.originalDue,new Date())}`:""}
+            {t.nextStep.originalDue?` · moved from ${displayDateShort(t.nextStep.originalDue,orgTodayCivil())}`:""}
           </div>
         </div>
         {/* ONE FACT ON THE RIGHT, with its label under it — Drift puts the
@@ -170,7 +171,7 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
                 sentence read ONE figure (shared/threadFigures.js). When the
                 row has been open longer than it has been late, the figure is
                 how long it has waited, and the label says so. */}
-            {t.overdue?`${rowFigure(t)} ${plural(rowFigure(t), "day")}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,new Date()))}
+            {t.overdue?`${rowFigure(t)} ${plural(rowFigure(t), "day")}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,orgTodayCivil()))}
           </div>
           <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>
             {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}

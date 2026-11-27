@@ -106,7 +106,7 @@ function mount(ctx) {
     res.json({ token, user: { id: me.id, email: me.email, name: me.name || name, role: "admin", isSuperAdmin: false,
       support: { id: sid, name, writable: false, orgName: org.name, expiresAt: expires } }, org: full, sentence });
   }));
-  // Exports for view-only accounts: allowed unless an admin turns them off.
+  // Exports for view-only accounts: an admin's switch. POLISH-14: a new org starts with it off.
   const exportsPayload = async (orgId) => {
     const [o] = await query("SELECT viewer_exports_off FROM orgs WHERE id = ?", [orgId]);
     const on = !(o && o.viewer_exports_off === true);

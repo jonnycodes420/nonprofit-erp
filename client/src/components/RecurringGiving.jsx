@@ -7,7 +7,8 @@ import { askConfirm } from "./ConfirmDialog";
 import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
 import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
-import { displayDate } from "../../../shared/displayDate";
+import { displayOrgDateShort } from "../lib/orgDay";
+import { orgTodayCivil } from "../lib/orgToday";
 import { DonorLink } from "./RecordLink";
 import { Figure, FigureContext } from "./Figure";
 import { countLabel, plural } from "../../../shared/countWords";
@@ -41,7 +42,8 @@ const STATUS_META = {
 
 // FIX-2 finding 10 — the one formatter, never a Date in some timezone.
 // SWEEP-6: a blank says what is true there ("No date"), never "Not set".
-const fmtDate = iso => (iso && displayDate(iso)) || "No date";
+// POLISH-14 item 2: these are moments (next charge, started, failed), read on the org's day, the year only when it isn't this year.
+const fmtDate = iso => (iso && displayOrgDateShort(iso, orgTodayCivil())) || "No date";
 const per = interval => ({ year: "/yr", quarter: "/qtr", week: "/wk" })[interval] || "/mo";
 const money = n => n == null ? "No amount" : fmtFull(n);
 

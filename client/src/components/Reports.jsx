@@ -617,7 +617,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       empty = d.rows.length === 0;
       const sum = d.rows.reduce((s, r) => s + r.total, 0);
       narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{d.figures?.topTotal ? <RF f={d.figures.topTotal} kind="money" label={`Top ${d.rows.length} donors`} /> : fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.
-        {scope === "lifetime" && d.figures?.allTime && <span data-testid="top-donors-all-time"> Everyone together has given <strong><RF f={d.figures.allTime} kind="money" label="All-time giving" /></strong> all time: every gift on file dated to today, the sum of the years in Year over year. The rows above are each person's lifetime, which also counts any total an import stated.</span>}
+        {scope === "lifetime" && d.figures?.allTime && <span data-testid="top-donors-all-time"> Everyone together has given <strong><RF f={d.figures.allTime} kind="money" label="All-time giving" /></strong> all time: every gift on file, dated or not, the same figure as Finance. {d.allTimeNote} The rows above are each person's lifetime, which also counts any total an import stated.</span>}
         {d.periodWords && <span data-testid="top-donors-period" style={{ display: "block", marginTop: 4, fontSize: 12.5, color: T.ink3 }}>{d.periodWords}</span>}</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "rank", label: "#", type: "number" },

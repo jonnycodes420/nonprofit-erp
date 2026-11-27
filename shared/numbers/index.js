@@ -7,6 +7,8 @@ module.exports = {
   wholeDollars: require("./wholeDollars"),   // PIPE-1
   orderFigures: require("./orderFigures"),   // ORDER-1
   money: require("./money"),
+  allGifts: require("./allGifts"),
+  ledgerSpan: require("./ledgerSpan"),   // POLISH-14: the ledger in a span (the board pack)   // POLISH-14: every gift on file, dated or not
   lifetime: require("./lifetime"),
   reach: require("./reach"),   // COMMS-3: who you can reach, and how
   portfolioValue: require("./portfolioValue"),   // FLOWS-13

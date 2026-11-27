@@ -7,9 +7,9 @@ import { apiFetch, API, getToken } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { DISMISS_REASONS, addCivilDays } from "../../../shared/threadShape";
-import { displayDate } from "../../../shared/displayDate";
+import { displayDateShort } from "../../../shared/displayDate";
 import { NavIcon } from "./NavIcon";
-import { orgTodayCivil } from "../lib/orgToday";
+import { orgTodayCivil, orgTimezone } from "../lib/orgToday";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // FIX-14 Part 1 — the ORG's today (as in LogConversation.jsx).
@@ -177,8 +177,8 @@ export function PutItOnMyCalendar({ threadId, compact = false }) {
                 <strong style={{ color: T.ink }}>{data.subject}</strong>
                 <div style={{ marginTop: 2 }}>
                   {data.allDay
-                    ? `${displayDate(data.dueDate)} · all day`
-                    : new Date(data.startsAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    ? `${displayDateShort(data.dueDate, orgTodayCivil())} · all day`
+                    : new Date(data.startsAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: orgTimezone() })}
                 </div>
               </div>
               <a href={data.outlook} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} style={item}>Outlook</a>

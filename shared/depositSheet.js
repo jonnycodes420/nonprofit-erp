@@ -361,15 +361,18 @@ export function generateInstallments({ amountCents, frequency, count, firstDue }
 
 // The schedule in one line, the way the form shows it before saving:
 // "4 × $300, Dec 1, Jan 1, Feb 1, Mar 1", or with an uneven last one
-// "3 × $333.33 (the last $333.34), ...". Dates as "Mon D"; with the year on
-// each when the schedule runs past a year from its first date.
-export function scheduleWords(rows) {
+// "3 × $333.33 (the last $333.34), ...". Dates as "Mon D" in the org's year
+// (`today`, its civil date), with the year on any date outside it:
+// POLISH-14 item 2, Duet read "Dec 1, Jan 1" for a schedule crossing Jan 1.
+// Once a date carries its year, the dates are set apart with semicolons.
+export function scheduleWords(rows, today) {
   if (!rows || !rows.length) return "";
   const usd = c => "$" + (c / 100).toLocaleString("en-US", c % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
   const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const long = String(rows[rows.length - 1].dueDate) >= String(Number(String(rows[0].dueDate).slice(0, 4)) + 1) + String(rows[0].dueDate).slice(4, 10);
-  const day = s => { const [yy, mm, dd] = String(s).split("-").map(Number); return `${MON[mm - 1]} ${dd}${long ? " " + yy : ""}`; };
+  const thisYear = Number(String(today || rows[0].dueDate).slice(0, 4));
+  const day = s => { const [yy, mm, dd] = String(s).split("-").map(Number); return `${MON[mm - 1]} ${dd}${yy !== thisYear ? ", " + yy : ""}`; };
+  const words = rows.map(r => day(r.dueDate));
   const first = rows[0].amountCents, last = rows[rows.length - 1].amountCents;
   const head = last === first ? `${rows.length} × ${usd(first)}` : `${rows.length} × ${usd(first)} (the last ${usd(last)})`;
-  return `${head}, ${rows.map(r => day(r.dueDate)).join(", ")}`;
+  return `${head}, ${words.join(words.some(w => w.includes(",")) ? "; " : ", ")}`;
 }
