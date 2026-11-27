@@ -105,6 +105,13 @@ function oneAsk(x) {
   const whose = ASK.whoseGifts(x.unit);
   return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${whose}${why.charAt(0).toLowerCase()}${why.slice(1)}${held}.`, rule: ASK.RULE, held: !!a.held, household: !!whose };
 }
+// ONE-MOVE-1: "Ask for what they gave last" asks for the last gift, and names it
+// (the move opens it: `gift`). It was oneAsk's largest-gift rule ("Ask $50,000")
+// under words that said otherwise, for a donor whose last gift was $10,000.
+function lastGiftAsk(g) {
+  return { cents: g.amount_cents, words: `Ask ${money(g.amount_cents)}: what they gave last, on ${longDate(g.date)}.`,
+    rule: "A lapsing donor is asked for what they gave last.", gift: { date: g.date, cents: g.amount_cents } };
+}
 // ", rounded" when rounding moved the figure, so the words never claim an exact amount
 const roundedWord = (ask, raw) => (ask === raw ? "" : ", rounded");
 const plural = (n, one, many) => `${n.toLocaleString("en-US")} ${n === 1 ? one : (many || one + "s")}`;
@@ -784,7 +791,7 @@ const LIBRARY = [
         facts: [["last gift", money(g.amount_cents)], ["last gift date", longDate(g.date)], [`${yr} giving`, money(yearCents)]],
         how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 100000 ? "Call" : "Note", when: windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
           say: `${hello(x)}, thank you for your gift in ${monthYear(g.date)}. It did real good, and we'd love to have you with us again this year.`,
-          ask: x.noAsk ? null : oneAsk(x) } };
+          ask: x.noAsk ? null : lastGiftAsk(g) } };
     });
     return {
       kind: "lapsing", rung: "retain", title: "Lapsing donors",
@@ -1257,14 +1264,24 @@ function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
   return { ...deck, tabs, open: deck.open };
 }
 
-// One unit's next move: the first card item about them, by rank.
+// ONE-MOVE-1 · THE LEAD MOVE, ONE RULE. Home's deck leads each unit with its
+// largest move (a planned signal ranks last: it never asks), then the earlier
+// card (buildDeck); the profile took the first card by rank, so Home said
+// "Ask $50,000" while the profile said "No money ask" for the same person.
+const leadValue = (kind, it) => (kind === "planned" ? -1 : Number(it.cents) || 0);
+// One unit's next move: the same lead Home's deck shows for them.
 function nextMoveFor(result, donorId) {
-  for (const c of result.cards) {
-    if (c.homeOnly || c.kind === "review") continue;
+  const found = [];
+  result.cards.forEach((c, n) => {
+    if (c.homeOnly || c.kind === "review") return;
     const it = c.items.find(i => i.ids.includes(donorId));
-    if (it) return { kind: c.kind, title: c.title, rung: c.rung, rungLabel: c.rungLabel, why: c.words.why, item: it, words: { how: it.how ? howWords(it.how, it) : "" } };
-  }
-  return null;
+    if (it) found.push({ c, it, n, onDeck: !!TAB_OF[c.kind] });
+  });
+  if (!found.length) return null;
+  const pool = found.some(f => f.onDeck) ? found.filter(f => f.onDeck) : found;
+  pool.sort((a, b) => leadValue(b.c.kind, b.it) - leadValue(a.c.kind, a.it) || a.n - b.n);
+  const { c, it } = pool[0];
+  return { kind: c.kind, title: c.title, rung: c.rung, rungLabel: c.rungLabel, why: c.words.why, item: it, words: { how: it.how ? howWords(it.how, it) : "" } };
 }
 
 module.exports = {
