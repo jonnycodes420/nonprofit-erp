@@ -196,7 +196,7 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
   await q(`UPDATE orgs SET stripe_connected=false WHERE id=$1`, [ORG]);
   try {
     const orgForm = await api("GET", `/org/${SLUG}/public`, null);
-    ok("§14 the org-wide form is not open without payments", orgForm.status === 404 && orgForm.body.notOpen === true && /isn't open yet/.test(orgForm.body.error || ""), { status: orgForm.status, body: orgForm.body });
+    ok("§14 the org-wide form is not open without payments", orgForm.status === 404 && orgForm.body.notOpen === true && /isn't published yet/.test(orgForm.body.error || "")   /* HONEST-3: no opening date, so never "open yet" */, { status: orgForm.status, body: orgForm.body });
     const pagePub = await pub("spring-paddle");
     ok("§14 …nor is a giving page", pagePub.status === 404 && pagePub.body.notOpen === true, pagePub.status);
     const members = await api("GET", `/org/${SLUG}/public?memberships=1`, null);
