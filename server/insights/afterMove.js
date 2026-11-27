@@ -18,12 +18,14 @@ const { AWAITING } = require("../../shared/numbers/thanks");
 async function afterMove(query, orgId, ids) {
   if (!ids || !ids.length) return null;
   const rows = await query(
-    `SELECT g.id, LEFT(g.date,10) AS date, ROUND(g.amount*100)::bigint AS cents, ${AWAITING("g")} AS awaiting
-       FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND ${COUNTED("g")} AND g.date IS NOT NULL
+    `SELECT g.id, g.donor_id, gd.name AS giver, LEFT(g.date,10) AS date, ROUND(g.amount*100)::bigint AS cents, ${AWAITING("g")} AS awaiting
+       FROM gifts g JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id AND gd.deleted_at IS NULL   -- ONE-MOVE-1: a trashed person's gifts drive no step
+      WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND ${COUNTED("g")} AND g.date IS NOT NULL
       ORDER BY g.date DESC, g.created_at DESC, g.id DESC`, [orgId, ids]);
   if (!rows.length) return null;
   const last = rows[0];
-  return words({ giftId: last.id, date: last.date, cents: Number(last.cents), nth: rows.length, awaiting: last.awaiting === true });
+  // ONE-MOVE-1 item 2: whose gift it is, so another member of the household is never thanked for it by name
+  return words({ giftId: last.id, giverId: last.donor_id, giver: last.giver || null, date: last.date, cents: Number(last.cents), nth: rows.length, awaiting: last.awaiting === true });
 }
 
 // The words, server-side so Home's first look carries no extra JavaScript (perf-app's budget).

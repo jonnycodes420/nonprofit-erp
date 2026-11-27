@@ -262,8 +262,12 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
   // stewardship touch, an email typed in by hand) is on this one timeline too.
   const inThreads = new Set((rel.emailThreads || []).flatMap(t => t.ids || []));
   const meetingIds = new Set(items.filter(i => i.kind === "meeting" && i.logged).map(i => i.logged.id));
+  // ONE-MOVE-1 item 5: a pledge is one row. Its "Pledged $X" line (WIRE-1) is the same promise, so it is not listed again beside it.
+  const pledgeRows = new Set((pledges || []).filter(p => p && p.id && !p.is_shell).map(p => p.id));
+  const metaOf = i => { const m = i && i.metadata; if (!m) return {}; if (typeof m === "string") { try { return JSON.parse(m); } catch { return {}; } } return m; };
   for (const i of interactions || []) {
     if (!i || !i.id || i.type === "gift" || i.type === "meeting" || meetingIds.has(i.id) || inThreads.has(i.id)) continue;
+    { const m = metaOf(i); if (m.via === "pledge" && m.pledge_id && pledgeRows.has(m.pledge_id)) continue; }
     items.push({ kind: "talk", bucket: interactionBucket(i), mass: isMassEmail(i), id: "n:" + i.id, date: String(i.date || "").slice(0, 10), logged: i });
   }
   for (const t of tasks || []) {
@@ -301,7 +305,8 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
 }
 export function timelineCounts(built) {
   const c = { file: built.fileItems.length };
-  for (const it of built.items) c[it.bucket] = (c[it.bucket] || 0) + 1;
+  // ONE-MOVE-1 item 5: the Tasks badge is what is still to do; a task ticked done leaves it at once
+  for (const it of built.items) { if (it.bucket === "task" && it.task && (it.task.done === true || it.task.done === 1 || it.task.completed_at)) { c.taskDone = (c.taskDone || 0) + 1; continue; } c[it.bucket] = (c[it.bucket] || 0) + 1; }
   return c;
 }
 

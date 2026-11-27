@@ -243,7 +243,7 @@ function mount(ctx) {
                         acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
                         acknowledged_via=COALESCE(acknowledged_via, 'letter')
         WHERE org_id=? AND id = ANY(?) RETURNING id`, [actor(req).id, who, req.user.orgId, ids]);
-    if (thankYou) await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [req.user.orgId, ids]).catch(() => {});
+    if (thankYou) await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND (gift_id = ANY(?) OR also_gift_ids && ?::text[]) AND sent_at IS NULL AND skipped_at IS NULL", [req.user.orgId, ids, ids]).catch(() => {});
     res.json({ marked: rows.length, thankYou,
       sentence: `${rows.length} ${rows.length === 1 ? "gift" : "gifts"} now show a letter was sent${thankYou ? " and the gift was thanked" : ""}.` });
   }));

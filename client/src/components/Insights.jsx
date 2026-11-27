@@ -790,8 +790,11 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
     if (quietNone) return null;
     // THANKS-1 item 4: the step the rules still give (thank the newest gift), or why nothing is due.
     const after = d && d.after;   // the words come from the server (server/insights/afterMove.js)
+    // ONE-MOVE-1 item 2: a household member's gift is named as theirs (the words are the server's, nextMoveOf.js)
+    const hh = after && after.household;
     if (after && after.thank) return <div data-testid="dp-next-move-thank" style={{ padding: "2px 0" }}>
-      <div style={{ fontSize: 15, color: T.ink, fontWeight: 700 }}>{`Next: thank ${firstName || "them"} for the ${after.amount} gift on ${after.day}.`}</div>
+      <div style={{ fontSize: 15, color: T.ink, fontWeight: 700 }}>{hh ? hh.line : `Next: thank ${firstName || "them"} for the ${after.amount} gift on ${after.day}.`}</div>
+      {hh && <div data-testid="dp-next-move-household" style={{ fontSize: 12.5, color: T.ink3 }}>{hh.note}</div>}
       <div data-testid="dp-next-move-none-why" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{after.why}</div></div>;
     return <div style={{ padding: "2px 0" }}><div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3 }}>
       {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>
@@ -802,7 +805,8 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   const copy = () => { try { navigator.clipboard.writeText(how.say || ""); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard refused */ } };
   return (
     <section data-testid="profile-next-move" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.gold700 }}>Next move · {m.title}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.gold700 }}>{m.household ? "Household move" : "Next move"} · {m.title}</div>
+      {m.household && <div data-testid="dp-next-move-household" style={{ fontSize: 12.5, color: T.ink3 }}>{m.household.sentence}</div>}
       <div data-testid="dp-next-move-sentence" style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, lineHeight: 1.3, color: T.ink }}>{sentence}</div>
       {m.why && <div data-testid="dp-next-move-why" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}><b>Why:</b>{" " + m.why}</div>}
       {how.say && <div data-testid="dp-next-move-draft" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", fontSize: 14, lineHeight: 1.55, color: T.ink }}>“{how.say}”</div>}

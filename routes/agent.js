@@ -2665,7 +2665,7 @@ async function approveWaitingItem(req, kind, id) {
                           acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
                           acknowledged_via=COALESCE(acknowledged_via, 'email')
           WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [who.id, actorName, orgId, d.donor_id, giftIds]);
-      await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [orgId, giftIds]).catch(() => {});
+      await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND (gift_id = ANY(?) OR also_gift_ids && ?::text[]) AND sent_at IS NULL AND skipped_at IS NULL", [orgId, giftIds, giftIds]).catch(() => {});
     }
     const line = await TLa.timelineLine({ orgId, donorId: d.donor_id, actorId: who.id, actorName, date: today, key: `agent_draft_approved:${d.id}`,
       note: `${d.purpose === "thank_you" ? "Thank-you" : ((await agentShapeMod()).PURPOSE_LABEL[d.purpose] || "Note")} approved to send by ${actorName}${d.subject ? `: "${String(d.subject).slice(0, 120)}"` : ""}.`,

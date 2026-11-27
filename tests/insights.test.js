@@ -145,6 +145,8 @@ const BRIEF = { givers: 182, y2024: 113, y2025: 72, y2026: 31, retained: 25, fir
   big: 23, bigCents: 12186004, dec: 20, decCents: 9983470, top10: 69.13, once: 129, paceThis: 7377196, paceLast: 13249560 };
 
 async function main() {
+  // ONE-MOVE-1: ONE_MOVE_ONLY=1 runs §OM alone (a quick local loop); CI runs everything.
+  if (process.env.ONE_MOVE_ONLY === "1") { await require("./lib/oneMoveChecks").oneMove({ ok, api, q, freshOrg }); summary(); await closeDb(); return; }
   const ORG = "org_ins1test";
   const tok = await freshOrg(ORG, "Insights (test)");
   const truth = async step => {
@@ -583,6 +585,9 @@ async function main() {
     const spans = [0, 1, 2, 4, 6, 7, 10, 13, 14, 20, 30, 44, 45, 60, 200, 400, 800, 1200].map(D.humanSpan);
     ok(`§10 no span says a zero or a plural one (${spans.join(", ")})`, spans.every(s => s && !BAD.test(s)), spans);
   }
+
+  // ONE-MOVE-1: one move and one ask per person on every screen (tests/lib/oneMoveChecks.js)
+  await require("./lib/oneMoveChecks").oneMove({ ok, api, q, freshOrg });
 
   if (WAITING.length) {
     ok(`§M ${WAITING.length} checks wait on the memo-kept gift file (NEEDS-JONATHAN): ${WAITING.join("; ")}`, false, "fixture");
