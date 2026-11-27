@@ -122,7 +122,7 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
   // ONE-MOVE-1: a draft for one day's gifts thanks every one; Undo puts each back (previousGifts)
   const dayIds = require("./draftGifts").giftIdsOf(d);
   const previousGifts = Object.fromEntries((await query("SELECT id, acknowledgement_sent, acknowledgement_sent_at, thanked_at FROM gifts WHERE id = ANY(?) AND org_id=?", [dayIds, orgId]))   // ACK-READ-OK: kept only so Undo can put each mark back
-    .map(g => [g.id, { acknowledgement_sent: g.acknowledgement_sent, acknowledgement_sent_at: g.acknowledgement_sent_at, thanked_at: g.thanked_at }]));
+    .map(g => [g.id, { acknowledgement_sent: g.acknowledgement_sent, acknowledgement_sent_at: g.acknowledgement_sent_at, thanked_at: g.thanked_at }]));   // ACK-READ-OK: kept only so Undo can put each mark back
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
