@@ -56,7 +56,8 @@ export function rowCheckLists({ gifts = [], aside = [], today }) {
   const copyRows = [...copiesAside, ...copiesIn].map(r => ({ sheet: r.sheet, line: r.line, copyOf: r.copyOf, cents: r.cents ?? null, imported: copiesIn.includes(r) }));
   const n = copyRows.length;
   const overCap = aside.filter(a => a.overCap).map(a => ({ sheet: a.sheet, line: a.line, who: a.who || null, cents: a.cents ?? null }));
-  const future = gifts.filter(g => g.date && today && g.date > today).map(g => ({ sheet: g.sheet, line: g.line, who: g.who, date: g.date, cents: g.cents }));
+  const afterToday = day => !!day && !!today && String(day) > String(today);
+  const future = gifts.filter(x => afterToday(x.date)).map(x => ({ sheet: x.sheet, line: x.line, who: x.who, date: x.date, cents: x.cents }));
   const outAside = aside.filter(a => a.outlier).length;
   return {
     outliersSetAside: outAside || null,
