@@ -16,8 +16,8 @@
 // not behind it, and it recomputes the answers that name their tables itself,
 // the quickest first. (A first version queued a job of its own from the
 // handler: under the load that second wait for a lane was 0.1 to 2.4 s more.)
-// One refresh per org at a time in a process; a second waits for the first and
-// then finds most answers current (orgSummary.refreshOrg skips those).
+// One refresh per org at a time in a process, and any changes while it runs
+// fold into one more pass (orgSummary.refreshOrg skips what is current).
 //
 // The slower refresh (orgSummaryRefresh) still follows for everything else and
 // leaves these to this one; whatever asks for it asks for this one too (the
@@ -35,15 +35,24 @@ function schedule(orgId) {
   return require("../../jobQueue").enqueue({ name: NAME, orgId, key: `${NAME}:${orgId}`, payload: { orgId }, runAfterMs: 0, priority: 3 });
 }
 
-const running = new Map();   // orgId -> this process's refresh for it
+// Folded per org, like the slower refresh: while one runs, any number of
+// changes ask for ONE more pass after it, never one each (an import's events
+// would otherwise queue a pass apiece).
+const running = new Map();   // orgId -> { done, again }
 function refreshNow(orgId) {
   if (!orgId) return Promise.resolve(0);
-  const mine = (running.get(orgId) || Promise.resolve()).catch(() => {})
-    .then(() => require("../../orgSummary").refreshOrg(orgId, { named: true }));
-  running.set(orgId, mine);
-  const done = () => { if (running.get(orgId) === mine) running.delete(orgId); };
-  mine.then(done, done);
-  return mine;
+  const cur = running.get(orgId);
+  if (cur) { cur.again = true; return cur.done; }
+  const st = { again: false, done: null };
+  st.done = (async () => {
+    let n = 0;
+    try {
+      do { st.again = false; n += await require("../../orgSummary").refreshOrg(orgId, { named: true }); } while (st.again);
+    } finally { running.delete(orgId); }
+    return n;
+  })();
+  running.set(orgId, st);
+  return st.done;
 }
 
 require("../../jobQueue").handle(NAME, (payload) => refreshNow(payload && payload.orgId));
