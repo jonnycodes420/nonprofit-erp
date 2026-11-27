@@ -14,6 +14,7 @@ import { T } from "../shared";
 import { apiFetch } from "../../api";
 import { generateInstallments, scheduleWords } from "../../../../shared/depositSheet.js";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { orgTodayCivil } from "../../lib/orgToday";   // POLISH-14 item 2: the org's year
 
 export const FREQUENCIES = [["weekly", "Weekly"], ["monthly", "Monthly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"]];
 // A schedule written elsewhere (a grant paid every six months) keeps its cadence in the edit.
@@ -71,7 +72,7 @@ export default function PledgeSchedule({ value, onChange, amount, testid = "pled
         </label>
       </div>
       {s.plan === "many" && rows.length > 0 && (
-        <div data-testid={`${testid}-preview`} style={{ fontSize: 12.5, color: T.ink, marginTop: 6, lineHeight: 1.5 }}>{scheduleWords(rows)}</div>)}
+        <div data-testid={`${testid}-preview`} style={{ fontSize: 12.5, color: T.ink, marginTop: 6, lineHeight: 1.5 }}>{scheduleWords(rows, orgTodayCivil())}</div>)}
     </div>
   );
 }

@@ -198,7 +198,7 @@ app.get("/saved-reports/:id/run", LANE.middleware, requireAuth, wrap(async (req,
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
-  const out = await runSaved(req.user.orgId, rep);
+  const out = await runSaved(req.user.orgId, rep, { from: req.query.from, to: req.query.to, page: req.query.page });   // POLISH-14: a paged report's range and page
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
   const { raw, ...rest } = out; void raw;
   res.json({ report: { id: rep.id, name: rep.name, question: rep.question, standard: rep.standard, definition: rep.def }, ...rest });
@@ -208,7 +208,7 @@ app.get("/saved-reports/:id/csv", LANE.middleware, requireAuth, wrap(async (req,
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
-  const out = await runSaved(req.user.orgId, rep);
+  const out = await runSaved(req.user.orgId, rep, { from: req.query.from, to: req.query.to, all: true });   // POLISH-14: a file is the whole range
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
   const slug = String(rep.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
   sendReportCsv(res, `${slug}.csv`, out.columns.map(c => c.label), out.rows.map(r => out.columns.map(c => r[c.key])));
@@ -218,7 +218,7 @@ app.get("/saved-reports/:id/pdf", LANE.middleware, requireAuth, wrap(async (req,
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
-  const out = await runSaved(req.user.orgId, rep);
+  const out = await runSaved(req.user.orgId, rep, { from: req.query.from, to: req.query.to, all: true });   // POLISH-14: a file is the whole range
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
   const PDFDocument = require("pdfkit");
   const doc = new PDFDocument({ size: "LETTER", layout: "landscape", margin: 36, bufferPages: true });

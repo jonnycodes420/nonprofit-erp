@@ -11,6 +11,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
+import { displayDateShort } from "../../../shared/displayDate";
+import { orgTodayCivil } from "../lib/orgToday";   // POLISH-14 item 2
 import { Figure, FigureContext } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { GoalRow } from "./GoalRow";   // PERF-2: not the dashboards
@@ -98,7 +100,7 @@ export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson,
                     </span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: T.ink3 }}>{limit ? `${r.firstTime ? "First gift" : "Big gift"} · ` : ""}{r.dateLabel}</span>
+                    <span style={{ fontSize: 12, color: T.ink3 }}>{limit ? `${r.firstTime ? "First gift" : "Big gift"} · ` : ""}{r.date ? displayDateShort(String(r.date).slice(0, 10), (data && data.today) || orgTodayCivil()) : r.dateLabel}</span>
                     {!isReadOnly && <span style={{ display: "flex", gap: 6 }}>
                       <button data-testid="home-call-called" disabled={!!busy} onClick={() => act(r, "called")}
                         style={limit ? { ...smallBtn, color: T.greenDk, borderColor: T.greenDk } : { ...smallBtn, background: T.greenDk, borderColor: T.greenDk, color: T.white }}>{limit ? "Called" : "Mark called"}</button>

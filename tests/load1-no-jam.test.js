@@ -59,8 +59,12 @@ let child = null;
       REQUEST_STATEMENT_TIMEOUT_MS: String(LIMIT_MS), DISABLE_BACKGROUND_TICKS: "1", STEWARD_PROCESS: "web",
       // What any boot needs, as deploy1-ready's server has it, when the battery's env is not there.
       JWT_SECRET: process.env.JWT_SECRET || "local-test-secret", RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local",
+      FOUNDER_EMAIL: "ops-alerts@load1j.local",   // POLISH-14: the 5xx burst alert is armed (sent to a dead port)
       RESEND_BASE_URL: "http://localhost:9", DB_SSL: process.env.DB_SSL || "disable" } });
-  let err = ""; child.stderr.on("data", d => { err = (err + d).slice(-2000); });
+  let err = "", unhandled = 0, abandonedLines = 0, burstAlerts = 0;
+  child.stderr.on("data", d => { const t = String(d); err = (err + t).slice(-2000);
+    unhandled += (t.match(/\[unhandledRejection\]/g) || []).length; abandonedLines += (t.match(/\[499\] GET \/(dashboard\/today|groups\/starters)/g) || []).length;
+    burstAlerts += (t.match(/\[ops-alert\] 5xx_burst/g) || []).length; });
   // A shard's machine is busy: the boot gets three minutes, and says so if it never came up.
   let up = false;
   for (let i = 0; i < 360 && !up; i++) { up = (await fetch(`${BASE}/ready`).catch(() => null))?.status === 200; if (!up) await sleep(500); }
@@ -109,6 +113,36 @@ let child = null;
   ok("the statement is gone after it", (await sleeping()) === 0);
   const h = await (await fetch(`${BASE}/health`)).json();
   ok("/health.pool counts the cancels and the timeout", h.pool && h.pool.limits && h.pool.limits.cancelled >= 1 && h.pool.limits.statementTimeouts >= 1, h.pool && h.pool.limits);
+
+  // ── §3 · POLISH-14 item 1: leaving Home doesn't throw ──────────────────
+  // /dashboard/today fanned out its reads in one Promise.all whose array held an
+  // `await` (thanksSince): the reads started before it had no handler while it
+  // waited, so an abandoned request left each of them an unhandledRejection
+  // (Sentry NODE-34/35, dashboard.js 708/715/735). /groups/starters/:key had the
+  // same shape. Red on main: unhandled > 0. Each abandoned read is said once.
+  console.log("\n§3 Home's reads, abandoned part way");
+  const before = unhandled, alertsBefore = burstAlerts;
+  // The alert sends once an hour across processes (ops_alert_marks); clear this
+  // scratch database's mark so a burst now would be said, and so seen.
+  await q(`DELETE FROM ops_alert_marks WHERE hour_key LIKE '5xx_burst:%'`).catch(() => {});
+  const tries = [];
+  for (let i = 0; i < 24; i++) {
+    for (const path of ["/dashboard/today", "/groups/starters/lapsed"]) {
+      const ac = new AbortController();
+      tries.push(fetch(`${BASE}${path}`, { headers: auth(tc), signal: ac.signal }).catch(() => {}));
+      setTimeout(() => ac.abort(), 2 + (i % 12) * 4);
+    }
+    await sleep(15);
+  }
+  await Promise.all(tries); await sleep(1500);
+  const whole = await fetch(`${BASE}/dashboard/today`, { headers: auth(tc) });
+  ok("an unabandoned /dashboard/today still answers 200", whole.status === 200, whole.status);
+  ok(`no unhandled rejection from an abandoned Home read (${unhandled - before})`, unhandled === before, err.slice(-600));
+  ok(`each abandoned read is logged as abandoned, at most once (${abandonedLines} lines for ${tries.length} tries)`, abandonedLines >= 1 && abandonedLines <= tries.length, abandonedLines);
+  // POLISH-14 item 1 (Jonathan, 27 Nov 04:27 UTC): 25 abandoned reads in ten
+  // minutes sent "Steward is returning server errors" with no real 5xx. Red on
+  // main: noteServerError counted every route error, a 499 too.
+  ok(`at least 25 abandoned reads (${abandonedLines}) send no 5xx burst alert (${burstAlerts - alertsBefore})`, abandonedLines >= 25 && burstAlerts === alertsBefore, { abandonedLines, alerts: burstAlerts - alertsBefore });
 })().catch(e => ok("suite ran", false, e.stack)).finally(async () => {
   if (child) { child.kill("SIGTERM"); await new Promise(r => { child.once("exit", r); setTimeout(r, 8000); }); }
   // A killed server's statements keep running in Postgres: cancel every

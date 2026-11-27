@@ -995,7 +995,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // anything except what they actually say.
   for (const k of taskRows) {
     const due = String(k.due).slice(0, 10);
-    const openedOn = k.created_at ? new Date(k.created_at).toISOString().slice(0, 10) : due;
+    const openedOn = k.created_at ? orgToday(org, new Date(k.created_at)) : due;   // POLISH-14 item 2: the org's day it was opened, not UTC's   // ORG_TZ_SEAM_OK
     const daysOpen = orgTime.daysBetween(openedOn, today) ?? 0;
     const kPerson = { kind: "person", id: k.donor_id, name: links.nameOrFallback(k.donor_name, k.donor_email), email: k.donor_email || null };
     list.push({

@@ -459,7 +459,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   // Finance
   console.log("[board-report] step 4: fetching finance data...");
   const [ytdFinRows, allFinRows, topExpRows, budgetRows] = await Promise.all([
-    query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId, ytdS, ytdE]),
+    NUMBERS.ledgerSpan.ledgerByType(query, orgId, ytdS, ytdE).then(f => [{ type: "income", total: f.income }, { type: "expense", total: f.expense }]),   // POLISH-14: the one span rule, last year's full beside it
     query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId]),
     query(
       `SELECT a.name, SUM(ft.amount) as total FROM fin_transactions ft
@@ -511,6 +511,10 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   ]);
   console.log("[board-report] step 5: retention OK — retained:", ret.retained, "of", ret.prior);
   const retentionRate = ret.prior > 0 ? Math.round(ret.retained / ret.prior * 100) : 0;
+  // POLISH-14 item 4: each year-to-date figure says "so far" with last fiscal year's whole year beside it.
+  const SF = require("./boardSoFar");
+  const lastFy = await SF.lastYearFull(query, orgId, _brOrgRow);
+  const lastRet = lastFy.retentionRate == null ? null : lastFy.retentionRate + "%";
   const raisedThisQ   = qGive.cents / 100;
   const raisedLastQ   = pqGive.cents / 100;
 
@@ -559,11 +563,11 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
         role: "user",
         content: `Write an executive summary for a nonprofit board of directors. Exactly 3 paragraphs. Confident, board-appropriate, factual tone. No bullet points. No headers. Prose only.
 
-Paragraph 1, Financial Health: YTD Revenue $${ytdRevenue.toLocaleString()}, Expenses $${ytdExpenses.toLocaleString()}, Net Surplus $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
+Paragraph 1, Financial Health (so far this fiscal year, ${_fy.label}; say "so far this fiscal year" and give last fiscal year's full figure beside each): Revenue so far $${ytdRevenue.toLocaleString()} (last fiscal year, full: $${lastFy.revenue.toLocaleString()}), Expenses so far $${ytdExpenses.toLocaleString()} (last fiscal year, full: $${lastFy.expenses.toLocaleString()}), Net Surplus so far $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
 
-Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of last quarter` : "last quarter"}. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
+Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention so far this fiscal year (last fiscal year, full year: ${lastRet || "not known"}; say both, and that this year is not over). Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of last quarter` : "last quarter"}. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
 
-Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
+Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} received on active grants. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
 
 Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}. Year to date means the fiscal year to date, ${_fy.label}.`,
       }],
@@ -576,7 +580,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   } catch(e) {
     console.error("[board-report] step 7: Claude FAILED (using fallback) —", e.message);
     recordAiFallback(orgId, "board_report.summary", e);
-    execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of the prior quarter` : "in the prior quarter"}. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
+    execSummary = `${org.name} concludes Q${q} ${yr} with revenue so far this fiscal year of $${ytdRevenue.toLocaleString()} (last fiscal year, the full year: $${lastFy.revenue.toLocaleString()}) and expenses so far of $${ytdExpenses.toLocaleString()} (last fiscal year: $${lastFy.expenses.toLocaleString()}), a net ${netSurplus >= 0 ? "surplus" : "deficit"} so far of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a retention rate so far this fiscal year of ${retentionRate}% (last fiscal year, the full year: ${lastRet || "not known"}). The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of the prior quarter` : "in the prior quarter"}. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} received on active grants. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
   }
 
   // Generate PDF
@@ -629,15 +633,16 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     y = 76;
     const mw = (PW - 100) / 4;
     [
-      ["YTD Revenue",  fmtD(ytdRevenue),  "#1a6b4a"],
-      ["YTD Expenses", fmtD(ytdExpenses), "#dc2626"],
-      ["Net Surplus",  fmtD(netSurplus),  netSurplus >= 0 ? "#1a6b4a" : "#dc2626"],
-      ["Cash on Hand", fmtD(cashOnHand),  cashOnHand >= 0 ? "#1a6b4a" : "#dc2626"],
-    ].forEach(([label, value, color], i) => {
+      ["Revenue, so far this fiscal year",  fmtD(ytdRevenue),  "#1a6b4a", SF.besideWords(lastFy, fmtD(lastFy.revenue))],
+      ["Expenses, so far this fiscal year", fmtD(ytdExpenses), "#dc2626", SF.besideWords(lastFy, fmtD(lastFy.expenses))],
+      ["Net surplus, so far this fiscal year",  fmtD(netSurplus),  netSurplus >= 0 ? "#1a6b4a" : "#dc2626", SF.besideWords(lastFy, fmtD(lastFy.net))],
+      ["Cash on Hand", fmtD(cashOnHand),  cashOnHand >= 0 ? "#1a6b4a" : "#dc2626", "Every transaction in the ledger, to today"],
+    ].forEach(([label, value, color, beside], i) => {
       const x = 50 + i * mw;
       doc.rect(x, y, mw - 6, 60).fill(BG);
       doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 8, y + 9, { width: mw - 18 });
       doc.font("Helvetica-Bold").fontSize(15).fillColor(color).text(value, x + 8, y + 24, { width: mw - 18 });
+      if (beside) doc.font("Helvetica").fontSize(6).fillColor(INK3).text(beside, x + 8, y + 43, { width: mw - 18 });
     });
     y += 72;
 
@@ -686,12 +691,14 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
       ["Total Donors",      String(totalDonors),  INK],
       ["New This Quarter",  String(newDonorsQ),   "#1a6b4a"],
       ["Lapsed Donors",     String(lapsedDonors), "#dc2626"],
-      ["Retention (fiscal year)", retentionRate + "%",  retentionRate >= 70 ? "#1a6b4a" : retentionRate >= 50 ? "#f59e0b" : "#dc2626"],
-    ].forEach(([label, value, color], i) => {
+      // POLISH-14 item 4: the year is not over, so the rate is "so far", with last year's whole year beside it.
+      ["Retention, so far this fiscal year", retentionRate + "%", INK, SF.besideWords(lastFy, lastRet)],
+    ].forEach(([label, value, color, beside], i) => {
       const x = 50 + i * mw;
       doc.rect(x, y, mw - 6, 60).fill(BG);
       doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 8, y + 9, { width: mw - 18 });
       doc.font("Helvetica-Bold").fontSize(15).fillColor(color).text(value, x + 8, y + 24, { width: mw - 18 });
+      if (beside) doc.font("Helvetica").fontSize(6).fillColor(INK3).text(beside, x + 8, y + 43, { width: mw - 18 });
     });
     y += 72;
 
@@ -740,7 +747,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     [
       ["Active Grants",  String(activeGrants.length)],
       ["Pipeline Value", fmtD(pipelineValue)],
-      ["Awarded YTD",    fmtD(awardedYTD)],
+      ["Received on active grants", fmtD(awardedYTD)],   // POLISH-14: payments on grants still active, not a fiscal-year figure
       ["Won This Qtr",   String(wonThisQ.length)],
       ["Due in 30 Days", String(upcomingDL.length)],
     ].forEach(([label, value], i) => {
@@ -813,7 +820,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   await run(
     "INSERT INTO board_reports (id,org_id,quarter,year,generated_by,generated_by_name,metrics,pdf_data) VALUES (?,?,?,?,?,?,?,?)",
     [reportId, orgId, q, yr, userId, email, JSON.stringify({
-      ytdRevenue, ytdExpenses, netSurplus, cashOnHand,
+      ytdRevenue, ytdExpenses, netSurplus, cashOnHand, lastFiscalYear: lastFy, soFar: SF.SO_FAR,
       totalDonors, newDonorsQ, lapsedDonors, retentionRate,
       raisedThisQ, raisedLastQ,
       activeGrants: activeGrants.length, pipelineValue, awardedYTD,
