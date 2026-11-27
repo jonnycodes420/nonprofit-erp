@@ -12,7 +12,7 @@
 // it back through the same route. A synced meeting moves on Google or Outlook
 // first, or the calendar says why it could not. An empty slot offers Meeting,
 // Call, Next step, Shift and Event, each the existing form, prefilled.
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { offerUndo } from "./EditHistory";
@@ -23,6 +23,7 @@ import { ShiftEditor, ShiftDrawerFor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { tabHref, urlParam } from "../lib/appUrls";
+import { useGridDrag, dropOf } from "./calendar/gridDrag";   // POLISH-15 item 3
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
 import { entryKey } from "../lib/entryKey";   // FLOWS-4: one action, one key
 import { displayDay } from "../../../shared/displayDate.js";
@@ -30,6 +31,7 @@ import { AddToRecord } from "./MeetingPanels";
 import { FinishSheet } from "./Tasks";
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import TimeInput from "./inputs/TimeInput";   // POLISH-15 item 3: the one time box, its hours in the page
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
 const HOUR_PX = 48, DAY_START = 7, DAY_END = 21, SNAP = 15;
@@ -291,9 +293,6 @@ function lanesFor(list) {
 // ── DAY AND WEEK: THE TIME GRID ────────────────────────────────────────────
 function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
   const gridRef = useRef(null);
-  const [drag, setDrag] = useState(null);   // { item, mode, x0, y0, dx, dy }
-  const dragRef = useRef(null);             // FLOWS-4: the same drag, read once on release
-  const justDragged = useRef(false);        // the click that ends a drag is not a click on the item
   const [now, setNow] = useState(() => new Date());
   // CHECK-2: "3 more" in the all-day row opens that day's whole list, never the add form.
   const [moreDay, setMoreDay] = useState(null);
@@ -304,37 +303,19 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
   const timed = d => items.filter(i => !(i.allDay || String(i.start).length === 10) && String(i.start).slice(0, 10) === d);
   const top = s => Math.max(0, ((minsOf(s) - DAY_START * 60) / 60) * HOUR_PX);
   const nowMins = now.getHours() * 60 + now.getMinutes();
-  useEffect(() => {
-    if (!drag) return undefined;
-    const mv = e => {
-      const d = dragRef.current; if (!d) return;
-      dragRef.current = { ...d, dx: e.clientX - d.x0, dy: e.clientY - d.y0, moved: d.moved || Math.abs(e.clientX - d.x0) + Math.abs(e.clientY - d.y0) > 4 };
-      setDrag(dragRef.current);
-    };
-    // FLOWS-4 (W-1109-Volunteers-18X): the move is sent from here, once, never
-    // from inside a state updater (React may run an updater twice, and each run
-    // sent the move again). The drag's latest position is kept in a ref.
-    const up = () => {
-      const d = dragRef.current;
-      dragRef.current = null;
-      setDrag(null);
-      if (d && d.moved) {
-        justDragged.current = true; setTimeout(() => { justDragged.current = false; }, 50);
-        const days = d.mode === "move" ? Math.round(d.dx / colW()) : 0;
-        // FLOWS-1 item 3: an all-day item (a task, a step with no time) moves by whole days only
-        const mins = d.allDay ? 0 : Math.round(((d.dy / HOUR_PX) * 60) / SNAP) * SNAP;
-        if (days || mins) onMove(d.item, d.mode === "move" ? { days, minutes: mins } : { endMinutes: mins });
-      }
-    };
-    window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
-    return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
-  }, [drag && drag.item && drag.item.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // POLISH-15 item 3: the drag's listeners are added on the press, and a drag is 6 px of travel (calendar/gridDrag.js).
+  const { drag, begin, justDragged } = useGridDrag(d => {
+    const { days, minutes } = dropOf(d, { colW: colW(), hourPx: HOUR_PX, snap: SNAP });
+    if (days || minutes) onMove(d.item, d.mode === "move" ? { days, minutes } : { endMinutes: minutes });
+  });
   const start = (e, item, mode, allDayRow = false) => {
     if (isReadOnly || !(item.editable && item.editable[mode === "move" ? "move" : "resize"])) return;
     e.stopPropagation(); e.preventDefault();
-    dragRef.current = { item, mode, allDay: allDayRow, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, moved: false };
-    setDrag(dragRef.current);
+    begin(e, { item, mode, allDay: allDayRow });
   };
+  // POLISH-15 item 3: where the item will land, drawn as a dashed ghost while it is dragged.
+  const ghostAt = d => dropOf(d, { colW: colW(), hourPx: HOUR_PX, snap: SNAP });
+  const ghostStyle = { position: "absolute", border: `2px dashed ${T.greenDk}`, borderRadius: 6, boxSizing: "border-box", pointerEvents: "none", zIndex: 4 };
   return (
     <div data-testid="cal-grid" style={{ border: "1px solid " + T.bg3, borderRadius: 12, background: T.white, overflow: "hidden" }}>
       <div style={{ display: "grid", gridTemplateColumns: `52px repeat(${days.length}, minmax(0,1fr))`, borderBottom: "1px solid " + T.bg2 }}>
@@ -352,9 +333,11 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
             {allDay(d).slice(0, 4).map(it => {
               // FLOWS-1 item 3: a task dragged from Wednesday to Thursday moves (it stayed put: this row had no drag)
               const dragging = drag && drag.item.id === it.id && drag.moved;
+              const g = dragging ? ghostAt(drag) : null;
               return <div key={it.id + d} onPointerDown={e => start(e, it, "move", true)}
                 style={{ transform: dragging ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined, position: "relative", zIndex: dragging ? 5 : 1, touchAction: "none", opacity: dragging ? 0.85 : 1 }}>
                 <Block item={it} onOpen={(x, e) => { if (!justDragged.current && !(drag && drag.moved)) onOpen(x, e); }} compact />
+                {g && <div data-testid="cal-drag-ghost" aria-hidden style={{ ...ghostStyle, inset: 0, transform: `translate(${g.days * colW() - drag.dx}px, ${-drag.dy}px)` }} />}
               </div>;
             })}
             {allDay(d).length > 4 && <button type="button" data-testid="cal-allday-more" onClick={e => { e.stopPropagation(); setMoreDay(d); }}
@@ -376,14 +359,18 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
               const dragging = drag && drag.item.id === it.id && drag.moved;
               const dx = dragging && drag.mode === "move" ? drag.dx : 0, dy = dragging && drag.mode === "move" ? drag.dy : 0;
               const dh = dragging && drag.mode === "resize" ? drag.dy : 0;
-              return (
+              const g = dragging ? ghostAt(drag) : null;
+              const gTop = g && drag.mode === "move" ? t0 + (g.minutes / 60) * HOUR_PX : t0;
+              const gH = g && drag.mode === "resize" ? Math.max(20, h + (g.minutes / 60) * HOUR_PX) : h;
+              return (<Fragment key={it.id}>
+                {g && <div data-testid="cal-drag-ghost" aria-hidden style={{ ...ghostStyle, left: `calc(${(ln.lane / ln.of) * 100}% + 2px)`, width: `calc(${100 / ln.of}% - 4px)`, top: gTop, height: gH, transform: `translateX(${g.days * colW()}px)` }} />}
                 <div key={it.id} onPointerDown={e => start(e, it, "move")}
                   style={{ position: "absolute", left: `calc(${(ln.lane / ln.of) * 100}% + 2px)`, width: `calc(${100 / ln.of}% - 4px)`, top: t0, height: Math.max(20, h + dh), transform: `translate(${dx}px, ${dy}px)`, zIndex: dragging ? 5 : 2, touchAction: "none", opacity: dragging ? 0.85 : 1 }}>
                   <Block item={it} onOpen={(x, e) => { if (!justDragged.current && !(drag && drag.moved)) onOpen(x, e); }} style={{ height: "100%" }}>
                     {!isReadOnly && it.editable && it.editable.resize && <div data-testid="cal-resize" onPointerDown={e => start(e, it, "resize")}
                       style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 7, cursor: "ns-resize" }} />}
                   </Block>
-                </div>);
+                </div></Fragment>);
             }); })()}
           </div>))}
       </div>
@@ -631,7 +618,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
         {it.step && <div data-testid="cal-card-step" style={{ fontSize: 13.5, color: T.ink2 }}>The next step with {it.donorName || "them"}.</div>}
         {resched && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <DateInput aria-label="New day" value={resched.day} onChange={e => setResched({ ...resched, day: e.target.value })} style={chip} />
-          <input type="time" aria-label="New time" value={resched.time} onChange={e => setResched({ ...resched, time: e.target.value })} style={chip} />
+          <TimeInput hours aria-label="New time" value={resched.time} onChange={e => setResched({ ...resched, time: e.target.value })} style={chip} />
           <button type="button" data-testid="cal-card-reschedule-save" style={btn} onClick={reschedule}>Move it</button>
         </div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>{action}<button type="button" style={chip} onClick={onClose}>Close</button></div>
@@ -742,7 +729,7 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
         {(form.kind === "call" || form.kind === "step" || form.kind === "meeting") && <input aria-label="What" placeholder={form.kind === "meeting" ? `Visit with ${who ? who.name : "them"}` : "Call"} value={label} onChange={e => setLabel(e.target.value)} style={inp} />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <DateInput aria-label="Date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, flex: "1 1 140px" }} />
-          <input aria-label="Time" type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inp, flex: "0 1 120px" }} />
+          <TimeInput hours aria-label="Time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inp, flex: "0 1 150px" }} />
           {form.kind === "meeting" && <select aria-label="How long" value={mins} onChange={e => setMins(e.target.value)} style={inp}>{["30", "45", "60", "90"].map(m => <option key={m} value={m}>{m} minutes</option>)}</select>}
         </div>
         {/* FLOWS-1: one sentence, true either way: her calendar when one is connected, Steward's when not */}

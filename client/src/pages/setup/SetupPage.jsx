@@ -136,7 +136,7 @@ export default function SetupPage() {
       <button type="button" data-testid="setup-back" style={{ ...btn("ghost"), visibility: i ? "visible" : "hidden" }} onClick={() => setAt(steps[i - 1].id)}>← Back</button>
       <span style={{ flex: 1 }} />
       {!last && <button type="button" data-testid="setup-skip" style={btn("ghost")} disabled={busy} onClick={skip}>Skip for now</button>}
-      <button type="button" data-testid="setup-next" style={btn("primary")} disabled={busy} onClick={next}>{last ? "Go to Home" : "Continue"}</button>
+      <button type="button" data-testid="setup-next" style={btn("primary")} disabled={busy} onClick={next}>{busy ? "Saving…" : last ? "Go to Home" : "Continue"}</button>{/* POLISH-15: a waiting button says so */}
     </div>
     <p style={{ textAlign: "center", marginTop: 18, fontSize: 13.5, color: C.dim }}>Stuck? Jonathan sets this up with you.{" "}
       <a href={BOOKING_URL} target="_blank" rel="noopener noreferrer" style={{ color: C.emerald, fontWeight: 700 }}>Book 30 minutes</a> or just reply to his email.</p>

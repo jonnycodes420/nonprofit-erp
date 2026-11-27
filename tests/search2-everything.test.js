@@ -122,6 +122,51 @@ async function clear(org) {
   r = await find("$12.34", "gifts");
   ok("see all returns every one", r.results.filter(x => x.kind === "gift").length === 6 && !r.more.gifts, r.results.length);
 
+  // ── POLISH-15 item 1: a full name, a surname, and "surname f" ───────────
+  // The prod check typed a full name and a surname and did not find the
+  // person: at Harborlight's size (about 1,200 people) seventeen share the
+  // surname, the surname alone sent only the five with the latest gifts, and
+  // "surname f" found nobody (the phrase was matched as one string).
+  // RED ON MAIN (0e706e9): "every person with that surname" (5 of 17) and
+  // "surname and an initial" (none) fail; planting FLOWS-4's old rank order
+  // and one-string match back in personMatch.js turns both red again.
+  await q(`INSERT INTO donors (id,org_id,name,email,kind,stage,last_gift_date,created_by,created_by_name)
+           SELECT 'd_s2_crowd_' || i, $1, 'Crowd Person ' || i, 'crowd' || i || '@crowd.test', 'individual', 'steward',
+                  to_char(DATE '2025-01-01' + (i % 300), 'YYYY-MM-DD'), 'system:test', 'test'
+             FROM generate_series(1, 1200) i`, [ORG]);
+  const FIRSTS = ["Thessaly", "Ambrose", "Briony", "Caspian", "Delphine", "Evander", "Fable", "Galen", "Honora", "Isidore",
+    "Juniper", "Kestrel", "Lucian", "Marigold", "Nestor", "Odile", "Peregrine"];
+  for (let i = 0; i < FIRSTS.length; i++) {
+    // Thessaly has the OLDEST last gift, so a cut made before the name ranks drops her.
+    await q(`INSERT INTO donors (id,org_id,name,email,kind,stage,last_gift_date,created_by,created_by_name) VALUES ($1,$2,$3,$4,'individual','steward',$5,'system:test','test')`,
+      ["d_s2_wren_" + i, ORG, FIRSTS[i] + " Wrenfield", FIRSTS[i].toLowerCase() + "@wren.test", i === 0 ? "2019-02-01" : `2025-10-${String(10 + i).padStart(2, "0")}`]);
+  }
+  await q(`INSERT INTO donors (id,org_id,name,email,kind,stage,last_gift_date,created_by,created_by_name) VALUES ('d_s2_wrenson',$1,'Thessaly Wrenfieldson','tw@wrenson.test','individual','steward','2026-01-05','system:test','test')`, [ORG]);
+  const THESS = "d_s2_wren_0";
+  const people = res => res.results.filter(x => x.kind === "person");
+  r = await find("Thessaly Wrenfield");
+  ok("a full name finds the person, first", people(r)[0] && people(r)[0].id === THESS, people(r).map(x => x.title));
+  r = await find("Wrenfield");
+  const wrens = people(r).filter(x => /^d_s2_wren_/.test(x.id));
+  ok("every person with that surname, by the surname alone", wrens.length === FIRSTS.length && wrens.every(x => x.wholeName), people(r).map(x => x.title));
+  const sonAt = people(r).findIndex(x => x.id === "d_s2_wrenson");
+  ok("…and a name that only contains it comes after them (or behind See all)", sonAt === -1 ? r.more.people === true : sonAt > people(r).findIndex(x => x.id === THESS), { titles: people(r).map(x => x.title), more: r.more });
+  r = await find("wrenfield t");
+  ok("surname and an initial finds the person, first (ahead of a longer surname)", people(r)[0] && people(r)[0].id === THESS, people(r).map(x => x.title));
+  r = await find("Wrenfield Thessaly");
+  ok("surname then first name finds the person, first", people(r)[0] && people(r)[0].id === THESS, people(r).map(x => x.title));
+  r = await find("wren thess");
+  ok("the start of each word finds the person", people(r).some(x => x.id === THESS), people(r).map(x => x.title));
+  // The search stays quick at this size: twenty surname searches, the slowest
+  // but one under a budget far above what it takes (a guard against a scan
+  // per row, not a perf pin; perf-app holds the strict budgets).
+  const times = [];
+  for (let i = 0; i < 20; i++) { const t0 = process.hrtime.bigint(); await find(i % 2 ? "Wrenfield" : "wrenfield t"); times.push(Number(process.hrtime.bigint() - t0) / 1e6); }
+  times.sort((a, b) => a - b);
+  const p95 = times[18];
+  console.log(`  search p95 at 1,218 people: ${p95.toFixed(0)} ms`);
+  ok("the search stays under 1.5 s at p95 with 1,200 people", p95 < 1500, p95);
+
   // ── a coordinator cannot find a gift ────────────────────────────────────
   const ctok = await login(COORD);
   const c1 = await api("GET", `/search?q=${encodeURIComponent("$4,321.17")}`, ctok);

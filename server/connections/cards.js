@@ -201,6 +201,10 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
       `SELECT MAX(committed_at) AS last, MAX(${OT.orgDateOfSql("committed_at", OT.orgTzSql("org_id"))})::text AS last_day, COUNT(*)::int AS n FROM imports
         WHERE org_id=? AND shape <> 'source' AND committed_at IS NOT NULL`, [orgId]);
     const last = imp && imp.last_day ? String(imp.last_day).slice(0, 10) : null;
+    // POLISH-15 item 5 (W-1127-Settings-03): the card names its last file, not only a day.
+    const [lf] = imp && imp.n ? await query(
+      `SELECT COALESCE(NULLIF(source_filename, ''), name) AS file, (reversed_at IS NOT NULL) AS undone FROM imports
+        WHERE org_id=? AND shape <> 'source' AND committed_at IS NOT NULL ORDER BY committed_at DESC, id DESC LIMIT 1`, [orgId]) : [];
     cards.push({
       id: "statements", kind: "statements", provider: "statements", label: "Statement imports",
       subtitle: "Files somebody drops in: a bank statement, a spreadsheet, a report from somewhere with no API.",
@@ -211,6 +215,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
       sentence: last ? `The last file was brought in on ${last}.` : C.STATUSES.not_connected.definition,
       gifts30: 0, dollars30Cents: 0, lastGiftDate: last,
       importCount: (imp && imp.n) || 0,
+      lastFile: lf && lf.file ? { name: String(lf.file), day: last, undone: lf.undone === true } : null,
     });
   }
 

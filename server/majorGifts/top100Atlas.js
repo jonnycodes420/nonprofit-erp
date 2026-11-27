@@ -26,6 +26,7 @@ async function answer({ req, query, step, top100Rows, today }) {
   // POLISH-12: an org that has not turned the Top 100 on gets no Top 100 answer.
   const SW = require("./top100Switch");
   if (!(await SW.top100On(query, orgId))) return { kind: "refused", state: "refused", line: SW.OFF_LINE };
+  if (step.how === "off") return { kind: "answer", state: "done", link: { tab: "top100" }, line: "Your Top 100 is on. Open it to see who is on it." };   // turned on since the question was read
   const S = await shapeMod();
   const rows = await top100Rows(orgId);
   if (!rows.length) return { kind: "answer", state: "done", line: "Your Top 100 is empty. Add people from a profile, from Donors, or on the Top 100 page.", link: { tab: "top100" } };
@@ -68,4 +69,11 @@ function readInCode(text) {
   return null;
 }
 
-module.exports = { answer, readInCode };
+// POLISH-15 (W-1127-Settings-03): "Who is on my Top 100?" with the Top 100
+// off was read as a person called "on my Top" ("I couldn't find on my Top in
+// Steward"). Any question naming the Top 100 is now answered by answer(),
+// which says it is off and where an admin turns it on (top100Switch.OFF_LINE).
+const namesTop100 = text => /\btop\s*(100|hundred|one hundred)\b/i.test(String(text || ""));
+const offStep = text => ({ kind: "top100", how: "off", target: "", amountWords: "", who: "", whenWords: "", words: String(text || "").trim() });
+
+module.exports = { answer, readInCode, namesTop100, offStep };

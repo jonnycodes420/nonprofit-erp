@@ -1,7 +1,9 @@
 // email-builder/EmailFrame.jsx · EDITOR-1, BUILDER-1. THE EMAIL, WHERE IT IS WRITTEN.
 //
 // The server's editable render (shared/emailBlocks.js renderEmail({editable}))
-// in a frame that runs no script of its own (sandbox without allow-scripts);
+// in a frame that runs no script of its own (its page's policy is script-src
+// 'none'; the sandbox allows scripts only so Safari runs the editor's listeners,
+// POLISH-15, frameDoc.js);
 // the editor wires it from outside. The words are typed where they show, and
 // a field is a chip kept as its field, so "Dear {{first_name}}" never becomes
 // "Dear Margaret" in the template.
@@ -16,6 +18,7 @@
 import { useEffect, useRef } from "react";
 import { T } from "../shared";
 import { attachDnD } from "./frameDnD";   // BUILDER-2B: drag, drop and the "+"
+import { FRAME_SANDBOX, framedHtml } from "./frameDoc";   // POLISH-15: the frame answers in Safari too
 
 // BUILDER-2B: a row inside a Box is marked "3.children.0"; a click on it
 // selects its Box (block 3), the block the editor holds.
@@ -244,7 +247,7 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
         bar.className = "st-bar " + (room >= 34 ? "out" : "in");
         tag.textContent = (locked ? "Tax lines · required" : (labels[type] || type)) + (hid ? ` · ${HIDDEN_NAME[hid] || ""}` : "");
         selBox.setAttribute("data-st-for", String(i));
-        acts.forEach(b => { const a = b.getAttribute("data-act"); b.style.display = (locked && (a === "remove" || a === "duplicate")) || (type === "footer" && a === "drag") ? "none" : ""; });
+        acts.forEach(b => { const a = b.getAttribute("data-act"); b.style.display = (locked && (a === "remove" || a === "duplicate")) || ((type === "footer" || (type === "header" && i === 0)) && a === "drag") ? "none" : ""; });   // POLISH-15: the header at the top stays there, so it has no grip
       }
       put(hover, hovered != null && hovered !== i ? rectOf(hovered) : null);
     };
@@ -294,7 +297,7 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
   useEffect(() => { draw.current(); }, [selected]);
   useEffect(() => { draw.current(); markHeld(); }, [others]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <iframe ref={frameRef} title="The email" data-testid={testid} sandbox="allow-same-origin" srcDoc={html} onLoad={load}
+    <iframe ref={frameRef} title="The email" data-testid={testid} sandbox={FRAME_SANDBOX} srcDoc={framedHtml(html)} onLoad={load}
       style={{ colorScheme: "light", display: "block", margin: "0 auto", width: device === "phone" ? "100%" : 700, maxWidth: "100%", height: "100%", minHeight: 520, border: 0, background: "transparent", flex: 1 }} />
   );
 }
