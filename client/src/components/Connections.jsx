@@ -109,8 +109,7 @@ function ItemMapping({ isReadOnly, isAdmin }) {
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: "6px 0 10px" }}>{d.definition}</div>
       {d.unmapped > 0 && (
         <div style={{ fontSize: 13, color: T.ink, marginBottom: 10 }}>
-          {unclassified.length === 1 ? `${unclassified[0]} has` : `${unclassified.join(", ")} have`} not been classified. Until somebody says, {unclassified.length === 1 ? "it is" : "they are"}
-          counted as revenue and never as a gift.
+          {`${unclassified.length === 1 ? `${unclassified[0]} has` : `${unclassified.join(", ")} have`} not been classified. Until somebody says, ${unclassified.length === 1 ? "it is" : "they are"} counted as revenue and never as a gift.`}
         </div>)}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginBottom: 8 }}>{msg}</div>}
       {d.items.map(it => {
