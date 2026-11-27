@@ -287,10 +287,11 @@ app.get("/donors/:id/by-year", requireAuth, wrap(async (req, res) => {
 
 // REPORTS-SPEED-1: Retention, Annual and SYBUNT's common asks are stored too, and
 // stale only when a table they read changes (server/reports/storedReports.js).
+// SPEED-4: and Three-year and Year over year, each with the tables it reads.
 const STORED = require("./storedReports");
 app.get("/reports/:key", LANE.middleware, requireAuth, OS.cached("report", { perUser: false,
   when: req => (req.params.key === "giving-summary" && !req.query.format) || STORED.isStoredAsk(req),
-  reads: req => (STORED.KEYS.has(req.params.key) ? STORED.DEPS : null) }), wrap(async (req, res) => {
+  reads: req => STORED.depsFor(req.params.key) }), wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
   // SCALE-4: a report's statements share one answer per statement, as a bundle's do

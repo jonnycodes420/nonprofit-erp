@@ -242,22 +242,42 @@ async function computeFresh(row) {
 
 // THE QUEUE KEEPS IT CURRENT. After a change, every answer stored for the org
 // today is recomputed off the request path, so the next visit finds it ready.
-async function refreshOrg(orgId) {
+// SPEED-4: the quickest first (the time each took when it was stored), so the
+// most answers are current soonest. The answers that name their tables (the
+// stored reports) have a refresh of their own, at once after a change
+// (server/reports/storedRefresh.js, `named`); this one, a moment later, does
+// the rest. Two refreshes recomputing the same answer side by side took the
+// worker's one report place twice over: 7 to 13 s on the 25,000-person org.
+async function refreshOrg(orgId, { named = false } = {}) {
   if (off() || !deps) return 0;
   const today = deps.orgToday(await deps.orgTz(orgId));   // ORG_TZ_SEAM_OK
   const rows = await query(
     `SELECT s.org_key, s.key, s.path, s.user_id FROM org_summary s
-      WHERE s.org_key = ? AND s.computed_for = ?
+      WHERE s.org_key = ? AND s.computed_for = ? AND s.deps IS ${named ? "NOT NULL" : "NULL"}
         AND (s.snap_xmin < COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
-             OR ${CHANGED_SINCE("s")})`, [orgId, today]);
-  for (const r of rows) { await computeFresh(r).catch(e => console.error("[org-summary] refresh", e.message)); stats.refreshes++; }
-  return rows.length;
+             OR ${CHANGED_SINCE("s")})
+      ORDER BY s.ms NULLS LAST, s.key`, [orgId, today]);
+  let n = 0, next = 0;
+  // SPEED-4: the named answers two at a time (the worker's report lane has two
+  // places), and one a read that missed has meanwhile stored fresh is skipped.
+  const one = async () => {
+    for (let r; (r = rows[next++]);) {
+      if (named && (await query(`SELECT 1 FROM org_summary s WHERE s.org_key = ? AND s.key = ? AND s.computed_for = ?
+          AND s.snap_xmin >= COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
+          AND NOT ${CHANGED_SINCE("s")}`, [r.org_key, r.key, today])).length) continue;
+      await computeFresh(r).catch(e => console.error("[org-summary] refresh", e.message)); stats.refreshes++; n++;
+    }
+  };
+  await Promise.all(Array.from({ length: named ? 2 : 1 }, one));
+  return n;
 }
 // Called by the after-change step: one waiting refresh per org, a moment
 // later, so a burst of changes is one recompute.
 function scheduleRefresh(orgId) {
   if (off() || !orgId) return;
   try {
+    // SPEED-4: and the stored reports' own refresh, at once (folded: one waiting at most).
+    Promise.resolve(require("./server/reports/storedRefresh").schedule(orgId)).catch(e => console.error("[org-summary] enqueue", e.message));
     require("./jobQueue").enqueue({ name: "orgSummaryRefresh", orgId, key: `orgSummaryRefresh:${orgId}`, payload: { orgId }, runAfterMs: 2000 })
       .catch(e => console.error("[org-summary] enqueue", e.message));
   } catch (e) { console.error("[org-summary] enqueue", e.message); }
