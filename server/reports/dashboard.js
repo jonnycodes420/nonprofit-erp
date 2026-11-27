@@ -700,6 +700,11 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // queries now always run (cheap LIMIT-5 reads) but still only APPLY when
   // the org has receipts enabled.
   const sixtyDaysAgo = orgTime.addDays(todayStr, -60);   // ORG_TZ_SEAM_OK
+  // POLISH-14 item 1: read before the batch, never awaited inside its array.
+  // An await there left the reads already started with no handler while it
+  // waited; a request abandoned then (leaving Home) turned each of them into an
+  // unhandledRejection (Sentry NODE-34, NODE-35).
+  const thanksSince = await require("../../routes/crm").reportHooks.thanksSince(orgId);
   const [
     orgReceiptRows, atRiskCandidates, noContact, lapsedDonorRows, unacked,
     needsReceipt, mismatched, dueTasks, milestoneRows, atRiskDraftRows,
@@ -754,7 +759,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       AND g.date >= ? ${scopeClause}
     ORDER BY g.amount DESC
     LIMIT 5
-  `, [orgId, await require("../../routes/crm").reportHooks.thanksSince(orgId), ninetyDaysAgo, ...scopeParams]),   // the largest five of the backlog, last 90 days
+  `, [orgId, thanksSince, ninetyDaysAgo, ...scopeParams]),   // the largest five of the backlog, last 90 days
     // Tax receipts — $250+ gifts with no acknowledgment (applied only when
     // the org has receipts enabled)
     query(`

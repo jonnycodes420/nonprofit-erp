@@ -28,6 +28,21 @@ export const ROLE_LABEL = {
   volunteer_coordinator: "Volunteer coordinator, volunteers and hours only",
   admin: "Admin, full access including settings",
 };
+// POLISH-14 item 5: what each role can do, the table on Settings → Team. Each
+// cell is what the server's gates allow (auth.js, the routes' requireAdmin), so
+// the table says what happens. A viewer's export reads the org's switch.
+export const ROLE_ACTIONS = ["View", "Edit", "Trash", "Bulk edit", "Export", "Send"];
+export const ROLE_CAN = {
+  admin: { View: "Everything, settings too", Edit: "Yes", Trash: "Yes", "Bulk edit": "Yes, assign and delete too", Export: "Yes", Send: "Yes, appeals too" },
+  staff: { View: "Every page but billing", Edit: "Yes", Trash: "No", "Bulk edit": "Stage and tags", Export: "Yes", Send: "One email at a time, not appeals" },
+  viewer: { View: "Every page but Team, billing and connections", Edit: "No", Trash: "No", "Bulk edit": "No", Export: null, Send: "No" },
+  volunteer_coordinator: { View: "Volunteers and hours only", Edit: "Volunteers and hours only", Trash: "No", "Bulk edit": "No", Export: "No", Send: "No" },
+};
+// A viewer's Export cell: the org's switch (on, off, or not known to a non-admin).
+export function viewerExportWord(on) {
+  return on === true ? "Yes (Viewers can export is on)" : on === false ? "No (Viewers can export is off)" : "Only if an admin turns on Viewers can export";
+}
+
 // FLOWS-10 item 16 (Area 5 Check 28): the Invite dialog's own words, everywhere a role is shown.
 // Team said "admin" and "member" beside a dialog offering "Admin" and "Staff". "member" is the
 // older name for staff, so it reads Staff too.

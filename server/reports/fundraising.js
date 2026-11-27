@@ -414,7 +414,7 @@ app.post("/metrics/reset-baselines", requireAuth, requireAdmin, wrap(async (req,
   res.json({ deleted: del.changes, resnapshotted: true });
 }));
 
-app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summary"), wrap(async (req, res) => {
+app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summary-2"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   // ?scope=mine (default) scopes Debt/Retention to the logged-in user's own
   // assigned donors, same as GET /dashboard/today; ?scope=all is org-wide.
@@ -477,6 +477,15 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
         const w = figureSources.sameDatesLastYear(retention.period);
         const f = await figureSources.figureValue(orgId, { key: "retention-window", params: w }, {});
         return { current: f.value == null ? null : Math.round(Number(f.value)), source: { key: "retention-window", params: w }, definition: figureSources.RETENTION_SAME_POINT_WORDS };
+      })() : null,
+      // POLISH-14 item 4: this year's rate is "so far"; last fiscal year's WHOLE year sits beside it,
+      // the retention-window source over last year against the year before it.
+      lastYearFull: retention.period ? await (async () => {
+        const p = retention.period;
+        const w = { from1: figureSources.addYears(p.from1, -1), to1: figureSources.addYears(p.to1, -1), from0: p.from1, to0: p.to1 };
+        const f = await figureSources.figureValue(orgId, { key: "retention-window", params: w }, {});
+        return { current: f.value == null ? null : Math.round(Number(f.value)), label: p.prevLabel || null, source: { key: "retention-window", params: w },
+          definition: "Retention last fiscal year, the whole year: of the people who gave the fiscal year before last, the share who gave again in last fiscal year." };
       })() : null,
       trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
     },

@@ -137,8 +137,11 @@ const inList = (list, id) => (list || []).some(p => p.id === id || (p.members ||
      === "2026-12-01:300 2027-01-01:300 2027-02-01:300 2027-03-01:300", inst);
   const { generateInstallments, scheduleWords } = await import("../shared/depositSheet.js");
   const uneven = generateInstallments({ amountCents: 100000, frequency: "monthly", count: 3, firstDue: "2026-12-01" });
-  ok("§2 the preview the form shows, from the same generator", scheduleWords(generateInstallments({ amountCents: 120000, frequency: "monthly", count: 4, firstDue: "2026-12-01" }))
-     === "4 × $300, Dec 1, Jan 1, Feb 1, Mar 1");
+  // POLISH-14 item 2: a schedule crossing Jan 1 says the year on the dates outside the org's year
+  // (red on main: "4 × $300, Dec 1, Jan 1, Feb 1, Mar 1").
+  const crossing = scheduleWords(generateInstallments({ amountCents: 120000, frequency: "monthly", count: 4, firstDue: "2026-12-01" }), "2026-11-27");
+  ok("§2 the preview the form shows, from the same generator, with the year past Jan 1", crossing === "4 × $300, Dec 1; Jan 1, 2027; Feb 1, 2027; Mar 1, 2027", crossing);
+  ok("§2 …and a schedule inside the year needs no year", scheduleWords(generateInstallments({ amountCents: 90000, frequency: "monthly", count: 3, firstDue: "2027-02-01" }), "2027-01-10") === "3 × $300, Feb 1, Mar 1, Apr 1");
   ok("§2 an uneven split: the remainder rides the last", uneven.map(r => r.amountCents).join(",") === "33333,33333,33334", uneven);
   const wk = generateInstallments({ amountCents: 30000, frequency: "weekly", count: 3, firstDue: "2026-12-29" });
   ok("§2 weekly steps a week at a time, across the year end", wk.map(r => r.dueDate).join(",") === "2026-12-29,2027-01-05,2027-01-12", wk);

@@ -63,6 +63,7 @@ import { displayOrgDate } from "../lib/orgDay";
 import { impactExample } from "../lib/impactExample";
 import SettingsSetup from "./onboarding/SettingsSetup";   // ONBOARD-2
 import { VIEWER, ROLES, ROLE_LABEL, roleWord } from "../../../shared/viewOnly.js"; import { ViewerExports } from "./settings/ViewerExports";   // ACCESS-1
+import { RoleTable } from "./settings/RoleTable";   // POLISH-14 item 5
 export { PortalWebsiteSnippet, PortalWebsiteSnippetCard } from "./settings/PortalWebsiteSnippet";
 export { ImpactUpdatesManager } from "./settings/ImpactUpdatesManager";
 export { GivingSourcesManager } from "./settings/GivingSourcesManager";
@@ -647,6 +648,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
         <InvitedList isAdmin={isAdmin} version={invVer}/>
         <WealthScoresTeamSetting isAdmin={isAdmin}/>{/* WEALTH-1: "Everyone on the team can see Wealth Scores" */}
+        <RoleTable isAdmin={isAdmin}/>{/* POLISH-14 item 5: what each role can do */}
       </div>}
 
       {/* ── FIX-13 Part 5 · Connections, the one page ─────────────────────────

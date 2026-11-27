@@ -1,5 +1,6 @@
 // settings/ViewerExports.jsx · ACCESS-1. Settings → Team, for admins: whether
-// people with view-only access can download lists and reports. On by default.
+// people with view-only access can download lists and reports. POLISH-14: off
+// for a new org; the Role table below reads the same switch.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";
@@ -12,7 +13,11 @@ export function ViewerExports() {
   if (!s) return null;
   const flip = async () => {
     setErr("");
-    try { setS(await apiFetch("/org/viewer-exports", { method: "PUT", body: JSON.stringify({ on: !s.on }) })); }
+    try {
+      const next = await apiFetch("/org/viewer-exports", { method: "PUT", body: JSON.stringify({ on: !s.on }) });
+      setS(next);
+      window.dispatchEvent(new CustomEvent("steward:viewer-exports", { detail: { on: !!next.on } }));
+    }
     catch (e) { setErr(errorMessage(e, "That setting did not change.")); }
   };
   return <label data-testid="viewer-exports" title={s.description}

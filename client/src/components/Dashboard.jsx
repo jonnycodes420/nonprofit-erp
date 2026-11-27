@@ -52,10 +52,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // here with the other state because the THREAD ROWS read it to mark which
   // one is open in the rail, and they are built long before the rail is.
   const [railView,setRailView]=useState({kind:"today"});
-  const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  // POLISH-14 item 2: the org's day, never the browser's (Duet read "Friday, November 27" at 8 PM Eastern).
+  const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",timeZone:orgTimezone()});
   // BUILD-89 — the header's one line. "Thursday, September 17" — the day, set
   // in serif, with the greeting small above it.
-  const todayLongStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  const todayLongStr=todayStr;
   // BUILD-86 Part B — HER WORDS. One reader, from the org's stored vocabulary;
   // with nothing stored it returns today's strings, so this is a no-op for an
   // org that never answered the five questions.
