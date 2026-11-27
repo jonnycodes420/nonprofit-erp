@@ -93,11 +93,11 @@ async function walk(page, fx) {
     const l0 = loads;
     let at = 0;
     const answered = page.waitForResponse(r => r.request().method() === method && pathRe.test(new URL(r.url()).pathname), { timeout: 20000 })
-      .then(r => { at = Date.now(); return r.status(); }).catch(() => null);
+      .then(r => { at = performance.now(); return r.status(); }).catch(() => null);
     try { await clicks(); } catch (e) { results.push({ label, ok: false, why: "clicks: " + e.message.split("\n")[0].slice(0, 160) }); return; }
     const status = await answered;
     if (!status || status >= 300) { results.push({ label, ok: false, why: `the write answered ${status}` }); return; }
-    const hit = await page.waitForFunction(test, null, { timeout: SEEN_MS + 2500, polling: 50 }).then(() => Date.now() - at).catch(() => null);
+    const hit = await page.waitForFunction(test, null, { timeout: SEEN_MS + 2500, polling: 50 }).then(() => performance.now() - at).catch(() => null);
     const shown = hit == null ? await page.evaluate(n => { const t = document.body.innerText; const i = t.indexOf(n); return i < 0 ? t.slice(0, 300) : t.slice(Math.max(0, i - 150), i + 250); }, fx.people.giftName).catch(() => "") : "";
     results.push({ label, ok: hit != null && hit <= SEEN_MS && loads === l0, ms: hit, reloaded: loads !== l0, why: hit == null ? "not on screen within 4 s" : hit > SEEN_MS ? `on screen after ${hit} ms` : "", shown });
   };
@@ -183,10 +183,10 @@ async function walk(page, fx) {
     await page.click('[data-testid="settings-org-name-save"]');
   }, has(fx.newOrgName));
   {
-    const t0 = Date.now();
+    const t0 = performance.now();
     await page.click("text=Home >> nth=0");
     const hit = await page.waitForFunction(n => { const el = document.querySelector(".home-head-wide, .home-head-narrow"); return !!el && el.innerText.includes(n); }, fx.newOrgName, { timeout: 4000, polling: 50 })
-      .then(() => Date.now() - t0).catch(() => null);
+      .then(() => performance.now() - t0).catch(() => null);
     results.push({ label: "org rename → Home's greeting says the new name", ok: hit != null && hit <= SEEN_MS, ms: hit, why: hit == null ? "Home still says the old name" : "" });
   }
   return results;
