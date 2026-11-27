@@ -3,6 +3,7 @@
 // so every hook runs in the same order. Nothing it does changed.
 // Tests read it through readSource("client/src/components/DonorProfile.jsx").
 import { useEffect, useState, useRef } from "react";
+import { useChanged } from "../../lib/changes";   // ONE-MOVE-1: the Journeys panel re-reads after a change
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { offerUndo, EditedMarker, ItemMenu } from "../EditHistory";
@@ -241,6 +242,9 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
   const [addPick,setAddPick]=useState("");             // the one being considered
   const [addPreview,setAddPreview]=useState(null);     // its first step, for this person
   const [addErr,setAddErr]=useState("");
+  // ONE-MOVE-1 item 5 (declared above both reads, the TDZ rule): a journey started, stopped or stepped anywhere re-reads this person's panel, no reload
+  const [journeyStamp,setJourneyStamp]=useState(0);
+  useChanged(["task","person"],()=>setJourneyStamp(n=>n+1));   // a journey write names the journey, not always the person
   // WHY-1 Part 7 — the suggested journey, the "..." menu, and the inline stop.
   const [journeySuggest,setJourneySuggest]=useState(null);
   const [journeyMenu,setJourneyMenu]=useState(false);
@@ -250,7 +254,7 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
     if(!donor?.id)return undefined;
     apiFetch(`/donors/${donor.id}/plan`).then(r=>{ if(live)setJourney(r.plan||null); }).catch(()=>{});
     return ()=>{live=false;};
-  },[donor?.id]);
+  },[donor?.id,journeyStamp]);
   // JOURNEYS-3 — every journey they are in, with the next step from each.
   // Re-read whenever the one in the card changes (a step done, a stop, an add).
   const [allJourneys,setAllJourneys]=useState([]);
@@ -260,6 +264,6 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
     if(!donor?.id)return undefined;
     apiFetch(`/donors/${donor.id}/journeys`).then(r=>{ if(live){ setAllJourneys(r?.journeys||[]); setTouchGap(r?.touchGapDays||7); } }).catch(()=>{ if(live)setAllJourneys([]); });
     return ()=>{live=false;};
-  },[donor?.id,journey]);
+  },[donor?.id,journey,journeyStamp]);
   return { isTeam, lockMajor, pipelineAdded, addToPipeline, hasDesignation, toggleDesignation, createHousehold, removeFromHousehold, rc, receiptsEnabled, receiptBusyId, receiptForGift, sendReceipt, downloadReceiptPdf, showYearEnd, setShowYearEnd, yearEndYear, setYearEndYear, yearEndBusy, yearEndErr, sendYearEndStatement, loadGiftsFull, loadPlannedGifts, loadPledges, loadMaterials, loadFundAffinity, intActions, onIntEdited, saveStewardship, sc, journey, setJourney, journeyBusy, setJourneyBusy, doneFor, setDoneFor, doneNote, setDoneNote, skipFor, setSkipFor, skipWhy, setSkipWhy, journeyList, setJourneyList, addPick, setAddPick, addPreview, setAddPreview, addErr, setAddErr, journeySuggest, setJourneySuggest, journeyMenu, setJourneyMenu, stopAsk, setStopAsk, allJourneys, touchGap };
 }

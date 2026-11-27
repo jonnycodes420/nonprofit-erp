@@ -99,7 +99,8 @@ const ID_KEYS = { person: ["donorId", "donor_id", "personId", "funderId", "funde
   pledge: ["pledgeId", "pledge_id"], grant: ["grantId", "grant_id"], group: ["groupId", "group_id"], task: ["taskId", "task_id"] };
 const PATH_IDS = [[/\/donors\/([^/?]+)/, "person"], [/\/events\/([^/?]+)/, "event"], [/\/pledges\/([^/?]+)/, "pledge"],
   [/\/grants\/([^/?]+)/, "grant"], [/\/groups\/([^/?]+)/, "group"], [/\/tasks\/([^/?]+)/, "task"]];
-const NOT_IDS = new Set(["bulk", "counts", "new", "undo", "import", "export", "merge", "bundle", "summaries", "search", "money", "seen"]);
+// ONE-MOVE-1 item 5: "bulk-delete" and "bulk-restore" are actions, never a person's id
+const NOT_IDS = new Set(["bulk", "bulk-delete", "bulk-restore", "bulk-trash", "counts", "new", "undo", "import", "export", "merge", "bundle", "summaries", "search", "money", "seen"]);
 
 function parseBody(body) {
   if (!body || typeof body !== "string") return body && typeof body === "object" && !(body instanceof FormData) ? body : null;

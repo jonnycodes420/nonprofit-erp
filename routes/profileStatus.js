@@ -210,6 +210,15 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
     const agreed = NA.stepAgainstProposals(step, openProps);
     if (agreed.changed) { step = agreed.label; why = agreed.why; }
   }
+  // ONE-MOVE-1: with no open step, the step is the person's one move, the one Home leads with
+  const PA = require("../server/insights/personAsk");
+  const pm = (await PA.asksFor(query, orgId, [d.id], today).catch(() => ({ asks: new Map() }))).asks.get(d.id) || null;
+  if (!thread && !unthanked && pm && pm.move) {
+    const how = pm.move.item.how || {};
+    step = `${String(how.channel || "reach out").toLowerCase()} (${pm.move.title})`;
+    why = pm.move.why;
+  }
+  else if (thread) { /* the open step stands */ }
   else if (unthanked) { step = `thank them for their ${glanceLast ? fmt(glanceLast) + " " : ""}gift`; why = "Their latest gift has a thank-you waiting to be sent."; }
   else if (lc === "lapsed" || drifting) { step = "ask them back"; why = lc === "lapsed" ? DS.LIFECYCLES.lapsed.sentence : "They are past their usual gap between gifts."; }
   else if (lc === "new" && giftCount === 1) { step = "ask for a second gift"; why = "Their first gift was in the last 12 months and they have not given again."; }
@@ -224,11 +233,13 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   // amount sized from their own year, and says "a month"; every other ask is
   // one gift. Same function, one rule (engagement.suggestedAsk).
   const monthly = step === "ask about monthly giving";
-  const ask = giftCount > 0 ? await E.suggestedAsk(query, orgId, d.id,
+  // ONE-MOVE-1: the ask is the move's (Home's), whatever the step; engagement's only when there is no move
+  const moveAsk = pm ? pm.ask : null;
+  const ask = moveAsk ? moveAsk : (!pm && giftCount > 0) ? await E.suggestedAsk(query, orgId, d.id,
     { monthly, ...(viewerMaySee ? { screening: (await P.latestScreening(orgId, [d.id])).get(d.id) || null } : {}) }) : null;
   const said = String(step).trim().replace(/[.!?]+$/, "");
-  const text = `Next: ${said}.` + (ask ? ` Suggested ${ask.monthly ? "ask" : "one-time ask"}: ${DS.dollars(ask.askCents)}${ask.monthly ? " a month" : ""}.` : "");
-  return { step, text, why, ask: ask ? { cents: ask.askCents, monthly: !!ask.monthly, sentence: ask.sentence, screening: !!ask.screening } : null };
+  const text = `Next: ${said}.` + (ask && ask.noAsk ? ` ${ask.sentence}` : ask ? ` Suggested ${ask.monthly ? "ask" : "one-time ask"}: ${DS.dollars(ask.askCents)}${ask.monthly ? " a month" : ""}.` : "");
+  return { step, text, why, ask: ask ? { cents: ask.askCents, monthly: !!ask.monthly, sentence: ask.sentence, screening: !!ask.screening, noAsk: !!ask.noAsk, fromMove: ask.from === "move", gift: ask.gift || null } : null };
 }
 
 app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {

@@ -93,8 +93,9 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
     explanation: W.EXPLANATION,
     bands: W.BANDS,
     // PROSPECT-1 — screening results move the ask only for someone who may see them.
-    suggestedAsk: await engagementMod.suggestedAsk(query, orgId, d.id,
-      (await require("../../prospect").canSee(req.user.userId, req.user.orgId)) ? { screening: (await require("../../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}),
+    // ONE-MOVE-1: the ask is the person's one move's (Home's); engagement's only when there is no move
+    suggestedAsk: (await require("../insights/personAsk").askFor(query, orgId, d.id, orgToday(await orgTz(orgId)), async () => engagementMod.suggestedAsk(query, orgId, d.id,   // ORG_TZ_SEAM_OK
+      (await require("../../prospect").canSee(req.user.userId, req.user.orgId)) ? { screening: (await require("../../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}))).ask,
   });
 }));
 

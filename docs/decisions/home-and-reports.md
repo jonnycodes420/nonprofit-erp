@@ -3,6 +3,15 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **One next move and one ask per person, on every screen (ONE-MOVE-1).** `insights.js nextMoveFor` leads with the move
+  Home's deck leads with (the largest, a Planned signal last, then the earlier card). The profile's Next move, the Giving
+  tab's Next line and suggested ask, and /threads rows read that move's ask (`server/insights/personAsk.js`);
+  `engagement.suggestedAsk` answers only for a person with no move. A lapsing donor is asked for their last gift, named.
+  A move from a household's giving says so on each member and names whose gift a thank-you step is for; a trashed person
+  drives no move (the Insights fingerprint counts trashed people; a stale answer's trashed pledge is dropped at read).
+- **One thank-you draft per person per day (ONE-MOVE-1).** A second gift that day joins the open draft
+  (`thank_you_drafts.also_gift_ids`), written again for the day's total; every door that marks a draft sent thanks all of
+  its gifts (`server/outreach/draftGifts.js`), and Undo restores each. An unsent draft she has looked at is "read", never "opened".
 - **Every list and count re-reads from one place (FRESH-2, 25 Nov 2026).** A screen that shows a list or a count
   reads it through `client/src/lib/liveRead.js`: `useLiveRead(name, topics, read)` (it reads, re-reads on any change
   that reaches those topics, and keeps only the newest answer), or `useLive` / `useLiveRev` where the read is part of a
