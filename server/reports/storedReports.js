@@ -56,12 +56,15 @@ const PEOPLE_EXCEPT = ["wealth_score", "capacity_tier", "score_confidence", "sco
 // from the store, and its refresh after each call and gift held the worker's
 // report place. It reads the gifts and their fund lines, the people, the
 // funds, pledges and their installments, events and the old system's totals
-// (captured over each of its asks: a year, a date range, a fund, a campaign).
+// (captured over each of its asks: a year, a date range, a fund, a campaign),
+// and, when nothing of Steward's stands for last year, the old report chosen
+// as last year's total (old_report_baselines, its sheet): a branch the capture
+// did not reach on the load orgs, caught by reconcile1-checks §baseline.
 const DEPS_OF = {
   "three-year": ["gifts", "orgs", "donors.people", "fin_funds", "historical_totals"],
   "year-over-year": ["gifts", "orgs", "donors.people"],
   "giving-summary": ["gifts", "orgs", "donors.people", "fin_funds", "gift_fund_lines", "historical_totals", "pledges",
-    "pledge_installments", "events"],
+    "pledge_installments", "events", "old_report_baselines", "stored_sheets"],
 };
 const depsFor = (key) => (KEYS.has(key) ? DEPS_OF[key] || DEPS : DEPS_OF[key] || null);
 const ALLOWED_QUERY = new Set(["yearMode", "year"]);

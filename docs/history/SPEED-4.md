@@ -23,7 +23,7 @@ slowest call, and nobody could tell a slow report from a slow runner.
   recomputes the answers that name their tables at once, two at a time, quickest first, skipping one a read already
   stored fresh; one per org at a time in a process. `orgSummaryRefresh` (2 s later) now does only the answers that name
   no tables, and `scheduleRefresh` asks for both. The report lane is a third rounded (worker 2, web still 3). Giving
-  summary names its tables (captured over a year, a range, a fund and a campaign). Nothing stale is ever served: a read
+  summary names its tables (captured over a year, a range, a fund and a campaign, plus the old-report baseline branch CI caught). Nothing stale is ever served: a read
   before the refresh lands computes the answer, as before.
 - **Three-year and year-over-year are stored** (`storedReports.KEYS`, each with its own `DEPS_OF` list, captured from
   the SQL each sends). EXPLAIN (ANALYZE, BUFFERS) on the 25,000-person org: year-over-year's one pass is an index-only
