@@ -211,6 +211,8 @@ async function resolveTarget(orgId, kind, heard, today, ahead = false) {
 async function logAction(req, a) {
   const id = newId("aa");
   const who = actor(req);
+  // POLISH-15: never a word or a definition twice in one answer (server/atlas/noRepeat.js).
+  a = { ...a, line: require("../server/atlas/noRepeat").tidyLine(a.line, req.atlasSaid || (req.atlasSaid = { defs: new Set() })) };
   await run(`INSERT INTO atlas_actions (id,org_id,request_id,card_id,run_id,kind,state,line,donor_id,place,place_id,link,waits,undoable,actor_id,actor_name,created_by,created_by_name,question)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, a.requestId || null, a.cardId || null, a.runId || null, a.kind, a.state, String(a.line).slice(0, 400),
@@ -266,8 +268,12 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const gate = await (gateP || agentGate(orgId));
   // TOP100-1: the Top 100's two asks are read here, on the server only, so the browser's bundle does not carry them.
   // POLISH-12: only for an org that has turned the Top 100 on; otherwise her words are read as anything else.
-  const t100 = require("../server/majorGifts/top100Atlas").readInCode(text);
-  if (t100 && await require("../server/majorGifts/top100Switch").top100On(query, orgId)) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
+  const T100 = require("../server/majorGifts/top100Atlas"), t100 = T100.readInCode(text);
+  // POLISH-15 (W-1127-Settings-03): off, any question that names the Top 100 is told so, and where to turn it on.
+  const t100Named = T100.namesTop100(text) || !!(t100 && t100.how === "plan" && /^(#|number\b)/i.test(t100.target));   // "#4" is a Top 100 rank
+  const t100On = (t100 || t100Named) ? await require("../server/majorGifts/top100Switch").top100On(query, orgId) : false;
+  if (t100 && t100On) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
+  if (!t100On && t100Named) return { ai: gate.ok ? "on" : "off", steps: [T100.offStep(text)], code: true };
   // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
   const inCode = AT_.readInCode(text);
   if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };

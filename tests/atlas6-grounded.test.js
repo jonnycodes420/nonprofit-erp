@@ -461,6 +461,46 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok("§9 a brief never says it can't find someone on file: a comma in the name, \"Prep me for my call with …\"",
     /^Larkspur Supply Co\., Inc\. is an organization on file/.test(inc12.line || "") && /^Ada Lindqvist is a donor/.test(prep12.line || "") && /^Marguerite Fallowmere A12 is on file/.test(suf12.line || ""), { inc: inc12.line, prep: prep12.line, suf: suf12.line });
 
+  // ── §10 POLISH-15: never a word or a definition twice; the Top 100 off says so; journey due dates ──
+  // Red on main (POLISH-15 report): the two-part count said "Donors: each person with at least one gift…"
+  // on both lines; a query count said "People: people."; "Who is on my Top 100?" was "I couldn't find
+  // on my Top in Steward"; "When is the next journey step due?" was "Steward can't answer … yet".
+  // Planted: tidyLine returning its line unchanged turns the two-part and writer checks red.
+  const NR = require("../server/atlas/noRepeat");
+  ok("§10 the writer check finds a doubled word and a definition said twice, and leaves a name alone",
+    NR.repeatsIn(["5 people on file. People: people. Counted today."]).length === 1
+    && NR.repeatsIn(["1 person gave. Donors: each person with at least one gift in the period, counted once.", "4 people gave. Donors: each person with at least one gift in the period, counted once."]).length === 1
+    && NR.repeatsIn(["Walla Walla Fund gave $10."]).length === 0);
+  ok("§10 tidyLine says it once: \"People: people\" → \"People\", a repeated sentence dropped",
+    NR.tidyLine("5 people on file. People: people. Counted today.") === "5 people on file. People. Counted today."
+    && NR.tidyLine("Nothing was changed. Nothing was changed.") === "Nothing was changed.");
+  const two10 = said12(await ask10("How many people gave this year and how many gave last year?"));
+  ok("§10 a two-part count says its definition once in the answer, and repeats no word (Jarvis: \"repeated definitions\")",
+    two10.length === 2 && NR.repeatsIn(two10).length === 0 && two10.filter(l => /each person with at least one gift/.test(l)).length === 1, two10);
+  const qp10 = await api("POST", "/ask", tok9, { text: "How many people do we have?", qplan: { entity: "people", where: [], measure: { fn: "count_people", field: null } } });
+  const def10 = require("../server/atlas/populations").countDefinition(qp10.body);
+  ok("§10 a query count's definition never says its label twice (Jarvis: \"People, people\")",
+    qp10.status === 200 && !!def10 && NR.repeatsIn([`${qp10.body.sentence} ${def10}`]).length === 0, { s: qp10.body && qp10.body.sentence, def10 });
+  await q(`UPDATE orgs SET top100_enabled = false WHERE id = $1`, [F9.ORG]);
+  const t100 = [];
+  for (const t of ["Who is on my Top 100?", "Who on my Top 100 hasn't been touched in 60 days?", "Make a plan of care for #4"]) t100.push(...said12(await ask10(t)));
+  ok("§10 with the Top 100 off, a Top 100 question says it is off and where to turn it on (Settings, under Major gifts)",
+    t100.length === 3 && t100.every(l => l === require("../server/majorGifts/top100Switch").OFF_LINE), t100);
+  await q(`DELETE FROM cultivation_plan_steps WHERE org_id = $1 AND id LIKE 'cps_p15%'`, [F9.ORG]);
+  await q(`DELETE FROM cultivation_plans WHERE org_id = $1 AND id LIKE 'cp_p15%'`, [F9.ORG]);
+  await q(`INSERT INTO cultivation_plans (id,org_id,donor_id,template_name,applied_on,created_by,created_by_name) VALUES ('cp_p15',$1,'d_atl12_mo','Welcome series',$2,'system:test','polish15 fixture')`, [F9.ORG, today]);
+  await q(`INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date) VALUES ('cps_p15_1',$1,'cp_p15',1,'call','Welcome call',$2),('cps_p15_2',$1,'cp_p15',2,'email','Impact note',$3)`,
+    [F9.ORG, F9.addDays(today, 3), F9.addDays(today, 12)]);
+  const calAsk = async (from, to) => (await api("POST", "/ask", tok9, { text: "When is the next journey step due?", scope: { from, to } })).body || {};
+  const jIn = await calAsk(today, F9.addDays(today, 6)), jBefore = await calAsk(F9.addDays(today, -10), F9.addDays(today, -4));
+  const dw = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  ok("§10 the Calendar's Ask answers a journey due date from the steps the Calendar draws (Jarvis: \"No answer\")",
+    jIn.answered === true && !jIn.refused && jIn.sentence.includes(`Welcome call for Marguerite Fallowmere on ${dw(F9.addDays(today, 3))}`) && !/Impact note/.test(jIn.sentence), jIn.sentence);
+  ok("§10 dates on screen with no step say so, and name the next one after them",
+    jBefore.answered === true && /^No journey step is due from /.test(jBefore.sentence) && jBefore.sentence.includes(`The next one is the Welcome call for Marguerite Fallowmere`), jBefore.sentence);
+  await q(`DELETE FROM cultivation_plan_steps WHERE org_id = $1 AND id LIKE 'cps_p15%'`, [F9.ORG]);
+  await q(`DELETE FROM cultivation_plans WHERE org_id = $1 AND id LIKE 'cp_p15%'`, [F9.ORG]);
+
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); try { await closeDb(); } catch {} process.exit(1); });
