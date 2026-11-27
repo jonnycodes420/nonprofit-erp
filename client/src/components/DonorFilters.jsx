@@ -7,6 +7,7 @@
 import { FilterSuggest } from "./donors/FilterSuggest";   // FLOWS-20
 import { useState, useMemo } from "react";
 import { T, fmtFull } from "./shared";
+import { askConfirm } from "./ConfirmDialog";   // SAFE-EDIT-1 item 5
 import { displayDate } from "../../../shared/displayDate.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
@@ -207,7 +208,12 @@ export function FilterBuilder({ setup, where, setWhere, error, total, onClearAll
 // A view is a name for a set of columns and filters ("Major donors, Lexington").
 // LIST-6 item 4: an edited view of her own offers Update (the same view, changed) beside
 // Save as new; before, the only way to keep a change was a second view with a new name.
-export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onDelete, onUpdate = null }) {
+export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onDelete: deleteView, onUpdate = null }) {
+  // SAFE-EDIT-1 item 5: deleting a saved view asks first (it went on one click). "Keep it" changes nothing.
+  const onDelete = async v => {
+    if (!(await askConfirm({ title: `Delete the view "${v.name}"?`, body: "Only the saved filters and columns go. Nobody in it is changed.", yes: "Delete view", no: "Keep it", danger: true }))) return;
+    return deleteView(v);
+  };
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [msg, setMsg] = useState("");

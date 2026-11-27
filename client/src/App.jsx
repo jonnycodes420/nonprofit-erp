@@ -15,7 +15,7 @@ import { CAPTURE_CHANGED } from "./components/CheckSnap";   // SWEEP-6: the same
 // button, and modal render below, and the matching import above:
 // `VoiceMemoModal` from "./components/shared").
 import { Dashboard } from "./components/Dashboard";
-import { confirmIfDirty } from "./lib/dirtyGuard";
+import { confirmIfDirty, isDirty, leaveIfClean } from "./lib/dirtyGuard";
 import { SkeletonPage } from "./components/Skeleton";
 import { bootRead, homeShape } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
@@ -171,6 +171,7 @@ function AppShell() {
   // VOICE-1 — Tell Steward: one sheet, opened from Home, a profile or the menu.
   const [tell,setTell]=useState(null);
   const navigateRef=useRef(null);
+  const shownHref=useRef(typeof window!=="undefined"?window.location.pathname+window.location.search:"");   // SAFE-EDIT-1: the address of what is on screen
   const atlas=useAtlasName();
   useEffect(()=>{
     const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null,text:(e.detail&&e.detail.text)||"",send:!!(e.detail&&e.detail.send),requestId:(e.detail&&e.detail.requestId)||null});
@@ -335,6 +336,13 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts,how)=>{
+    // SAFE-EDIT-1 item 2: an edit with changes is never left without a question, whatever moved
+    // (Back, a rail link, a card's link). "Keep editing" after Back puts the address back.
+    if(!how?.leaving&&isDirty()){
+      leaveIfClean(()=>{navigateRef.current(t,opts,{...(how||{}),leaving:true});if(how?.fromUrl)shownHref.current=window.location.pathname+window.location.search;},
+        ()=>{if(how?.fromUrl&&shownHref.current!==window.location.pathname+window.location.search)routerNavigate(shownHref.current,{state:{internal:true}});});
+      return false;
+    }
     // AGENT-5 — the Agent page is gone. Its old addresses land on Home with
     // Atlas open; its "What changed" is Recent changes, and its Guardrails
     // are Settings > Atlas.
@@ -429,10 +437,12 @@ function AppShell() {
   // <Link> anywhere in the app changes it. Pushes the app made itself are
   // marked `internal` and already on screen.
   useEffect(()=>{
-    if(location.state?.internal&&navType!=="POP")return;
+    const here=location.pathname+location.search;
+    if(location.state?.internal&&navType!=="POP"){shownHref.current=here;return;}
     const r=parseAppUrl(location.pathname,location.search,location.hash);
     if(!r)return;
-    navigateTo(r.tab,r.opts,{fromUrl:true});
+    if(navigateTo(r.tab,r.opts,{fromUrl:true})===false)return;   // SAFE-EDIT-1: she kept editing
+    shownHref.current=here;
     if(r.legacy){
       // ASKS-1: the old Pipeline, Top 100, Portfolios and Plans addresses canonicalise to Major Gifts
       const rr=routeMajorGifts(r.tab,r.opts,canMG,mgPlace);

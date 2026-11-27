@@ -200,4 +200,15 @@ const OPEN_INSTALLMENTS_SQL = `SELECT x.id, x.pledge_id, LEFT(x.due_date::text, 
            WHERE i.org_id = ?) x
    WHERE x.cum > x.cov`;
 
-module.exports = { dueRowsSql, openRowsSql, summaryOf, summaryWords, SUMMARY_WORDS_SQL, NEXT_INSTALLMENT, OPEN_INSTALLMENTS_SQL, PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED, balanceCents, dueOf, installmentsLeft, unpaidCount, dueThisFiscalYear, DUE_SQL };
+// SAFE-EDIT-1 item 6 · WHAT A DELETE TAKES: these people's open pledges, how many and what is
+// still to come on them (the remainder, as pledges-open counts it). The delete's confirm says it.
+async function openPledgesOf(query, orgId, ids) {
+  const list = [...new Set((ids || []).map(String))];
+  if (!list.length) return { count: 0, leftCents: 0 };
+  const [r] = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(GREATEST(p.amount - ${PAID_OF("p")}, 0)), 0) AS left_amount
+       FROM pledges p WHERE p.org_id = ? AND p.donor_id = ANY(?) AND p.status = 'open'`, [orgId, list]);
+  return { count: r.n, leftCents: c(r.left_amount) };
+}
+
+module.exports = { openPledgesOf, dueRowsSql, openRowsSql, summaryOf, summaryWords, SUMMARY_WORDS_SQL, NEXT_INSTALLMENT, OPEN_INSTALLMENTS_SQL, PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED, balanceCents, dueOf, installmentsLeft, unpaidCount, dueThisFiscalYear, DUE_SQL };

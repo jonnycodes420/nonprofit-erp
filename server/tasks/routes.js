@@ -295,7 +295,9 @@ app.get("/donors/:id/tasks", requireAuth, wrap(async (req, res) => {
   res.json(tasks);
 }));
 
-app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+// SAFE-EDIT-1 item 1: a double-click on Save (one key per form) makes one task (server/shared/requestKey.js).
+const taskOnce = require("../shared/requestKey").onceByKey("task", (orgId, id) => readTask(orgId, id));
+app.post("/tasks", requireAuth, checkWriteAccess, taskOnce, wrap(async (req, res) => {
   const { title, due, priority, type, donorId, assignedTo, assignedToName } = req.body;
   if (!title || !String(title).trim()) return res.status(400).json({ error: "Title required" });
   // Tenant guard: a linked donor must belong to the caller's org.

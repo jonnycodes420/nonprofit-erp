@@ -422,6 +422,8 @@ function healthExamples(c) {
 // HOTFIX-RHYTHM: the import's pairs, and the Home notice counted with today's rule.
 const { importPairs, noticeCount } = require("../server/dataHealth/noticeCount")({ query, livePeople: (...a) => livePeople(...a), pairsAndFamilies: (...a) => pairsAndFamilies(...a) });
 async function runDataHealth(orgId, { trigger, importId = null, actorId = "system:data-health", actorName = "Steward (data health)" }) {
+  // SAFE-EDIT-1 item 4: the words a run may name are one list (server/dataHealth/triggers.js), the constraint's own
+  if (!require("../server/dataHealth/triggers").isTrigger(trigger)) throw new Error(`data health: "${trigger}" is not a trigger (server/dataHealth/triggers.js)`);
   const c = await healthCounts(orgId);
   const fresh = importId ? await importPairs(orgId, importId, c._people, c._pairs) : 0;
   const id = newId("dhr");

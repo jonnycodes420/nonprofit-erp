@@ -14,6 +14,7 @@
 //      offers the choice up front; "Move them too" happens in the same undo;
 //      a line Steward wrote by itself is not activity.
 //   §4 W-1108-Donors-45X: deleting a person takes their household and
+//      (SAFE-EDIT-1) the confirm also names their open pledges;
 //      relationship links (no "Owner: … $0" left), and Restore brings them back;
 //      the delete's confirm counts what goes.
 //   §5 W-1108-Volunteers-17X: deleting a meeting takes its open tasks and the
@@ -209,8 +210,11 @@ const live = async id => !!(await one(`SELECT 1 AS x FROM donors WHERE id=$1 AND
     }
     await api("POST", `/donors/${marlowe}/relationships`, tok, { relatedDonorId: spouse, relationshipType: "spouse" });
     const hh = (await one(`SELECT household_id FROM donors WHERE id=$1`, [marlowe])).household_id;
+    // SAFE-EDIT-1 item 6: an open pledge is said too (Duet: "It doesn't mention an open pledge"); red on main (undefined)
+    const pl = await api("POST", `/donors/${marlowe}/pledges`, tok, { amount: 600, dueDate: "2027-03-01", notes: "Spring pledge", idempotencyKey: "i2-safeedit1-pledge" });
     const check = await api("POST", "/donors/trash-check", tok, { ids: [marlowe] });
     ok("§4 the delete's confirm counts what goes: 1 gift, 3 links, a household", check.body.gifts === 1 && check.body.links === 3 && check.body.households === 1, check.body);
+    ok("§4 SAFE-EDIT-1: and their open pledge, with what is still to come on it ($600.00)", pl.status === 201 && check.body.openPledges === 1 && check.body.openPledgeCents === 60000, [pl.status, check.body]);
     const del = await api("DELETE", `/donors/${marlowe}`, tok);
     const shopRels = await api("GET", "/donors/d_i2l_shop/relationships", tok);
     const rows = (await one(`SELECT COUNT(*)::int AS n FROM donor_relationships WHERE org_id=$1 AND (donor_id_a=$2 OR donor_id_b=$2)`, [ORG, marlowe])).n;

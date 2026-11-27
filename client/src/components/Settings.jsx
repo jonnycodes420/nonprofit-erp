@@ -10,7 +10,7 @@ import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
 import { BillingInvoices, PlanTalkLink } from "./settings/BillingMore";   // HONEST-2 item 3
 import { FlowWord } from "./connections/flowParts";   // HONEST-2 item 1
-import { confirmIfDirty } from "../lib/dirtyGuard";
+import { leaveIfClean } from "../lib/dirtyGuard";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
 import { ConnectionsPage } from "./Connections";
@@ -558,7 +558,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         );
       })()}
-      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={visibleTabs} active={section} onSelect={id=>{if(confirmIfDirty())setSection(id);}}/>
+      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={visibleTabs} active={section} onSelect={id=>leaveIfClean(()=>setSection(id))}/>
 
       {/* ── Organization ──────────────────────────────────────────────────── */}
       {section==="org"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
