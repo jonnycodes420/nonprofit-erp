@@ -50,6 +50,9 @@ const pledgeSched=pl=>{const ins=pl.installments||[],first=String((ins[0]&&ins[0
   return ins.length>1?{plan:"many",count:ins.length,frequency:FREQ_IN[pl.frequency]||pl.frequency||"monthly",firstDue:first}:emptySchedule(first);};
 
 // UNDO-1: a refund is undone for 30 days, never one made to a card through Stripe (refundUndo.js says the same).
+// NUMBERS-10 item 4: the listed rows the header does not count, by the server's reason (shared/numbers/giftHistoryHead.js REASONS; a scheduled gift has its own note below).
+const NOT_COUNTED=[["refund","refund","refunds"],["refundedInFull","gift refunded in full","gifts refunded in full"],["scheduled","scheduled gift","scheduled gifts"],["credit","soft or matching credit","soft or matching credits"],["zero","$0 record","$0 records"]];
+const notCountedWords=rows=>NOT_COUNTED.map(([k,one,many])=>{const n=rows.filter(g=>g.not_counted===k).length;return n?`${n} ${n===1?one:many}`:null;}).filter(Boolean).join(", ");
 const undoRefundOpen=(r,all)=>{const o=(all||[]).find(x=>x.id===r.refund_of);const at=new Date(r.created_at||r.date||0).getTime();return !(o&&o.stripe_payment_id)&&Date.now()-at<30*864e5;};
 function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
   const [refunding,setRefunding]=useState(null);   // MONEY-4: { gift, leftCents } while Record a refund is open
@@ -271,7 +274,9 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
-                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.filter(g=>!g.scheduled).reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
+                  {/* NUMBERS-10 item 4 (W-1127-Finance-01): the count and the total are the rows listed below, by each row's server flag (shared/numbers/giftHistoryHead.js) */}
+                  Total: <strong data-testid="dp-gifts-total" style={{color:T.greenDk}}>{fmtFull(giftsFull.filter(g=>g.in_total).reduce((s,g)=>s+Math.round(g.amount*100),0)/100)}</strong> · <span data-testid="dp-gifts-count">{giftCountReal} {giftCountReal===1?"gift":"gifts"}</span>
+                  {giftsFull.length!==giftCountReal&&<span data-testid="dp-gifts-not-counted"> · {giftsFull.length} rows listed: {notCountedWords(giftsFull)}, not in the count</span>}
                   {/* TRUTH-6: a scheduled gift (dated after today) is listed, and in no total until its date. */}
                   {giftsFull.some(g=>g.scheduled)&&<span data-testid="dp-gifts-scheduled-note"> · {giftsFull.filter(g=>g.scheduled).length} scheduled, not counted until {giftsFull.filter(g=>g.scheduled).length===1?"its":"their"} date</span>}
                   {refundRows.length>0&&<span data-testid="dp-gifts-refunds"> · {(figs&&figs.average&&figs.average.refundWords)||`${fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} returned`}, taken off</span>}{/* DEFINE-1: refunds.js words (money returned on gifts refunded), never a count of refund rows */}
@@ -497,7 +502,7 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
                           </>}
                           <EditedMarker item={pl}/>
                           {!isReadOnly&&<button onClick={()=>setPledgeEdit({id:pl.id,amount:String(pl.amount),dueDate:String(pl.due_date||"").slice(0,10),notes:pl.notes||"",sched:pledgeSched(pl)})} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit</button>}
-                          <button onClick={()=>deletePledge(pl.id)} aria-label="Delete this pledge" style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                          <button onClick={()=>deletePledge(pl.id,pl)} aria-label="Delete this pledge" style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                         </div>
                       </div>
                     );

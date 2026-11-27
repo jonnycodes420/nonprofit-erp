@@ -8,8 +8,10 @@
 //   §OM2 a household member's step is labelled a household step and names whose gift it is; a
 //        household member moved to the trash drives nobody's move (main: "thank Bravo for the
 //        $50 gift" on the member who gave nothing; the trashed member's pledge still asked).
-//   §OM3 one donor's gifts on one day make one thank-you draft, for the day's total; marking
-//        it sent thanks both gifts and Undo puts both back (main: two drafts).
+//   §OM3 one donor's gifts on one day make one thank-you draft that names each gift (NUMBERS-10:
+//        "your gifts of $40 and $60", main said "$100" as if one gift); marking it sent thanks both
+//        gifts and Undo puts both back (main: two drafts). The Gift History header counts and totals
+//        exactly the rows listed and names the refund row it does not count (NUMBERS-10 item 4).
 //
 // Dates are the run's own (tests/clock.js), so the server's today and the fixture agree.
 "use strict";
@@ -77,7 +79,27 @@ async function oneMove({ ok, api, q, freshOrg }) {
     for (let i = 0; i < 20 && drafts.length === 0; i++) { await wait(500); drafts = await q(`SELECT id, also_gift_ids, body FROM thank_you_drafts WHERE org_id=$1 AND donor_id=$2`, [ORG, d.id]).catch(() => []); }
     await wait(1500);
     drafts = await q(`SELECT id, also_gift_ids, body FROM thank_you_drafts WHERE org_id=$1 AND donor_id=$2`, [ORG, d.id]).catch(e => [{ err: e.message }]);
-    ok("§OM3 one donor's two gifts on one day make one thank-you draft, for the day's $100", drafts.length === 1 && /\$100\b/.test(drafts[0].body || ""), JSON.stringify(drafts.map(x => ({ also: x.also_gift_ids, amt: (String(x.body || "").match(/\$[\d,.]+/) || [])[0] }))));
+    // NUMBERS-10 item 4 (W-1127-Finance-01): the draft names each gift, never the day's sum as one gift
+    // (main: "Thank you for your gift of $100").
+    ok("§OM3 one donor's two gifts on one day make one thank-you draft that names each gift: \"your gifts of $40 and $60\", never \"$100\"",
+      drafts.length === 1 && /your gifts of \$40 and \$60\b/.test(drafts[0].body || "") && !/\$100\b/.test(drafts[0].body || ""),
+      JSON.stringify(drafts.map(x => ({ also: x.also_gift_ids, body: String(x.body || "").slice(0, 160) }))));
+    const ty = (await api("GET", "/thank-yous", tok)).body || {};
+    const row = (ty.drafts || []).find(x => x.donorId === d.id) || {};
+    ok("§OM3 the thank-you queue's row carries the day's other gift by its amount (the line reads \"$40 and $60 on …\")",
+      Math.round(Number(row.amount) * 100) + (row.alsoGifts || []).reduce((n, a) => n + Math.round(Number(a.amount) * 100), 0) === 10000 && (row.alsoGifts || []).length === 1,
+      JSON.stringify({ amount: row.amount, also: row.alsoGifts }));
+    // NUMBERS-10 item 4: the Gift History header counts and totals exactly the rows listed, and names the rest.
+    const gs = await q(`SELECT id FROM gifts WHERE org_id=$1 AND donor_id=$2 AND amount = 60`, [ORG, d.id]);
+    const rf = gs[0] ? await api("POST", `/gifts/${gs[0].id}/refund`, tok, { amount: "15", reason: "NUMBERS-10 fixture" }) : { status: 0 };
+    const prof = (await api("GET", `/donors/${d.id}`, tok)).body || {};
+    const rows = prof.gifts || [], head = prof.gift_history_head || {};
+    const inCount = rows.filter(g => g.in_count === true).length;
+    const inTotal = rows.filter(g => g.in_total === true).reduce((n, g) => n + Math.round(Number(g.amount) * 100), 0);
+    ok("§OM3 the Gift History header foots to the rows listed: 2 gifts (the glance's count), $85 after a $15 refund, and the refund row named, not counted",
+      (rf.status === 200 || rf.status === 201) && rows.length === 3 && inCount === 2 && inCount === prof.gift_count && inTotal === 8500
+      && head.words === "Total: $85 · 2 gifts · 3 rows listed: 1 refund (-$15), not in the count",
+      JSON.stringify({ refund: rf.status, rows: rows.length, inCount, glance: prof.gift_count, inTotal, words: head.words }));
     const thanked = async () => (await q(`SELECT COUNT(*) FILTER (WHERE thanked_at IS NOT NULL)::int AS n FROM gifts WHERE org_id=$1 AND donor_id=$2`, [ORG, d.id]))[0].n;
     const s = drafts[0] ? await api("POST", `/thank-yous/${drafts[0].id}/sent`, tok, {}) : { status: 0 };
     const n1 = await thanked();

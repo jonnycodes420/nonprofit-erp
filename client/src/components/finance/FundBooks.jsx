@@ -8,7 +8,7 @@ import { Figure } from "../Figure";
 
 // SWEEP-5: the fund cards' definitions arrive keyed by field; a person reads
 // the words, never "inPeriod.". (Moved here from Finance.jsx by LEDGER-3.)
-export const FUND_DEF_WORDS = { received: "Received this fiscal year (gifts)", waiting: "Waiting to post", balance: "Balance (books)", inPeriod: "In this period", restrictedBy: "Restricted by" };
+export const FUND_DEF_WORDS = { received: "Received this fiscal year (gifts)", waiting: "Waiting to post", balance: "Balance (books)", gifts: "Gifts to this fund", inPeriod: "In this period", restrictedBy: "Restricted by" };
 
 export function FundDefaultChip({ f }) {
   if (!f.isDefault) return null;
