@@ -13,5 +13,6 @@ module.exports = function sourceModules({ FigureParamError, query }) {
     require("../onboard/totalsSources")(),   // ONBOARD-3: what explains a year that differs from the old system
     require("../volunteers/volunteerSources")(), require("../donors/givesThroughSources")(),   // VOL-3: the Volunteers header cards open their rows; NUMBERS-8: Gives through
     require("../outreach/audienceSources")({ FigureParamError, query }),   // COMMS-3: Audience's reach bar and cards
+    require("../outreach/thanksSources")(),   // NUMBERS-10 item 2: the gifts older than the thank-you window
   );
 };

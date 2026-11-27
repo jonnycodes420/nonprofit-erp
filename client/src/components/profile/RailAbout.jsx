@@ -98,12 +98,12 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                 {givesThrough.rows.some(g=>g.howWords)&&<div data-testid="dp-rail-gives-through-how" style={{fontSize:12,color:RAIL.dim,lineHeight:1.45}}>{givesThrough.rows.filter(g=>g.howWords).map(g=>`${g.name}: ${g.howWords}`).join(". ")}.</div>}
                 <div style={{fontSize:12,color:RAIL.dim,marginTop:4,lineHeight:1.45}}>{givesThrough.definition}</div>
               </RailSection>}
-              {/* NUMBERS-9 item 5 (W-1125-Finance-37, repeat): linked to an organization as a program officer or an
-                  employee, nothing of its giving is theirs. Said by name, so an empty Giving tab is not read as a fault. */}
+              {/* NUMBERS-9 item 5 (W-1125-Finance-37, repeat): linked to an organization as an employee (works at),
+                  nothing of its giving is theirs (NUMBERS-10: a program officer is credited, softThrough.js). Said by name, so an empty Giving tab is not read as a fault. */}
               {!givesThrough&&(relationships||[]).some(r=>r.creditsNothing)&&<RailSection title="Gives through" testid="dp-rail-not-through">
                 {(relationships||[]).filter(r=>r.creditsNothing).map(r=>(
                   <div key={r.id} data-testid="dp-rail-not-through-row" style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.5,padding:"2px 0"}}>
-                    {`${r.relatedDonorName}'s gifts are its own: nothing is credited to ${donor.name}. Link them as Owner (gives through it), or add a soft credit on a gift, to credit them.`}
+                    {`${r.relatedDonorName}'s gifts are its own: nothing is credited to ${donor.name}. Link them as Owner or program officer (gives through it), or add a soft credit on a gift, to credit them.`}
                   </div>))}
               </RailSection>}
               {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving

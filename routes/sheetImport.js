@@ -1088,6 +1088,11 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.sheetRows = sheetAccount(u, matches, dupLines);
   summary.button = Rm.importButtonSentence(u).text;
   summary.undatedGiftIds = (await query("SELECT id FROM gifts WHERE org_id=? AND import_id=? AND date IS NULL", [orgId, importId])).map(r => r.id);
+  // NUMBERS-10 item 6: the headline foots the file, rows and dollars, and names the scheduled gifts (shared/importHeadline.js).
+  const sch = await require("../shared/numbers/scheduled").scheduledOfImport(query, orgId, importId);
+  summary.headline = (await import("../shared/importHeadline.js")).importHeadline({ done: true, gifts: giftsCreated, giftCents,
+    scheduled: sch.n, scheduledCents: sch.cents, pledges: u.pledges.length, pledgeCents: u.pledges.reduce((n, p) => n + p.pledgeCents, 0),
+    already: dupLines.size, alreadyCents: duplicateCents, aside: u.aside.length, asideCents });
   summary.totals = u.totals;
   summary.fileKey = fileFingerprint(body);   // IMPORT-10: the same file is known again (server/imports/importedBefore.js)
   summary.aside = u.aside.slice(0, 500);
@@ -1112,7 +1117,7 @@ async function writePlan({ req, body, importId, who, report }) {
   const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
     : `Nothing new: every row in this file was already here.`;
   return { status: 201, touched: [...touched], body: { importId, eventId, staged, giftsCreated, giftCents, pledgesCreated, pledgeCents, donorsCreated, duplicates,
-    aside: u.aside.length, sentence, totals: u.totals, totalsSentence: u.totalsSentence,
+    aside: u.aside.length, sentence, headline: summary.headline, totals: u.totals, totalsSentence: u.totalsSentence,
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
     columnAccount: u.columnAccount, button: summary.button, reconciled: true, giftLine: summary.giftLine,

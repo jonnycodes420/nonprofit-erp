@@ -189,6 +189,15 @@ const instRows = id => q(`SELECT seq, LEFT(due_date::text,10) AS due, ROUND(amou
     if (!audited) await new Promise(r => setTimeout(r, 100));
   }
   ok("and an audit row is written", audited);
+  // NUMBERS-10 item 6 (W-1127-Finance-03): a written-off pledge with a payment can't be deleted, and the
+  // list says so BEFORE any confirm: the profile's × opens that sentence, never "Delete this pledge?".
+  // Red on main: no `deleteRefusal` on the list (the × asked "Delete this pledge?", then a browser alert).
+  const woRow = await pledgeOf(tok, DELL, PL5);
+  const woDel = await api("DELETE", `/pledges/${PL5}`, tok);
+  ok("§4b NUMBERS-10 the list says why a written-off pledge with a payment stays, before any confirm",
+     !!woRow && /can't be deleted/.test(woRow.deleteRefusal || "") && /already written off/.test(woRow.deleteRefusal || ""), woRow && woRow.deleteRefusal);
+  ok("§4b NUMBERS-10 the delete refuses with that same sentence, and the pledge is still there",
+     woDel.status === 409 && woDel.body.sentence === (woRow && woRow.deleteRefusal) && !!(await pledgeOf(tok, DELL, PL5)), { status: woDel.status, body: woDel.body });
   const unwo = await api("PUT", `/pledges/${PL5}`, tok, { status: "open" });
   ok("Undo (back to open) needs no confirm and restores it", unwo.status === 200 && (await q(`SELECT status FROM pledges WHERE id=$1`, [PL5]))[0].status === "open", unwo.status);
 
@@ -290,6 +299,20 @@ const instRows = id => q(`SELECT seq, LEFT(due_date::text,10) AS due, ROUND(amou
     const extraLanded = await until(() => !/3 installments left|1 installment left/.test((document.querySelector('[data-testid="dp-open-pledge-words"]') || {}).textContent || "x"));
     const fin = (await q(`SELECT COALESCE(SUM(amount),0)::float s FROM gifts WHERE donor_id=$1 AND pledge_id IS NULL`, [FINN]))[0].s;
     ok("§6 the $50 over is its own gift and the pledge is paid", extraLanded && C(fin) === 5000, { fin });
+
+    // NUMBERS-10 item 6 (W-1127-Finance-03): Delete on a written-off pledge with a payment says why it
+    // stays, with no confirm to press (main: "Delete this pledge?", then nothing after the confirm).
+    await api("PUT", `/pledges/${PL5}`, tok, { status: "written_off", confirmed: true });
+    await go(`/donors/${DELL}`);
+    await page.locator('[data-tab="giving"]').first().click({ timeout: 20000 });
+    await page.locator(`#pledge-${PL5}`).waitFor({ timeout: 20000 });
+    await page.locator(`#pledge-${PL5} [aria-label="Delete this pledge"]`).first().click();
+    const said = await page.locator('[role="dialog"]').filter({ hasText: "This pledge stays on the record" }).waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+    const noYes = said && !(await page.locator('[data-testid="confirm-yes"]').count());
+    const sawText = said ? await txt('[role="dialog"]') : await txt('[role="dialog"]');
+    ok("§6 NUMBERS-10 Delete on a written-off pledge with a payment says why it stays, with no confirm", said && noYes && /can't be deleted/.test(sawText), sawText.slice(0, 240));
+    if (said) await page.locator('[data-testid="confirm-no"]').click();
+    ok("§6 NUMBERS-10 and the pledge is still listed", await page.locator(`#pledge-${PL5}`).isVisible().catch(() => false));
 
     // Fast switching: each panel shows that person's funds.
     await go(`/donors/${GUS}`);

@@ -99,6 +99,17 @@ async function import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drain
   const sum = (await one("SELECT summary_json FROM imports WHERE id=$1", [imp.importId])).summary_json;
   const srch = (typeof sum === "string" ? JSON.parse(sum) : sum).rowChecks || {};
   ok("§I11.4 the receipt counts the copies (skipped) and the future-dated gifts", srch.copies && srch.copies.count === 10 && srch.copies.imported === false && srch.future && srch.future.count === 2, String(JSON.stringify(srch)).slice(0, 300));
+  // NUMBERS-10 item 6 (W-1127-Finance-02): the headline foots the file in rows and dollars and names the
+  // scheduled gifts; the preview says the same sentence's figures. Red on main: no headline at all.
+  const S = typeof sum === "string" ? JSON.parse(sum) : sum, hl = S.headline || {};
+  const stored = await one("SELECT rows_in, dollars_in FROM imports WHERE id=$1", [imp.importId]);
+  ok("§N10 the import headline foots the file: rows and dollars, to the cent",
+    hl.rows === Number(stored.rows_in) && hl.cents === centsOf(stored.dollars_in) && hl.gifts + hl.already + hl.pledges + hl.aside === hl.rows,
+    JSON.stringify([hl.sentence, hl.rows, hl.cents, stored]));
+  ok("§N10 the headline says \"33 rows: 22 gifts … in (2 of them scheduled gifts, $1,309.56, that count on their dates), 11 set aside\"",
+    /^33 rows: 22 gifts \$[\d,.]+ in \(2 of them scheduled gifts, \$1,309\.56, that count on their dates\), 11 set aside \(\$[\d,.]+\)\.$/.test(hl.sentence || ""), hl.sentence);
+  const ph = (await import("../../shared/importHeadline.js")).previewHeadline(u);
+  ok("§N10 the preview's headline is the same rows and dollars", !!ph && ph.rows === hl.rows && ph.cents === hl.cents && ph.scheduled === 2, JSON.stringify([ph && ph.sentence, hl.sentence]));
   const vf = (await api("GET", `/imports/${imp.importId}/verify`, tok)).body || {};
   ok("§I11.5 the import check page's headline is the file's money, and it counts the copies",
     vf.money && vf.money.fileCents > 0 && !/^Your file: \$0\.00/.test(vf.money.sentence) && vf.rowChecks && vf.rowChecks.copies.count === 10, JSON.stringify([vf.money && vf.money.sentence, vf.rowChecks && vf.rowChecks.copies && vf.rowChecks.copies.count]));

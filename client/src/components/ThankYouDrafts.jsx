@@ -27,10 +27,12 @@ import { errorMessage } from "../lib/domainError";
 import { DonorLink, RecordLink } from "./RecordLink";
 import { giftHref } from "../lib/appUrls";
 import { displayName } from "../../../shared/displayName.js";
-import { giftOnDate } from "../../../shared/draftNote";
+import { giftOnDate, giftListWords } from "../../../shared/draftNote";
 import { dismissDrafts, SelectBox } from "./DraftDismiss";   // COMMS-1 item 4
 import { offerUndo } from "./EditHistory";
 import { useLiveRead } from "../lib/liveRead";
+// NUMBERS-10 item 4: a draft for one person's day of gifts names each one ("$1,000 and $25 on …").
+const giftsOnDate = d => giftOnDate(0, d.giftDate).replace(/^\$0/, giftListWords([d.amount, ...d.alsoGifts.map(a => a.amount)].map(a => Math.round(Number(a) * 100))));
 
 export const THANK_YOUS_CHANGED = "steward:thank-yous-changed";
 const CAPTURE_CHANGED = "steward:capture-changed";
@@ -151,7 +153,7 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
                       <span style={{ fontSize: 13, color: T.ink2, fontVariantNumeric: "tabular-nums" }}>
                         <RecordLink to={giftHref(d.donorId, d.giftId)} data-record-link="gift" title="Open the gift"
                           onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: d.donorId, anchor: "gift-" + d.giftId }) : undefined}
-                          style={{ color: "inherit" }}>{giftOnDate(Math.round(Number(d.amount) * 100), d.giftDate)}</RecordLink>{d.fundName ? ` · ${d.fundName}` : ""}
+                          style={{ color: "inherit" }}>{(d.alsoGifts || []).length ? giftsOnDate(d) : giftOnDate(Math.round(Number(d.amount) * 100), d.giftDate)}</RecordLink>{(d.alsoGifts || []).length > 0 && <span data-testid="ty-draft-also">{`, ${(d.alsoGifts || []).length + 1} gifts on one thank-you`}</span>}{d.fundName ? ` · ${d.fundName}` : ""}
                       </span>
                     </div>
                     {!isOpen && <div data-testid="ty-draft-preview" style={{ fontSize: 12.5, color: T.ink3, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstLine(d.body)}</div>}

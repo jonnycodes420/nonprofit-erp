@@ -669,8 +669,11 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
     const open = thisGift.day_draft_id ? { id: thisGift.day_draft_id, gift_id: thisGift.day_draft_gift, also_gift_ids: thisGift.day_draft_also || [] } : null;
     if (open) {
       const ids = [...new Set([...DG.giftIdsOf(open), giftId])];
-      const c = (await query(`SELECT ROUND(amount * 100)::bigint AS cents FROM gifts WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).reduce((n, r) => n + Number(r.cents), 0);
-      const day = draftMod.thankYouDraft({ donorName: d.name, giftCents: Number(c), fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift.date, ...facts, giftCountBefore: null, isFirstGift: null });
+      // NUMBERS-10 item 4: the draft names each gift ("your gifts of $1,000 and $25"), never their sum
+      // as one gift; and it names the fund only when every gift went to it.
+      const dayGifts = await query(`SELECT ROUND(amount * 100)::bigint AS cents, fund_id FROM gifts WHERE org_id=? AND id = ANY(?) ORDER BY created_at, id`, [orgId, ids]);
+      const oneFund = dayGifts.every(r => (r.fund_id || null) === (fundId || null));
+      const day = draftMod.thankYouDraft({ donorName: d.name, giftsCents: dayGifts.map(r => Number(r.cents)), fundName: oneFund ? (fundPublic || fund?.name || null) : null, generalFund: oneFund && generalFund, orgName: org?.name, voice, person, date: thisGift.date, ...facts, giftCountBefore: null, isFirstGift: null });
       await query(`UPDATE thank_you_drafts SET body=?, also_gift_ids=? WHERE id=? AND org_id=? AND sent_at IS NULL AND skipped_at IS NULL`,
         [day.body, ids.filter(x => x !== open.gift_id), open.id, orgId]);
       return { id: open.id, voice: day.voice, folded: true };

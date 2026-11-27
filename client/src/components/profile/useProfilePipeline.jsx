@@ -113,6 +113,7 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
         fund_lines:Array.isArray(g.fund_lines)?g.fund_lines:[],event_id:g.event_id||"",   // GIFTS-2: a split gift's lines; the edit keeps its event
         refund_of:g.refund_of||null,refund_reason:g.refund_reason||"",refunded_in_full:g.refunded_in_full===true,   // MONEY-4: a refund row names its gift
         scheduled:g.scheduled===true,scheduled_label:g.scheduled_label||null,   // TRUTH-6: dated after today, counted on its date
+        in_count:g.in_count===true,in_total:g.in_total===true,not_counted:g.not_counted||null,   // NUMBERS-10 item 4: the header's rule, per row (shared/numbers/giftHistoryHead.js)
         // GIFTS-3: what the one gift form's Edit opens with, so an edit changes only what she changed
         cents:Math.round((Number(g.amount)||0)*100),campaign_id:g.campaign_id||"",campaign_name:g.campaign_name||"",
         appeal_id:g.appeal_id||"",appeal_name:g.appeal_name||"",giving_page_id:g.giving_page_id||"",giving_page_title:g.giving_page_title||"",
