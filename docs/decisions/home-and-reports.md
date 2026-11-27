@@ -737,10 +737,15 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   joined Retention, Annual and SYBUNT in the store, and Giving summary's stored answer names its tables too (before,
   every logged call threw it away). A report joining the store: capture its SQL over each of its asks, give it its
   own list, and extend `tests/reports-speed1-stored.test.js` §1 and `tests/reports-speed2.test.js` §3.
-- **Two refreshes, split by kind.** Answers that name their tables are recomputed by the `storedReports` handler on
-  `gift.recorded` and `donor.changed` (`server/reports/storedRefresh.js`), at once, two at a time, quickest first,
-  skipping any a read already stored fresh. Everything else stays with `orgSummaryRefresh`, 2 s later, which no longer
-  touches named answers; `scheduleRefresh` asks for both, so a door with no event is covered.
+- **Two refreshes, split by kind.** Answers that name their tables are recomputed by one folded job per org,
+  `storedReportsRefresh` (`server/reports/storedRefresh.js`), queued at once when the relay moves the org's
+  `gift.recorded` or `donor.changed` events (`outbox.onRelayed`), two at a time, quickest first, skipping any a read
+  already stored fresh. Everything else stays with `orgSummaryRefresh`, 2 s later, which no longer touches named
+  answers; `scheduleRefresh` asks for both, so a door with no event is covered.
+- **Work for a whole org is never a `handler:` job per event.** An import or a form fixture writes a `gift.recorded` per
+  gift (2,125 in one suite), each handler job is one more row the queue must claim, and every write in a suite waits
+  for `handler:` jobs to finish (`tests/lib/drainQueue.js`). As a handler the refresh made import9 take 42 s, not 7,
+  and import8, import9 and integrity1 pass their 300 s deadline in CI. Use `outbox.onRelayed` and one folded job.
 - **Nothing stale is ever served.** A read that arrives before the refresh lands computes the answer itself, as before.
 - **The report lane is a third of the pool, rounded**: 3 of the web's 10, 2 of the worker's 5 (it was 1).
 - **The load test judges a p95 only from 20 calls.** Each report has a fixed share of the reports turn (30 or more a
