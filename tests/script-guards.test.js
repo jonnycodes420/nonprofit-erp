@@ -519,6 +519,22 @@ for (const s of PROD_READONLY) {
   ok(["/ask/preview", "/agent/preview"].every(p => AT.READ_ONLY_POSTS.some(re => re.test(p))), "both previews are declared read-only in auditTrail.READ_ONLY_POSTS");
 }
 
+// SECURE-DEMO · the repo is public, so the production demo's password is never
+// in it. A production seed run takes DEMO_ADMIN_PASSWORD and refuses the public
+// scratch one; the prod smoke has no written-in fallback. Fails on the code
+// before SECURE-DEMO, where the prod run used the literal and the smoke fell
+// back to it (demoPassword did not exist).
+{
+  const seed = require(path.join(root, "scripts", "ci", "seed-demo.js"));
+  const pw = env => { try { return seed.demoPassword({ isProdRun: true, env }); } catch { return null; } };
+  ok(typeof seed.demoPassword === "function", "seed-demo exports demoPassword, the one place the demo's password is chosen");
+  ok(typeof seed.demoPassword === "function" && pw({}) === null, "a production demo seed refuses without DEMO_ADMIN_PASSWORD");
+  ok(typeof seed.demoPassword === "function" && pw({ DEMO_ADMIN_PASSWORD: seed.SCRATCH_PASSWORD }) === null, "a production demo seed refuses the public scratch password");
+  ok(typeof seed.demoPassword === "function" && pw({ DEMO_ADMIN_PASSWORD: "a-long-enough-test-value" }) === "a-long-enough-test-value", "a production demo seed takes DEMO_ADMIN_PASSWORD");
+  const smoke = read("prod-ai-smoke");
+  ok(!/PASSWORD\s*=[^;\n]*\|\|\s*"[^"]+"/.test(smoke), "the prod AI smoke has no written-in password to fall back to");
+}
+
 // ── 6. Loopback captures default to loopback ────────────────────────────────
 for (const s of LOOPBACK_CAPTURES) {
   const src = read(s);

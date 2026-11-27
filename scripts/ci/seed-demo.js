@@ -56,7 +56,7 @@ const DB = process.env.DATABASE_URL || "postgres://steward@localhost:5544/stewar
 
 const ORG = "org_b72demo";
 const ADMIN_EMAIL = "director@harborlight.demo";
-const ADMIN_PASSWORD = "demo-harbor-2026";
+const { SCRATCH_PASSWORD, demoPassword, rotateDemoPassword } = require("../lib/demoPassword"); let ADMIN_PASSWORD = SCRATCH_PASSWORD; // SECURE-DEMO: set in main()
 // The only users this seed creates. Anyone else in the demo org is a real
 // account holder (FIX-3 C, finding 8), and the seed removes them.
 const SEEDED_USER_EMAILS = [ADMIN_EMAIL, "officer@harborlight.demo"];
@@ -311,6 +311,7 @@ async function main() {
     console.log(`[identity] database "${dbName}" is an allowlisted scratch target\n`);
   }
 
+  ADMIN_PASSWORD = demoPassword({ isProdRun, refuse }); if (process.argv.includes("--password-only")) return rotateDemoPassword({ client, refuse, org: ORG, emails: SEEDED_USER_EMAILS, password: ADMIN_PASSWORD });
   const q = (sql, params = []) => client.query(sql, params).then(r => r.rows);
 
   // ── FIX-3 C, finding 8 — a real person in the demo is named and removed
@@ -3874,8 +3875,7 @@ async function main() {
   console.log(`  raised in ${YEAR}: $${Math.round(thisYear.d).toLocaleString()}`);
   console.log(`  the eleven drifted mid-level donors: ${driftedIds.length}`);
   console.log(`  timezone: ${TZ} · today here: ${TODAY}`);
-  console.log(`\n  sign in:  ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
-  console.log(`  officer:  officer@harborlight.demo / ${ADMIN_PASSWORD}\n`);
+  const shown = process.env.DEMO_ADMIN_PASSWORD ? "(the DEMO_ADMIN_PASSWORD you set)" : ADMIN_PASSWORD; console.log(`\n  sign in:  ${ADMIN_EMAIL} / ${shown}\n  officer:  officer@harborlight.demo / ${shown}\n`);
 
   await client.end();
 }
@@ -4234,7 +4234,7 @@ async function teardownOrg(q, orgId, { exit = true } = {}) {
   process.exit(1);
 }
 
-module.exports = { DRIFTED, SHAPE, GALA, ORG, ADMIN_EMAIL, ADMIN_PASSWORD, SEEDED_USER_EMAILS, removeRealPeople, teardownPlan, teardownOrg };
+module.exports = { DRIFTED, SHAPE, GALA, ORG, ADMIN_EMAIL, ADMIN_PASSWORD: SCRATCH_PASSWORD, SCRATCH_PASSWORD, demoPassword, SEEDED_USER_EMAILS, removeRealPeople, teardownPlan, teardownOrg };
 
 // Only run when invoked directly — tests/demo-shape.test.js requires this file
 // for DRIFTED/SHAPE and must not trigger a seed by importing it.
