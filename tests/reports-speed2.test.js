@@ -27,6 +27,16 @@
 //       peak is not the measure here: the in-process queue and the Donors
 //       list's own parallel reads move it whatever the reports do.
 //
+//   §3  STORED AFTER A GIFT (SPEED-4). Annual, SYBUNT, Three-year and Year over
+//       year are stored answers; each gift through the gift form makes them
+//       stale. Five gifts: after each, without anyone asking, every one of the
+//       four is current again within 2 s (the refresh that follows a
+//       change, server/reports/storedRefresh.js), the next read is served from
+//       the store, and it is the fresh answer byte for byte (the stored row
+//       wiped and the report asked again). Annual's answer moved with each gift.
+//       Then a gift written straight into the table (no rollup, no event): none
+//       of the four is served from the store, each is the fresh answer.
+//
 // HOW IT GOES RED (planted, seen red before green; REPORTS-SPEED-2 report):
 //   * refunds counted: orgYearsSql's gift count without COUNTED (a refund row
 //     counted as a gift) → §1 red on the refunds org.
@@ -34,6 +44,12 @@
 //     statement count red.
 //   * a connection held across JS work: reportAnnual inside withClient → §2's
 //     pool budget red.
+//   * SPEED-4, a stale answer served after a gift: "gifts" out of
+//     storedReports.DEPS_OF["three-year"] → §3's byte check red on the gift
+//     written straight into the table (a form gift also changes the person's
+//     totals, donors.people, so it alone could not tell).
+//   * SPEED-4, a refresh that never runs: storedRefresh's handler a no-op →
+//     §3's hit rate red (0 of 10 stored after a gift; each read computes it).
 //
 // Standard scratch stack (tests/README.md), booted with TEST_MODE=1. Sends nothing.
 "use strict";
@@ -220,6 +236,61 @@ const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i
   ok("§2 the connections report requests hold, by any path, stay under 70% of the pool", lane.heldPeak != null && lane.heldPeak < 0.7 * max, { heldPeak: lane.heldPeak, max });
   // Main: 3 reads, the slowest 2,288 ms (the reports had the pool); this build: 11, the slowest 359 ms (laptop).
   ok("§2 the Donors list kept being served beside them, none over 2,000 ms", listMs.length >= 3 && listMs.every(ms => ms < 2000), { reads: listMs.length, slowest: Math.max(...listMs) });
+
+  // ── §3 STORED AFTER A GIFT (SPEED-4) ────────────────────────────────────
+  const S3 = ORGS[3].id, tok3 = await token(S3);
+  const STORED4 = ["/reports/annual", "/reports/sybunt", "/reports/three-year", "/reports/year-over-year"];
+  const keyOf = path => `report|*|${path}?`;
+  const getS = async path => {
+    const r = await fetch(BASE + path, { headers: { authorization: `Bearer ${tok3}` } });
+    return { status: r.status, stored: r.headers.get("x-org-summary") === "stored", body: await r.text() };
+  };
+  // Current: stored for today, and no change to a table it reads since it was computed (orgSummary's own rule).
+  const currentKeys = async () => new Set((await q(
+    `SELECT s.key FROM org_summary s WHERE s.org_key = $1 AND s.key = ANY($2)
+        AND s.snap_xmin >= COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
+        AND NOT EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin AND (s.deps IS NULL OR c.tbl = ANY(s.deps)))`,
+    [S3, STORED4.map(keyOf)])).map(r => r.key));
+  const hits = { "/reports/annual": 0, "/reports/sybunt": 0 }, staleAfter = [], notFresh = [], unmoved = [], refreshMs = [];
+  const GIFTS = 5, REFRESH_MS = 2000;
+  for (let k = 0; k < GIFTS; k++) {
+    for (const path of STORED4) await getS(path);   // each stored and current before the gift
+    const beforeAnnual = (await getS("/reports/annual")).body;
+    const t0 = performance.now();
+    const g = await api("POST", `/donors/d_${S3}_${k}/gifts`, tok3, { amount: 60 + k, date: day(0), type: "cash", payment_method: "check" });
+    if (g.status !== 200 && g.status !== 201) { staleAfter.push(`gift ${k}: ${g.status}`); continue; }
+    // Nobody asks: the refresh alone has to make them current (a read would store one itself).
+    // Within 2 s: main's refresh could not start before 2 s after the after-change step (its fold), so main is red here.
+    let cur = new Set();
+    while (performance.now() - t0 < REFRESH_MS) { cur = await currentKeys(); if (cur.size === STORED4.length) break; await new Promise(r => setTimeout(r, 25)); }
+    refreshMs.push(Math.round(performance.now() - t0));
+    for (const path of STORED4) {
+      const r = await getS(path);
+      if (hits[path] !== undefined && r.stored) hits[path]++;
+      if (!cur.has(keyOf(path))) staleAfter.push(`gift ${k}: ${path} not current ${REFRESH_MS} ms after the gift`);
+      await q(`DELETE FROM org_summary WHERE org_key = $1 AND key = $2`, [S3, keyOf(path)]);
+      const fresh = await getS(path);
+      if (fresh.stored || fresh.body !== r.body) notFresh.push(`gift ${k}: ${path} ${firstDiff(fresh.body, r.body)}`);
+      if (path === "/reports/annual" && r.body === beforeAnnual) unmoved.push(`gift ${k}`);
+    }
+  }
+  // A gift written straight into the table (no app path: no totals rollup, no event, no refresh). Each of the
+  // four must stop being served from the store, on the gifts row alone: the next read is the fresh answer.
+  for (const path of STORED4) await getS(path);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method) VALUES ($1,$2,$3,333,$4,'cash','Check')`,
+    [`g_${S3}_direct_s4`, S3, `d_${S3}_7`, day(0)]);
+  for (const path of STORED4) {
+    const r = await getS(path);
+    await q(`DELETE FROM org_summary WHERE org_key = $1 AND key = $2`, [S3, keyOf(path)]);
+    const fresh = await getS(path);
+    if (r.stored || fresh.body !== r.body) notFresh.push(`straight into the table: ${path} ${r.stored ? "served from the store" : firstDiff(fresh.body, r.body)}`);
+  }
+  console.log(`   after each gift, current again in ${refreshMs.join(", ")} ms; served from the store: Annual ${hits["/reports/annual"]} of ${GIFTS}, SYBUNT ${hits["/reports/sybunt"]} of ${GIFTS}`);
+  const rate = (hits["/reports/annual"] + hits["/reports/sybunt"]) / (2 * GIFTS);
+  ok("§3 after a gift, Annual and SYBUNT are served from a current stored answer on 95% or more of asks (the refresh, nobody asking)", rate >= 0.95, { hits, rate });
+  ok("§3 every stored report is current again within 2 s of each gift, without a read", staleAfter.length === 0, staleAfter.slice(0, 6));
+  ok("§3 Annual, SYBUNT, Three-year and Year over year after a gift (the form, and one written straight into the table) are the fresh answer, byte for byte", notFresh.length === 0, notFresh.slice(0, 4));
+  ok("§3 and Annual's answer moved with each gift (the comparison is not of an unchanged answer)", unmoved.length === 0, unmoved);
 
   summary();
   await closeDb();

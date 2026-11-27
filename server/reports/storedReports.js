@@ -19,8 +19,15 @@
 // Any column added to donors later counts, by default.
 //
 // WHICH ANSWERS ARE STORED. The screen's own asks: Retention with a year mode,
-// Annual and SYBUNT for a year near today with a year mode. A fund or campaign
-// filter, a date range, an older year or a file computes live, as before.
+// Annual, SYBUNT and Three-year for a year near today with a year mode, and
+// Year over year (SPEED-4: each was a whole pass over the org's gifts per ask,
+// 1.6 s p95 on the nightly runner). A fund or campaign filter, a date range,
+// an older year or a file computes live, as before.
+//
+// SPEED-4 · EACH KEY NAMES ITS OWN TABLES (depsFor). Three-year and Year over
+// year read fewer tables than the first three, captured the same way (the SQL
+// each one sends, every FROM and JOIN): a change to a fund line or a household
+// leaves them stored.
 //
 // THE NIGHTLY PASS (storedReportsNightly). For every org with people: each
 // common ask is recomputed through the route, compared byte for byte with the
@@ -29,7 +36,7 @@
 // stored, so the morning's first visit finds it ready.
 "use strict";
 
-const KEYS = new Set(["retention", "annual", "sybunt"]);
+const KEYS = new Set(["retention", "annual", "sybunt", "three-year", "year-over-year"]);
 // The tables the three read (captured from the SQL each one sends: gifts and
 // orgs for all three; Annual's funds, fund lines and campaigns; SYBUNT's
 // households, relationships and the import-in-progress note), plus donors.people.
@@ -41,6 +48,25 @@ const DEPS = ["gifts", "orgs", "donors.people", "campaigns", "fin_funds", "gift_
 const PEOPLE_EXCEPT = ["wealth_score", "capacity_tier", "score_confidence", "score_last_updated", "score_rationale",
   "updated_at", "suggested_stage", "geocode_key", "geocode_provider", "geocode_status", "geocoded_at", "latitude", "longitude",
   "photo_fetch_error", "photo_fetch_status"];
+// SPEED-4: Three-year reads the people's gifts and names, the org, the funds
+// its figures join, and an old system's yearly totals (REPORTS-5); Year over
+// year only the gifts, the people and the org.
+// Giving summary (stored since SCALE-2, every ask without a file) named no
+// tables, so every logged call threw it away: 25% of its asks were served
+// from the store, and its refresh after each call and gift held the worker's
+// report place. It reads the gifts and their fund lines, the people, the
+// funds, pledges and their installments, events and the old system's totals
+// (captured over each of its asks: a year, a date range, a fund, a campaign),
+// and, when nothing of Steward's stands for last year, the old report chosen
+// as last year's total (old_report_baselines, its sheet): a branch the capture
+// did not reach on the load orgs, caught by reconcile1-checks §baseline.
+const DEPS_OF = {
+  "three-year": ["gifts", "orgs", "donors.people", "fin_funds", "historical_totals"],
+  "year-over-year": ["gifts", "orgs", "donors.people"],
+  "giving-summary": ["gifts", "orgs", "donors.people", "fin_funds", "gift_fund_lines", "historical_totals", "pledges",
+    "pledge_installments", "events", "old_report_baselines", "stored_sheets"],
+};
+const depsFor = (key) => (KEYS.has(key) ? DEPS_OF[key] || DEPS : DEPS_OF[key] || null);
 const ALLOWED_QUERY = new Set(["yearMode", "year"]);
 
 // Is this request one of the stored asks? `nowYear` is the server's calendar
@@ -91,11 +117,14 @@ async function installPeopleTrigger(pool) {
 }
 
 // The asks the screen makes for an org today: Retention in both year modes,
-// Annual and SYBUNT for this year and last in the org's own mode.
+// Annual, SYBUNT and Three-year for this year and last in either mode, and
+// Year over year as the screen asks it (the period chip's year and mode; the
+// answer is the same, the key is not).
 function commonPaths({ fiscalYear, calendarYear }) {
   const out = [];
   for (const m of ["fiscal", "calendar"]) out.push(`/reports/retention?yearMode=${m}`);
-  for (const k of ["annual", "sybunt"]) {
+  for (const [m, y] of [["fiscal", fiscalYear], ["calendar", calendarYear]]) out.push(`/reports/year-over-year?year=${y}&yearMode=${m}`);
+  for (const k of ["annual", "sybunt", "three-year"]) {
     for (const [m, y] of [["fiscal", fiscalYear], ["calendar", calendarYear]]) {
       out.push(`/reports/${k}?year=${y}&yearMode=${m}`, `/reports/${k}?year=${y - 1}&yearMode=${m}`);
     }
@@ -148,4 +177,4 @@ async function nightly({ log = console, orgId = null } = {}) {
   return out;
 }
 
-module.exports = { KEYS, DEPS, PEOPLE_EXCEPT, isStoredAsk, installPeopleTrigger, commonPaths, keyForPath, nightly };
+module.exports = { KEYS, DEPS, DEPS_OF, depsFor, PEOPLE_EXCEPT, isStoredAsk, installPeopleTrigger, commonPaths, keyForPath, nightly };

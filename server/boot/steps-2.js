@@ -332,7 +332,8 @@ OUTBOX.configure({ query, queueThankYouDraft, enrollInSequences, maybeStartJourn
 // SPLIT-2 end
 // SPLIT-2 server.js piece 197
 for (const h of ["outreach/handlers/thankYouDraft", "outreach/handlers/sequences", "outreach/handlers/journeys",
-                 "donors/handlers/afterChange", "donors/handlers/scores", "insights/store"]) require(`../${h}`);
+                 "donors/handlers/afterChange", "donors/handlers/scores", "insights/store",
+                 "reports/storedRefresh"]) require(`../${h}`);   // SPEED-4: the stored reports, at once after a change
 // SPLIT-2 end
 // SPLIT-2 server.js piece 198
 // SCALE-2: the per-org summary (orgSummary.js) and the in-process door the

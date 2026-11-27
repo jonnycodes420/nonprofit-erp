@@ -731,6 +731,21 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   needs a figure per year adds a span, not a statement. The drawer's rows stay `donorKindsSql`.
 - **Not a cache.** Nothing here stores an answer; every number is computed on the read, as before.
 
+## SPEED-4 · stored reports are current a moment after a gift (2026-11-27)
+
+- **Each stored report names its own tables** (`storedReports.depsFor`, `DEPS_OF`): Three-year and Year over year
+  joined Retention, Annual and SYBUNT in the store, and Giving summary's stored answer names its tables too (before,
+  every logged call threw it away). A report joining the store: capture its SQL over each of its asks, give it its
+  own list, and extend `tests/reports-speed1-stored.test.js` §1 and `tests/reports-speed2.test.js` §3.
+- **Two refreshes, split by kind.** Answers that name their tables are recomputed by the `storedReports` handler on
+  `gift.recorded` and `donor.changed` (`server/reports/storedRefresh.js`), at once, two at a time, quickest first,
+  skipping any a read already stored fresh. Everything else stays with `orgSummaryRefresh`, 2 s later, which no longer
+  touches named answers; `scheduleRefresh` asks for both, so a door with no event is covered.
+- **Nothing stale is ever served.** A read that arrives before the refresh lands computes the answer itself, as before.
+- **The report lane is a third of the pool, rounded**: 3 of the web's 10, 2 of the worker's 5 (it was 1).
+- **The load test judges a p95 only from 20 calls.** Each report has a fixed share of the reports turn (30 or more a
+  run); under 20 calls a route is "too few to judge"; the table shows n beside p95 and how many came from the store.
+
 ## ASKS-2 · asks, card dates and look-alike review rows (2026-11-12)
 
 - **A step up is never more than 1.5 × the anchor.** The step starts from the natural ask of the anchor, never from a rung the anchor was rounded up to (`smartAmounts.stepUpCents`). The profile, Home, Insights and the screening step all read it.
