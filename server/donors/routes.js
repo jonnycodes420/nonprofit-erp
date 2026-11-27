@@ -538,6 +538,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
                      FROM gifts g
                     WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample,false) = false
                       AND g.date >= ? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-11/14: the one rule (a gift refunded in full waits for no thanks)
+                      AND ${require("../../shared/numbers/scheduled").DUE("g")}   -- IMPORT-11: a gift dated after today waits for no thanks until its day
                     ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [orgId, id, since]) : [],
     query(`SELECT e.id, e.name, LEFT(e.date::text, 10) AS date FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
             WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
