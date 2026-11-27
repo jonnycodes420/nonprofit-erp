@@ -45,6 +45,8 @@ const SILENT = [
   /^(audiences_seen|journey_start_skips|journey_sends|sequence_sends|privacy_requests|setup_invites|grant_library|grant_library_versions|portfolio_lists)$/,
   // BUILDER-3: who has an email open (a heartbeat), its comments, mentions and review links; the editor re-reads them itself.
   /^email_(editor_presence|comments|comment_mentions|review_links)$/,
+  // SAFE-EDIT-1: a create's request key (server/shared/requestKey.js); the row it names is heard through its own table.
+  /^request_keys$/,
 ];
 
 // The topics a write to `table` reaches: [] for a silent table, ["other"] for

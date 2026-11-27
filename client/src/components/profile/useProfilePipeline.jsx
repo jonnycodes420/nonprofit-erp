@@ -42,6 +42,8 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
     try{
       const hh=await apiFetch("/households",{method:"POST",body:JSON.stringify({memberIds:[donor.id,...ids],primaryDonorId:donor.id})});
       setHousehold(hh);setHhModalOpen(false);setHhPick(new Set());setHhSearch("");refreshSoftCredit();
+      // SAFE-EDIT-1 item 3: focus lands on the first member, never on the button that took Group's place
+      setTimeout(()=>{const el=document.querySelector('[data-testid="dp-hh-member"]');if(el)el.focus();},120);
     }catch(e){alert(errorMessage(e, "Could not create household"));}
   };
   const removeFromHousehold=async()=>{

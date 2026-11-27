@@ -77,9 +77,16 @@ app.get("/trash/people", requireAuth, requireAdmin, wrap(async (req, res) => {
   // who deleted them: the user's name now, by id (a renamed user reads by their new name)
   const userIds = [...new Set(rows.map(r => r.created_by).filter(x => x && !String(x).startsWith("system:")))];
   const users = new Map(userIds.length ? (await query(`SELECT id, name FROM users WHERE org_id = ? AND id = ANY(?)`, [orgId, userIds])).map(u => [u.id, u.name]) : []);
+  // SAFE-EDIT-1 item 6: the sentence states the rule the rows' dates follow. Someone who was in
+  // the trash before it began emptying itself leaves 30 days after that day, not after their delete
+  // (the fleet read "30 days" over rows dated 36 days out), so the sentence says so when any are left.
+  const [{ early }] = await query(`SELECT COUNT(*)::int AS early FROM donors d WHERE d.org_id = ? AND ${IN_TRASH("d")} AND d.deleted_at < '${AUTO_EMPTY_FROM}'::timestamptz`, [orgId]);
+  const fromDay = dayOf(AUTO_EMPTY_FROM, "UTC"), firstOut = dayOf(new Date(Date.parse(AUTO_EMPTY_FROM) + KEEP_DAYS * 864e5).toISOString(), "UTC");
   res.json({
     total: n, inTrash: all, limit, offset, keepDays: KEEP_DAYS,
-    sentence: `${all.toLocaleString("en-US")} ${all === 1 ? "person is" : "people are"} in the trash. Each one leaves on their own ${KEEP_DAYS} days after they went in; Restore brings them back with their gifts, notes and links.`,
+    sentence: `${all.toLocaleString("en-US")} ${all === 1 ? "person is" : "people are"} in the trash. Each one leaves on their own ${KEEP_DAYS} days after they went in`
+      + (early ? `, and anyone who was already here on ${fromDay}, when the trash began emptying itself, leaves on ${firstOut}` : "")
+      + `; Restore brings them back with their gifts, notes and links.`,
     people: rows.map(r => ({
       id: r.id, name: r.name, email: r.email || null, gifts: r.gifts, deletedAt: r.deleted_at, leavesOn: r.leaves_on,
       deletedBy: users.get(r.created_by) || r.created_by_name || "Steward",

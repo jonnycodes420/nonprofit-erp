@@ -312,27 +312,43 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 // LIST-1 · the Room to give column, by either key the setup may use.
 const isRoomKey=k=>k==="room_to_give"||k==="room";
 // LIST-1 · one tag on everyone ticked (or everyone matching the filter).
+// SAFE-EDIT-1 item 5: or taken off them (Remove tag), and either one undone from the toast,
+// for exactly the people it changed (POST /donors/bulk-tag names them).
 function BulkTag({ids,disabled,onDone}){
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(null);   // null, "add" or "remove"
   const [tag,setTag]=useState("");
   const [busy,setBusy]=useState(false);
   const go=async()=>{
     const t=tag.trim();
-    if(!t||!ids.length)return;
+    if(!t||!ids.length||busy)return;
+    const remove=open==="remove";
     setBusy(true);
-    try{const r=await apiFetch("/donors/bulk-tag",{method:"POST",body:JSON.stringify({ids,tag:t})});setOpen(false);setTag("");onDone&&onDone(`Tagged ${Number(r&&r.tagged||0).toLocaleString("en-US")} ${Number(r&&r.tagged)===1?"person":"people"} "${t}".`);}
-    catch(e){onDone&&onDone((e&&e.sentence)||errorMessage(e,"Nobody was tagged."));}
+    try{
+      const r=await apiFetch("/donors/bulk-tag",{method:"POST",body:JSON.stringify({ids,tag:t,remove})});
+      setOpen(null);setTag("");
+      const changed=(r&&r.changedIds)||[];
+      onDone&&onDone(r&&r.sentence);
+      if(changed.length)offerUndo({message:r.sentence,undoSeconds:30,undoAction:async()=>{
+        const u=await apiFetch("/donors/bulk-tag",{method:"POST",body:JSON.stringify({ids:changed,tag:t,remove:!remove})});
+        onDone&&onDone(remove?`Put "${t}" back on ${changed.length.toLocaleString("en-US")} ${changed.length===1?"person":"people"}.`:`Took "${t}" off ${changed.length.toLocaleString("en-US")} ${changed.length===1?"person":"people"} again.`);
+        return u;
+      }},"tag");
+    }
+    catch(e){onDone&&onDone((e&&e.sentence)||errorMessage(e,remove?"No tag was removed.":"Nobody was tagged."));}
     setBusy(false);
   };
-  if(!open)return<button type="button" data-testid="bulk-add-tag" onClick={()=>setOpen(true)} disabled={disabled}
-    style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Add tag</button>;
+  const pill={background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"};
+  if(!open)return<span style={{display:"inline-flex",gap:6}}>
+    <button type="button" data-testid="bulk-add-tag" onClick={()=>setOpen("add")} disabled={disabled} style={pill}>Add tag</button>
+    <button type="button" data-testid="bulk-remove-tag" onClick={()=>setOpen("remove")} disabled={disabled} style={pill}>Remove tag</button>
+  </span>;
   return(
     <span style={{display:"inline-flex",gap:6,alignItems:"center"}}>
-      <input autoFocus data-testid="bulk-tag-input" value={tag} onChange={e=>setTag(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")go();if(e.key==="Escape")setOpen(false);}}
-        placeholder="Tag" aria-label="Tag" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12,color:T.ink,width:130,outline:"none"}}/>
+      <input autoFocus data-testid="bulk-tag-input" value={tag} onChange={e=>setTag(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")go();if(e.key==="Escape")setOpen(null);}}
+        placeholder={open==="remove"?"Tag to remove":"Tag"} aria-label={open==="remove"?"Tag to remove":"Tag"} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12,color:T.ink,width:130,outline:"none"}}/>
       <button type="button" data-testid="bulk-tag-apply" onClick={go} disabled={busy||!tag.trim()}
-        style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:busy||!tag.trim()?0.6:1}}>Tag {ids.length.toLocaleString("en-US")}</button>
-      <button type="button" onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:T.inkInverse,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Cancel</button>
+        style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:busy||!tag.trim()?0.6:1}}>{open==="remove"?"Remove from":"Tag"} {ids.length.toLocaleString("en-US")}</button>
+      <button type="button" onClick={()=>setOpen(null)} style={{background:"none",border:"none",color:T.inkInverse,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Cancel</button>
     </span>
   );
 }

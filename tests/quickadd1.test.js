@@ -15,6 +15,12 @@
 //   §A4 a gift refused after the checks (a foreign appeal) adds nobody
 //   §A5 six new donors on one deposit sheet, each line with the campaign and
 //       fundraiser: six people, six gifts carrying both, Everyone +6
+//   §A6 SAFE-EDIT-1 (Duet: "double-click Save. Two records… 5 ms apart"): two
+//       creates with one request key make one person (and one task); an email
+//       already on someone is asked about before the create; a phone the Edit
+//       form did not touch stays as it was stored; bulk tag Remove names who changed
+//   §B7 SAFE-EDIT-1: a real double-click on Save makes one person; an email on
+//       file opens "Already in Steward?" and Back to the form adds nobody
 // Browser leg (real clicks on the built client):
 //   §B1 Add person, Save: lands on their profile
 //   §B2 Save and record a gift: the profile, with Record a gift open
@@ -138,6 +144,59 @@ const donorNamed = async name => (await q(`SELECT * FROM donors WHERE org_id=$1 
   ok("§A5 the email typed on a new person's line is on their record",
     sixGifts.some(g => g.name === "Bea Lindqvist" && g.email === "bea@qa1.example.org"), sixGifts.map(g => g.email));
   ok("§A5 Everyone goes up by 6", (await everyone(tok)) === before5 + 6, { before5, after: await everyone(tok) });
+
+  // ── §A6 SAFE-EDIT-1 · a double-click makes one ──────────────────────────
+  // Planted defect (run against main): without server/shared/requestKey.js both
+  // creates write a row, so "one person" and "one task" go red.
+  {
+    const key = "rk_safeedit1_" + "a".repeat(12);
+    const body = { name: "Wilhelmina Fennick", email: "wfennick@example.org", requestKey: key };
+    const [r1, r2] = await Promise.all([api("POST", "/donors", tok, body), api("POST", "/donors", tok, body)]);
+    const rows = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Wilhelmina Fennick' AND deleted_at IS NULL`, [ORG]);
+    ok("§A6 two creates with one request key make one person, and both answers name them",
+      rows.length === 1 && [r1.status, r2.status].sort().join() === "200,201" && r1.body.id === rows[0].id && r2.body.id === rows[0].id,
+      { statuses: [r1.status, r2.status], ids: [r1.body && r1.body.id, r2.body && r2.body.id], rows });
+    const r3 = await api("POST", "/donors", tok, body);
+    ok("§A6 a third click, after both, is the same person again (repeated: true)", r3.status === 200 && r3.body.id === rows[0].id && r3.body.repeated === true, [r3.status, r3.body && r3.body.id]);
+    const other = await api("POST", "/donors", tok, { name: "Wilhelmina Fennick", requestKey: "rk_safeedit1_" + "b".repeat(12) });
+    ok("§A6 a new key is a new create (Save and add another)", other.status === 201 && other.body.id !== rows[0].id, [other.status]);
+    await q(`UPDATE donors SET deleted_at=NOW() WHERE id=$1`, [other.body && other.body.id]);
+
+    const tkey = "rk_safeedit1_" + "c".repeat(12);
+    const tb = { title: "Call Wilhelmina about the spring visit", due: "2026-12-01", donorId: rows[0].id, type: "donor", requestKey: tkey };
+    const [t1, t2] = await Promise.all([api("POST", "/tasks", tok, tb), api("POST", "/tasks", tok, tb)]);
+    const tasks = await q(`SELECT id FROM tasks WHERE org_id=$1 AND donor_id=$2 AND title=$3`, [ORG, rows[0].id, tb.title]);
+    ok("§A6 two task creates with one request key make one task", tasks.length === 1 && t1.body.id === t2.body.id, { statuses: [t1.status, t2.status], tasks });
+
+    const ask = await api("POST", "/donors", tok, { name: "Wil Fennick", email: "WFennick@example.org", askFirst: true, requestKey: "rk_safeedit1_" + "d".repeat(12) });
+    const none = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Wil Fennick'`, [ORG]);
+    ok("§A6 an email already on someone is asked about BEFORE the create: 409 naming them, nobody added",
+      ask.status === 409 && ask.body.error === "email_on_file" && (ask.body.others || [])[0] && ask.body.others[0].id === rows[0].id
+      && /Open them, or add a new person anyway\?/.test(ask.body.sentence || "") && none.length === 0, [ask.status, ask.body, none]);
+    const anyway = await api("POST", "/donors", tok, { name: "Wil Fennick", email: "WFennick@example.org", requestKey: "rk_safeedit1_" + "d".repeat(12) });
+    ok("§A6 \"Add a new person anyway\" (the same key, without the question) adds them", anyway.status === 201 && anyway.body.name === "Wil Fennick", [anyway.status]);
+    await q(`UPDATE donors SET deleted_at=NOW() WHERE id=$1`, [anyway.body && anyway.body.id]);
+
+    // the Edit form sends every field back; a phone she did not touch is not rewritten
+    await q(`UPDATE donors SET phone='617.555.0142' WHERE id=$1`, [rows[0].id]);
+    const put = await api("PUT", `/donors/${rows[0].id}`, tok, { name: "Wilhelmina Fennick", email: "wfennick@example.org", phone: "617.555.0142", employer: "Harbor Mill", stage: "cultivate", status: "new", tags: [] });
+    const [kept] = await q(`SELECT phone, employer FROM donors WHERE id=$1`, [rows[0].id]);
+    ok("§A6 saving Edit with the phone untouched keeps it exactly as stored", put.status === 200 && kept.phone === "617.555.0142" && kept.employer === "Harbor Mill", [put.status, kept]);
+    const put2 = await api("PUT", `/donors/${rows[0].id}`, tok, { name: "Wilhelmina Fennick", email: "wfennick@example.org", phone: "6175550199", stage: "cultivate", status: "new", tags: [] });
+    const [typed] = await q(`SELECT phone FROM donors WHERE id=$1`, [rows[0].id]);
+    ok("§A6 a phone she did change is still put in the one format", put2.status === 200 && typed.phone === "(617) 555-0199", [put2.status, typed]);
+
+    const ids = [rows[0].id];
+    const add = await api("POST", "/donors/bulk-tag", tok, { ids, tag: "Lantern Circle" });
+    const off = await api("POST", "/donors/bulk-tag", tok, { ids, tag: "lantern circle", remove: true });
+    const [t] = await q(`SELECT tags FROM donors WHERE id=$1`, [rows[0].id]);
+    const back = await api("POST", "/donors/bulk-tag", tok, { ids: off.body.changedIds, tag: "Lantern Circle" });
+    const [t3] = await q(`SELECT tags FROM donors WHERE id=$1`, [rows[0].id]);
+    const tagsOf = x => (typeof x.tags === "string" ? JSON.parse(x.tags) : x.tags) || [];
+    ok("§A6 bulk tag: Remove takes the tag off and names who changed; Undo (the same call back) puts it back",
+      add.body.tagged === 1 && off.status === 200 && off.body.removed === 1 && (off.body.changedIds || []).join() === rows[0].id
+      && !tagsOf(t).some(x => /lantern circle/i.test(x)) && back.body.tagged === 1 && tagsOf(t3).includes("Lantern Circle"), { add: add.body, off: off.body, t, t3 });
+  }
 
   // ── BROWSER LEG ────────────────────────────────────────────────────────────
   const pw = optional(PW);
@@ -279,6 +338,25 @@ const donorNamed = async name => (await q(`SELECT * FROM donors WHERE org_id=$1 
     const rg = rowan ? await q(`SELECT c.name AS cname, g.amount FROM gifts g LEFT JOIN campaigns c ON c.id=g.campaign_id WHERE g.org_id=$1 AND g.donor_id=$2`, [ORG, rowan.id]) : [];
     ok("§B6 Save and record a gift carries the last gift's campaign as \"Same as last\", and the gift saves with it",
       /Same as last: Spring Lantern Night/.test(carried) && rg.length === 1 && rg[0].cname === "Spring Lantern Night", { carried, rg });
+    // §B7 SAFE-EDIT-1: a real double-click on Save makes one person
+    await open("/donors");
+    await pg.getByRole("button", { name: "+ Add" }).first().click({ timeout: 20000 });
+    await tid("add-name").fill("Ottoline Brackwater");
+    await tid("add-save").dblclick();
+    await pg.waitForTimeout(2500);
+    ok("§B7 a double-click on Save makes one person", (await donorNamed("Ottoline Brackwater")).length === 1, await donorNamed("Ottoline Brackwater"));
+    await open("/donors");
+    await pg.getByRole("button", { name: "+ Add" }).first().click({ timeout: 20000 });
+    await tid("add-name").fill("Otto Brackwater");
+    await tid("add-email").fill("wfennick@example.org");
+    await tid("add-save").click();
+    await tid("confirm-no").waitFor({ timeout: 10000 }).catch(() => {});
+    const asked = ((await pg.locator("[role=dialog]").last().innerText().catch(() => "")) || "").replace(/\s+/g, " ");
+    await tid("confirm-no").click().catch(() => {});
+    await pg.waitForTimeout(800);
+    ok("§B7 an email on file asks \"Open them, or add a new person anyway?\" before saving, and Back to the form adds nobody",
+      /Already in Steward\?/.test(asked) && /Open them, or add a new person anyway\?/.test(asked) && (await donorNamed("Otto Brackwater")).length === 0
+      && await tid("add-name").isVisible().catch(() => false), asked.slice(0, 200));
     ok("browser: no page errors", consoleErrors.length === 0, consoleErrors.slice(0, 3));
   } catch (e) {
     await shot("crash");

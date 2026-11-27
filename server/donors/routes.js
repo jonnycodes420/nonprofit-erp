@@ -674,7 +674,9 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
 
 // FLOWS-3: the body is server/donors/addPerson.js, the one way a person is
 // added by hand. An event's typed guest (W-1108-Volunteers-20) comes in by it too.
-app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+// SAFE-EDIT-1 item 1: a double-click on Save (one key per form) makes one person (server/shared/requestKey.js).
+const personOnce = require("../shared/requestKey").onceByKey("person", async (orgId, id) => (await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [id, orgId]))[0] || null);
+app.post("/donors", requireAuth, checkWriteAccess, personOnce, wrap(async (req, res) => {
   const r = await require("./addPerson").addPerson(ctx, req, req.body || {});
   res.status(r.status).json(r.body);
 }));
@@ -739,8 +741,13 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SAFE-EDIT-1 item 5: a phone she didn't touch is kept exactly as it was (an imported
+  // "617.555.0142" was rewritten to "(617) 555-0142" by every save of the Edit form).
+  const keptPhone = req.body && typeof req.body.phone === "string"
+    ? ((await query("SELECT phone FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]))[0] || {}).phone : undefined;
+  const phoneUntouched = keptPhone != null && req.body.phone === keptPhone;
   // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
-  { const cv = await require("../../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: ["phone"] });
+  { const cv = await require("../../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: phoneUntouched ? [] : ["phone"] });
     if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
     if (req.body) Object.assign(req.body, cv.values); }
   const { email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;

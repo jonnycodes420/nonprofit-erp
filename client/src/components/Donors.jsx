@@ -7,7 +7,9 @@ import { useProfileReads, openProfileReads } from "../lib/profileReads";   // LO
 import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from "react";
 import { GrantImport } from "./GrantImport";
 import HistoryImport from "./HistoryImport";
-import { SheetDropTarget } from "./SheetDropTarget";   // PERF-4: the reader itself loads when a window opens (below)
+import { SheetDropTarget } from "./SheetDropTarget";
+import { newRequestKey } from "../lib/requestKey";   // SAFE-EDIT-1 item 1
+import { askConfirm } from "./ConfirmDialog";   // PERF-4: the reader itself loads when a window opens (below)
 import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
@@ -743,7 +745,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // nothing happening. "open" lands on the new profile; "gift" lands there with
   // Record a gift open (the profile's own gift form, the person filled in);
   // "another" keeps the form, emptied, with "Added Maria Lopez. Open".
-  const addDonor=async(then="open")=>{
+  // SAFE-EDIT-1 item 1: Save disables on the first click, and the form's one key makes a
+  // repeat (a double-click, a retry) answer with the first person (server/shared/requestKey.js).
+  const addKey=useRef(newRequestKey());
+  const addBusyRef=useRef(false);
+  const[addBusy,setAddBusy]=useState(false);
+  const addDonorOnce=async(then,anyway)=>{
     // INPUT-1: Save with no name, or one past the limit, says so at the field; nothing is cut.
     const nameIssue=nameProblem(newDonor.name);
     if(nameIssue){setAddErr(nameIssue);setAddBadField("name");return;}
@@ -762,7 +769,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // (an email that is not one, a name too long) is read, not lost.
     setAddErr("");
     try{
-      const made=await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});
+      const made=await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName,requestKey:addKey.current,askFirst:!anyway})});
+      addKey.current=newRequestKey();
       setAddWarn(made&&made.warning?made.warning.sentence:"");
       patchPeople(list=>[...list,temp]);
       setNewDonor({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");setAddMore(false);
@@ -775,6 +783,15 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       reloadDonors();
     }
     catch(e){
+      // SAFE-EDIT-1 item 1: the email is already on someone. Asked before anything is made.
+      if(e.error==="email_on_file"&&!anyway){
+        const a=await askConfirm({title:"Already in Steward?",body:e.sentence,yes:"Add a new person anyway",alt:"Open them",no:"Back to the form"});
+        if(a===true){addBusyRef.current=true;return addDonorOnce(then,true);}
+        if(a==="alt"&&e.others&&e.others[0]){
+          setShowAdd(false);selectDonor({id:e.others[0].id});
+        }
+        return;
+      }
       if(e.error==="record_limit"){
         setShowAdd(false);
         setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
@@ -782,6 +799,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     }
   };
 
+  const addDonor=async(then="open",anyway=false)=>{
+    if(addBusyRef.current)return;
+    addBusyRef.current=true;setAddBusy(true);
+    try{await addDonorOnce(then,anyway);}finally{addBusyRef.current=false;setAddBusy(false);}
+  };
   return(
     <SheetDropTarget disabled={isReadOnly} onFile={f=>setDroppedFile(f)} style={{display:"flex",flexDirection:"column",gap:8}}>
       {/* PROFILE-2 Part 1: an open profile is the whole page; the list's title and chips sat above it once the profile stopped being a fixed panel. */}
@@ -978,9 +1000,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}
         </select>}
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>addDonor("open")} data-testid="add-save" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
-          <button onClick={()=>addDonor("gift")} data-testid="add-save-gift" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save and record a gift</button>
-          <button onClick={()=>addDonor("another")} data-testid="add-save-another" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save and add another</button>
+          <button onClick={()=>addDonor("open")} disabled={addBusy} aria-busy={addBusy} data-testid="add-save" style={{opacity:addBusy?0.6:1,background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
+          <button onClick={()=>addDonor("gift")} disabled={addBusy} aria-busy={addBusy} data-testid="add-save-gift" style={{opacity:addBusy?0.6:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save and record a gift</button>
+          <button onClick={()=>addDonor("another")} disabled={addBusy} aria-busy={addBusy} data-testid="add-save-another" style={{opacity:addBusy?0.6:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save and add another</button>
           <button onClick={()=>{setShowAdd(false);setAddToast(null);}} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>}
