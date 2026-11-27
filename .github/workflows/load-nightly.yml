@@ -6,8 +6,10 @@
 #
 # Boots a throwaway Postgres and the server the way ci.yml's battery does,
 # seeds ten orgs of made-up people (1k to 25k, scripts/load/ten-orgs.js seed)
-# into that throwaway database, and runs 20 simulated staff for 5 minutes
-# against it. The table per route goes to the run summary and the JSON is kept
+# into that throwaway database, and runs 20 simulated staff for 7 minutes
+# against it (SPEED-4: 420 s, so each of the 21 reports gets 30 or more calls
+# while every other route keeps its count; a route under 20 calls is listed as
+# "too few to judge", neither a pass nor a miss). The table per route goes to the run summary and the JSON is kept
 # as the "load-summary" artifact, which `npm run status` reads for its load
 # line. A missed bar fails the run:
 #   p95 under 1 s for every API route · a whole profile open under 1.5 s ·
@@ -100,7 +102,7 @@ jobs:
       - name: Seed ten orgs of made-up people
         run: node scripts/load/ten-orgs.js seed
 
-      - name: Twenty users, five minutes
+      - name: Twenty users, seven minutes
         run: node scripts/load/ten-orgs.js run
 
       - name: Keep the summary and the log
