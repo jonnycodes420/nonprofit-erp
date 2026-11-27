@@ -70,6 +70,8 @@ import * as ThanksQuestion from "../../client/src/components/import/ThanksQuesti
 import * as SheetGuesses from "../../client/src/components/import/SheetGuesses.jsx";
 import * as AuctionValues from "../../client/src/components/import/AuctionValues.jsx";   // ASKS-1
 import * as TotalChecks from "../../client/src/components/import/TotalChecks.jsx";   // IMPORT-10
+import * as RowChecks from "../../client/src/components/import/RowChecks.jsx";   // IMPORT-11
+import * as SheetKinds from "../../client/src/components/import/SheetKinds.jsx";   // IMPORT-11
 import * as EventPick from "../../client/src/components/import/EventPick.jsx";   // IMPORT-10
 import * as ImportedBefore from "../../client/src/components/import/ImportedBefore.jsx";   // IMPORT-10
 
@@ -176,6 +178,17 @@ export const CASES = [
     <EventPick.EventMatchQuestion setAnswer={noop} disabled={false} q={{ id: "eventMatch", typed: "Night of The Stars", eventId: "evt_1", eventName: "NIght of the Stars 2026", eventDate: "2026-10-03", text: "Did you mean NIght of the Stars 2026?", hint: "Close to an event on your calendar." }}/></>, /NIght of the Stars 2026 · Oct 3, 2026[\s\S]*Did you mean NIght of the Stars 2026\?/],
   ["import/ImportedBefore", () => <ImportedBefore.ImportedBefore setAnswer={noop} onClose={noop} disabled={false}
     q={{ id: "importedBefore", importId: "imp_1", text: "You imported this file on Nov 12 (45 gifts). Import again anyway?" }}/>, /You imported this file on Nov 12 \(45 gifts\)[\s\S]*Import again anyway/],
+  // IMPORT-11: what each sheet is; the cap, copies and future-dated rows
+  ["import/SheetKinds", () => <SheetKinds.SheetKinds setAnswers={noop} disabled={false} answers={{}}
+    u={{ joinSentence: "60 people and 136 gifts ($8,005.00) joined on Constituent ID.", tables: [{ sheet: "Donors", kind: "people" }, { sheet: "Gifts", kind: "gifts" }],
+      sheetsSetAside: [{ sheet: "Read Me", reason: "no table of names or amounts on it", sentence: "Sheet 'Read Me' is set aside: no table of names or amounts on it." }] }}/>,
+    /What each sheet is[\s\S]*joined on Constituent ID[\s\S]*Sheet 'Read Me' is set aside/],
+  ["import/RowChecks", () => <><RowChecks.RowChecksPreview setAnswers={noop} disabled={false} answers={{}}
+    u={{ aside: [], rowChecks: { overCap: { count: 1, rows: [{ sheet: "Sheet1", line: 22 }], sentence: "row 22: over $100,000,000, the most one gift can be in Steward. Set aside." },
+      copies: { count: 1, imported: false, rows: [{ sheet: "Sheet1", line: 23, copyOf: 2 }], sentence: "1 row is an exact copy of another row: row 23 (copy of row 2)." },
+      future: { count: 1, from: "2031-01-01", to: "2031-01-01", rows: [{ sheet: "Sheet1", line: 33, who: "Fran Laterday", date: "2031-01-01", cents: 123456 }] } } }}/>
+    <RowChecks.RowChecksCounted rc={{ copies: { count: 1, imported: false } }}/></>,
+    /over \$100,000,000, the most one gift can be in Steward[\s\S]*Skip the copies[\s\S]*dated Jan 1, 2031[\s\S]*exact copy of another row: skipped/],
   ["import/ThanksQuestion", () => <ThanksQuestion.ThanksQuestion preview={{ ask: true, thankYous: 4, defaultAnswer: "yes", defaultSentence: "We will draft 4 thank-yous." }} answer={null} onChange={noop}/>, /already been thanked\?[\s\S]*We will draft 4 thank-yous/],
 
   // ── Home's parts ───────────────────────────────────────────────────────

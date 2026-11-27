@@ -28,6 +28,8 @@ import { WorkbookImport } from "./WorkbookImport";
 import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMPORT-9
 import { AuctionValues } from "./import/AuctionValues";   // ASKS-1: an auction sheet's values
 import { TotalChecks } from "./import/TotalChecks";   // IMPORT-10: totals that do not foot
+import { SheetKinds } from "./import/SheetKinds";   // IMPORT-11: what each sheet is, hers to correct
+import { RowChecksPreview, RowChecksCounted } from "./import/RowChecks";   // IMPORT-11: the cap, copies, far outside, future-dated
 import { EventSuggest, EventMatchQuestion, dayOf } from "./import/EventPick";   // IMPORT-10: the event you meant
 import { ImportedBefore } from "./import/ImportedBefore";   // IMPORT-10: the same file twice is asked
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
@@ -486,6 +488,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             <ImportedBefore q={u.questions.find(q => q.id === "importedBefore")} setAnswer={setAnswer} onClose={finish} disabled={rereading} />
             <GuessNotes u={u} />
             <TotalChecks u={u} answers={answers} setAnswers={setAnswers} disabled={rereading} />
+            <SheetKinds u={u} answers={answers} setAnswers={setAnswers} disabled={rereading} />
+            <RowChecksPreview u={u} answers={answers} setAnswers={setAnswers} disabled={rereading} />
 
             {/* FIX-54: people she deleted stay deleted unless she brings them back */}
             {/* HARDEN-1: a match by the name alone is hers to answer; Same person by default */}
@@ -877,6 +881,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 {(result.sheetRows.mergedLines || []).map(x => <div key={x.by} data-testid="sheet-result-merged">{x.sentence}.</div>)}
               </div>
             )}
+            {!undone && <RowChecksCounted rc={result.rowChecks} testid="sheet-result-row-checks" />}
             {/* IMPORT-6: the receipt opens the people it brought in, under Everyone */}
             {!undone && result.donorsCreated > 0 && result.importId && (
               <button type="button" data-testid="sheet-see-people" style={{ ...linkBtn, marginTop: 6, fontSize: 13 }}
@@ -951,6 +956,7 @@ function fileSentence(u, tablesRead, eventName) {
     return `An event workbook: ${what}${ev ? ` for ${ev}` : ""} (${where}).`;
   }
   if (tablesRead.some(t => t.isVolunteer)) return `A list of volunteers (${where}).`;
+  if (u.joinSentence) return `A workbook of people and their gifts: ${u.joinSentence}`;   // IMPORT-11
   if (u.fileKind === "gifts") return kinds.has("people") ? `A list of people and their gifts (${where}).` : `A gifts file: ${where}.`;
   return `A list of people with no gifts: ${tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")}`).join("; ")}.`;
 }

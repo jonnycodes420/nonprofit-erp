@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
@@ -533,8 +534,8 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   // serialises NUMERIC as a STRING, so `0 + "5000.00"` CONCATENATED: the board
   // report's pipeline value read "05000.003000.00". Summed in integer cents
   // through the one money seam, which is the rule for a figure a board reads.
-  const pipelineValue = toDollars(pipelineGrants.reduce((s, g) => s + (toCents(g.amount) || 0), 0));
-  const awardedYTD    = toDollars(activeGrants.reduce((s, g) => s + (toCents(g.received) || 0), 0));
+  const pipelineValue = toDollars(pipelineGrants.reduce((s, g) => s + (storedCentsOr0(g.amount)), 0));
+  const awardedYTD    = toDollars(activeGrants.reduce((s, g) => s + (storedCentsOr0(g.received)), 0));
 
   // Communications
   const sentQ        = allCampaigns.filter(c => c.status === "sent" && toDs(c.sent_at) >= qMs && toDs(c.sent_at) <= qMe);

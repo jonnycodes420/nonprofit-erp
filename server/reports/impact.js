@@ -90,10 +90,10 @@ app.get("/donors/:id/impact-summary", requireAuth, wrap(async (req, res) => {
   const day = d => (d ? orgTime.civilLocale(d, { month: "short", day: "numeric", year: "numeric" }) : "Not set");
   res.json({
     donorId: D.donor.id, name: D.donor.name, orgName: D.org.name,
-    totalCents: require("../../money").toCents(D.donor.total_giving) || 0, giftCount: D.giftCount,
+    totalCents: require("../../money").storedCentsOr0(D.donor.total_giving), giftCount: D.giftCount,
     donorSince: D.firstGiftLabel, yearsGiving: D.yearsGiving != null ? Math.max(D.yearsGiving, 0) : null,
     milestones: D.milestoneLabels, impactLines: D.impactLines,
-    recentGifts: D.recentGifts.map(g => ({ date: day(g.date), campaign: g.campaign || "General", cents: require("../../money").toCents(g.amount) || 0 })),
+    recentGifts: D.recentGifts.map(g => ({ date: day(g.date), campaign: g.campaign || "General", cents: require("../../money").storedCentsOr0(g.amount) })),
     sentence: "Every figure is read from their gifts on record; the impact lines are the ones your organization set in Settings.",
   });
 }));

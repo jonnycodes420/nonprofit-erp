@@ -7,6 +7,7 @@
 // refreshes every module's copy.
 // eslint-disable-next-line no-var, no-global-assign
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const __boot = require("./share");
 const __share = __boot.share;
 let AFTER, DB_READY, DONOR_ACCOUNTS_ENABLED, DONOR_MAIL_ADDR, RECOVERY_RATE_WINDOW_DAYS, RECOVERY_SECRET, RECURRING_CHANGE_KINDS, SEND_GATE, SYS_AUTO, VOL_DAYS, VOL_DAYS_READY, allocateReceiptNumber, applyReceiptTokens, crypto, dbReady, displayNameCase, donorMailDecision, getThemeAsset, money, newId, opsAlert, orgTime, orgToday, orgTz, portalCardTheme, publicAppUrl, query, queryTx, run, runTx, sendReceiptEmail, smartAmountsMod, sweepMissedRecurring, syncSource, testMode, toCents, toDollars, unsubscribeHeaders, withTransaction;
@@ -574,9 +575,9 @@ async function grantMoneyRows(orgId, where = "", args = []) {
 
 function grantBalanceFrom(R, r, today) {
   const b = R.grantBalance({
-    awardedCents: toCents(r.amount_awarded) || 0,
-    receivedCents: toCents(r.received) || 0,
-    spentCents: toCents(r.spent) || 0,
+    awardedCents: storedCentsOr0(r.amount_awarded),
+    receivedCents: storedCentsOr0(r.received),
+    spentCents: storedCentsOr0(r.spent),
     restriction: r.restriction, restrictedUntil: r.restricted_until, today,
   });
   return {
@@ -1197,7 +1198,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
       const [d] = await query(
         `SELECT last_gift_amount FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
         [decoded.donorId, orgId]);
-      const ladder = d ? S.ladderFromLastGift(toCents(d.last_gift_amount) || 0) : null;
+      const ladder = d ? S.ladderFromLastGift(storedCentsOr0(d.last_gift_amount)) : null;
       if (ladder) return ladder;
     }
   }

@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
@@ -49,9 +50,9 @@ async function withGrantReceived(orgId, grants) {
   const sums = await query(
     `SELECT gr.id, ${NUMBERS.pledges.GRANT_RECEIVED("gr")} AS s FROM grants gr WHERE gr.org_id=? AND gr.id = ANY(?::text[])`,
     [orgId, pledged.map(g => g.id)]);
-  const by = new Map(sums.map(r => [r.id, money.toCents(r.s) || 0]));
+  const by = new Map(sums.map(r => [r.id, money.storedCentsOr0(r.s)]));
   for (const g of pledged) {
-    const rc = by.get(g.id) || 0, ac = money.toCents(g.amount_awarded) || 0;
+    const rc = by.get(g.id) || 0, ac = money.storedCentsOr0(g.amount_awarded);
     g.received = money.toDollars(rc).toFixed(2);
     g.remaining = money.toDollars(Math.max(0, ac - rc)).toFixed(2);
   }
@@ -794,11 +795,11 @@ app.get("/grants/:id/restricted", requireAuth, wrap(async (req, res) => {
     definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
     metrics: R.RESTRICTED_METRICS,
     spend: spend.map(s => ({
-      id: s.id, amount: toDollars(toCents(s.amount) || 0), amountCents: toCents(s.amount) || 0,
+      id: s.id, amount: toDollars(storedCentsOr0(s.amount)), amountCents: storedCentsOr0(s.amount),
       spentOn: s.spent_on, description: s.description, byName: s.created_by_name || "",
     })),
     payments: payments.map(p => ({
-      id: p.id, amount: toDollars(toCents(p.amount) || 0), amountCents: toCents(p.amount) || 0, date: p.date,
+      id: p.id, amount: toDollars(storedCentsOr0(p.amount)), amountCents: storedCentsOr0(p.amount), date: p.date,
     })),
     spendSourceNote: R.SPEND_SOURCE_NOTE,
   });
@@ -1109,7 +1110,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
 
   // 1 — THE GRANT ITSELF: what was promised, in the proposal's own fields.
   lines.push(`grant:${g.id}: a grant from ${g.funder_name || "a funder"} for "${g.program || "no program named"}", `
-    + `requested ${money.formatCentsPlain(toCents(g.amount_requested) || 0)}, `
+    + `requested ${money.formatCentsPlain(storedCentsOr0(g.amount_requested))}, `
     + `awarded ${money.formatCentsPlain(balance.awardedCents)}, currently ${g.status}`
     + `${g.fund_name ? `, designated to the ${fundWord} "${g.fund_name}"` : ""}`
     + `${g.restriction ? `, restriction "${g.restriction}"` : ""}`
@@ -1139,7 +1140,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     `SELECT g.id, g.amount, g.date FROM gifts g WHERE g.org_id=? AND g.pledge_id=? AND ${NUMBERS.money.MONEY("g")} ORDER BY g.date ASC`,   // NUMBERS-5: the rows behind received
     [orgId, g.award_pledge_id]) : []) {
     refs.add(`payment:${p.id}`);
-    lines.push(`payment:${p.id}, ${money.formatCentsPlain(toCents(p.amount) || 0)} received on ${p.date}, applied to this award.`);
+    lines.push(`payment:${p.id}, ${money.formatCentsPlain(storedCentsOr0(p.amount))} received on ${p.date}, applied to this award.`);
   }
   lines.push(`grant:${g.id}: of the award, ${money.formatCentsPlain(balance.receivedCents)} has been received and `
     + `${money.formatCentsPlain(balance.outstandingCents)} is still owed by the funder.`);
@@ -1150,7 +1151,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     `SELECT id, amount, spent_on, description FROM grant_spend
       WHERE org_id=? AND grant_id=? ORDER BY spent_on ASC`, [orgId, g.id])) {
     refs.add(`spend:${s.id}`);
-    lines.push(`spend:${s.id}, ${money.formatCentsPlain(toCents(s.amount) || 0)} spent on ${s.spent_on}: "${s.description}". Entered by hand, not read from a bank.`);
+    lines.push(`spend:${s.id}, ${money.formatCentsPlain(storedCentsOr0(s.amount))} spent on ${s.spent_on}: "${s.description}". Entered by hand, not read from a bank.`);
   }
   lines.push(`grant:${g.id} · ${money.formatCentsPlain(balance.spentCents)} has been recorded as spent against this award, `
     + `leaving ${money.formatCentsPlain(balance.remainingCents)} of the money received still to spend.`);
@@ -1167,7 +1168,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
         ORDER BY gi.amount DESC NULLS LAST, gi.id LIMIT 25`, [orgId, g.fund_id, start, end]);
     for (const gi of fundGifts) {
       refs.add(`gift:${gi.id}`);
-      lines.push(`gift:${gi.id} · ${money.formatCentsPlain(toCents(gi.amount) || 0)} to the ${fundWord} "${g.fund_name}" on ${gi.date}`
+      lines.push(`gift:${gi.id} · ${money.formatCentsPlain(storedCentsOr0(gi.amount))} to the ${fundWord} "${g.fund_name}" on ${gi.date}`
         + `${gi.donor_name ? ` from ${gi.donor_name}` : ""}.`);
     }
     givers = await query(
@@ -1181,7 +1182,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     for (const p of givers) {
       refs.add(`person:${p.id}`);
       lines.push(`person:${p.id} · ${p.name} gave ${Number(p.gifts)} ${Number(p.gifts) === 1 ? "gift" : "gifts"} `
-        + `totalling ${money.formatCentsPlain(toCents(p.total) || 0)} to this ${fundWord} in the period.`);
+        + `totalling ${money.formatCentsPlain(storedCentsOr0(p.total))} to this ${fundWord} in the period.`);
     }
   }
 

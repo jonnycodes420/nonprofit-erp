@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 
 function mount(ctx) {
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const {
   grantDocs, query, toCents, toDollars,
 } = ctx;
@@ -31,9 +32,9 @@ async function grantShapeMod() { return import("../../shared/grantShape.js"); }
 // pipeline is summed in cents and a screen that re-derives cents from a float is
 // how a total ends up a penny out.
 function grantRow(r, { funds, officers } = {}) {
-  const reqC = toCents(r.amount_requested != null ? r.amount_requested : r.amount) || 0;
-  const awdC = toCents(r.amount_awarded) || 0;
-  const recC = toCents(r.received) || 0;
+  const reqC = storedCentsOr0(r.amount_requested != null ? r.amount_requested : r.amount);
+  const awdC = storedCentsOr0(r.amount_awarded);
+  const recC = storedCentsOr0(r.received);
   return {
     id: r.id,
     funderId: r.funder_donor_id || null,
