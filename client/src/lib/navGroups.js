@@ -65,12 +65,45 @@ export const ROLE_DEFAULT_HIDDEN = { volunteer_coordinator: ["finance"] };
 
 export const ALL_NAV_IDS = NAV_GROUPS.flatMap(g => g.items);
 
+// NAV-2 (27 Nov) · THE ENTRIES THAT START OFF. A one-to-three-person shop saw
+// too much (Duet's stress test), so these four are off an org's rail until the
+// org adds them (Settings → Menu → Add to your sidebar). Off is the menu only:
+// every route and link to them still opens, and nothing is deleted. Major
+// Gifts, while off the rail, lives inside Fundraising (lib/majorGiftsTab.js).
+// Only the ORG's layer starts them off; a person follows the org.
+export const DEFAULT_OFF = new Set(["auctions", "p2p", "memberships", "majorgifts"]);
+
+// One plain sentence for each entry: what it is for. The menu editors show it
+// beside an entry that is not on the sidebar, with its Add button.
+export const NAV_PURPOSE = {
+  dashboard: "Where every day starts: who to thank, call or ask next.",
+  tasks: "Your to-do list, and what is due for each person.",
+  calendar: "Everything with a date: events, deadlines and tasks.",
+  donors: "Every person and organization you know, and their giving.",
+  groups: "Lists of people you keep together, like a board or a committee.",
+  journeys: "Steps that follow up with people over time, each one yours to send.",
+  communications: "Letters, emails and thank-yous: drafts and what went out.",
+  portal: "The page your donors sign in to.",
+  fundraising: "Campaigns, giving pages, pledges and money coming in.",
+  majorgifts: "Big asks: the pipeline, portfolios and plans for each prospect.",
+  events: "Galas, tickets, sponsors and who came.",
+  auctions: "Auction items, bids and what each item raised.",
+  p2p: "Supporters raising money for you on their own pages.",
+  memberships: "Membership levels, members and renewals.",
+  grants: "Funders, deadlines, reports and restricted money.",
+  volunteers: "Volunteers, their shifts and their hours.",
+  finance: "The ledger, deposits and funds.",
+  reports: "Every report and dashboard, and the board report.",
+  settings: "Your organization, people, connections and this menu.",
+};
+
 // NAV-1 (menu, 10 Nov) · THE ORG'S LAYOUT, merged the same way a person's is:
-// its order within each group, and what it shows. Every entry is ON until the
-// org hides it (Jonathan, 10 Nov: everything on by default, Auctions and
-// Peer-to-peer included; each org customizes from there). `saved` null = all on.
+// its order within each group, and what it shows. NAV-2: an entry the org's
+// saved layout does not name is on, unless it is one of DEFAULT_OFF, which is
+// off until the org names it visible. `saved` null = every entry on except
+// DEFAULT_OFF.
 export function orgNavLayout(saved) {
-  return navLayout(saved);
+  return navLayout(saved, { defaultOff: DEFAULT_OFF });
 }
 
 // What a PERSON sees: the org's layer, then theirs. An item shows only when
@@ -107,12 +140,15 @@ export function personNavLayout(userSaved, orgSaved, opts = {}) {
 // The merge rules, in one place:
 //   · an item the saved list does not name keeps its canonical position, at
 //     the END of its group, and is VISIBLE — so a nav item added next month
-//     appears for everybody, including people who customized last month
+//     appears for everybody, including people who customized last month —
+//     EXCEPT, for the org's layer, the entries in DEFAULT_OFF (NAV-2): those
+//     are off until the org's saved list names them visible
 //   · an id the canonical groups no longer hold is dropped
 //   · Home and Settings are visible whatever the saved list claims
 //   · a role default applies ONLY to somebody who has never saved a layout
 export function navLayout(saved, opts = {}) {
   const role = opts.role || null;
+  const off = opts.defaultOff || new Set();
   const rows = Array.isArray(saved) ? saved : null;
   const pos = new Map(), vis = new Map();
   if (rows) {
@@ -134,7 +170,7 @@ export function navLayout(saved, opts = {}) {
         id,
         visible: NEVER_HIDDEN.has(id) ? true
           : vis.has(id) ? vis.get(id)
-          : !roleHidden.has(id),
+          : !roleHidden.has(id) && !off.has(id),
       })),
   }));
 }

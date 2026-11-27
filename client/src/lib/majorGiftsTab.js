@@ -44,8 +44,14 @@ export function mgViewIn(id, shown) {
 // A navigation, rewritten: an old Fundraising part that is one of these views
 // (or the old `pipeline` tab) opens Major Gifts on it; Major Gifts itself is
 // only for somebody who may see it (`can`: true, false, or null while unknown).
+// NAV-2: Major Gifts starts off the rail (navGroups.js DEFAULT_OFF) and, while
+// it is off, lives inside Fundraising → Major gifts with the views the org
+// shows. `place` = { onRail: true | false | null (unknown), views: the org's
+// mgViews }. Off the rail, every way in (the old Fundraising parts, the
+// `pipeline` tab, /app/majorgifts) opens Fundraising on the view; on the rail
+// or unknown, the page of its own as before (ASKS-1).
 // Returns { tab, opts }.
-export function routeMajorGifts(tab, opts, can) {
+export function routeMajorGifts(tab, opts, can, place = {}) {
   let t = tab, o = opts || {};
   if (t === "pipeline") { t = MG_TAB; o = { ...o, subtab: "pipeline" }; }
   else if (t === "fundraising" && o.frSection && IDS.has(o.frSection)) {
@@ -53,6 +59,17 @@ export function routeMajorGifts(tab, opts, can) {
     t = MG_TAB; o = { ...rest, subtab: frSection };
   }
   if (t === MG_TAB && can === false) return { tab: "dashboard", opts: {} };
+  if (t === MG_TAB && place && place.onRail === false) {
+    const { subtab, ...rest } = o;
+    return { tab: "fundraising", opts: { ...rest, frSection: mgViewIn(mgView(subtab), mgShownViews(place.views)) } };
+  }
   if (t === MG_TAB) o = { ...o, subtab: mgView(o.subtab) };
   return { tab: t, opts: o };
+}
+
+// NAV-2: the Major gifts views Fundraising adds to its Major gifts section, or
+// null when it adds none (Major Gifts is on the rail, unknown, or this person
+// may not see it).
+export function mgInFundraising(can, onRail, views) {
+  return can === true && onRail === false ? mgShownViews(views) : null;
 }

@@ -11,8 +11,12 @@ export const EVENTS_AUCTIONS = "auctions";   // the Events list that is every au
 // A Fundraising section's parts as its strip shows them: Peer-to-peer only for
 // an org with a peer-to-peer page. `hasP2p` unknown (undefined) shows it, so
 // nothing flickers away while loading.
-export function frShown(sec, { hasP2p } = {}) {
+// NAV-2: `mgViews` (lib/majorGiftsTab.js mgInFundraising) is the Major Gifts
+// views shown inside Fundraising while Major Gifts is off the rail; they follow
+// At a glance and Proposals in the Major gifts section, in the org's order.
+export function frShown(sec, { hasP2p, mgViews } = {}) {
   if (!sec) return sec;
-  const parts = sec.parts.filter(p => !(p.id === "p2p" && hasP2p === false));
+  let parts = sec.parts.filter(p => !(p.id === "p2p" && hasP2p === false));
+  if (sec.id === "majorgifts" && Array.isArray(mgViews) && mgViews.length) parts = [...parts, ...mgViews.map(v => ({ id: v.id, label: v.label }))];
   return parts.length === sec.parts.length ? sec : { ...sec, parts };
 }

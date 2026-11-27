@@ -113,7 +113,7 @@ function StatTile({ label, value, sub, accent, onClick: go, ariaLabel, source, d
 
 
 
-export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope, hasP2p }) {
+export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope, hasP2p, mgViews, mgStageTop }) {   // NAV-2: mgViews while Major Gifts is off the rail
   // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
   // section via navigateTo("fundraising",{frSection:"recurring"})); consumed
   // on mount only, navNonce remounts like the other intent tabs.
@@ -178,10 +178,10 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   // Any id, old or new, opens its section on its part; ASKS-1: one that is now
   // a Major Gifts tab (Top 100, Portfolios, Pipeline, Plans) opens that page.
   const goto = id => {
-    if (onNavigate && MG_VIEWS.some(v => v.id === id)) return onNavigate("majorgifts", { subtab: id });
+    if (onNavigate && !mgViews && MG_VIEWS.some(v => v.id === id)) return onNavigate("majorgifts", { subtab: id });   // NAV-2: off the rail, they are parts here
     const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part }));
   };
-  const sec = frShown(FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0], { hasP2p });
+  const sec = frShown(FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0], { hasP2p, mgViews });
   const subtab = partOf[sec.id] || sec.parts[0].id;   // the old view that is open
   const setSubtab = goto;
   const openCampaign = id => { goUrl(campaignHref(id)); goto("campaigns"); };
@@ -283,7 +283,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
           board (one GET /pipeline, one Team gate server-side, the Core locked
           preview); `embedded` only drops its own page title under this one. */}
       {!loading && subtab === "pipeline" && (
-        <Pipeline embedded isReadOnly={isReadOnly} onNavigate={onNavigate} initialScope={initialScope} />
+        <Pipeline embedded isReadOnly={isReadOnly} onNavigate={onNavigate} initialScope={initialScope} stageTop={mgStageTop} />
       )}
 
       {/* BUILD-88b B.1 — DepositsView is deliberately NOT wired to Fundraising's

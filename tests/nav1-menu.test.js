@@ -19,6 +19,16 @@
 //       Auctions loses it from the rail without a reload, and Major Gifts set to
 //       Top 100 has no strip
 //   §8  no org id in the code: the org-specific baseline is unchanged
+//   §9  NAV-2 (27 Nov): an org with no saved layout has Auctions, Peer-to-peer,
+//       Memberships and Major Gifts off; an org that saved one as visible keeps
+//       it; Add puts it back for everybody who never took it off; Major Gifts
+//       off the rail opens inside Fundraising (same views, the org's list), and
+//       not for someone without the permission; the keep-in-use script turns on
+//       only orgs with data, dry run writes nothing, --apply writes one audit row
+//
+// NAV-2 HOW IT GOES RED: on main navGroups has no DEFAULT_OFF (§1/§9 "four off" red),
+//   routeMajorGifts ignores the rail (§9 "opens inside Fundraising" red), and
+//   scripts/ops/nav2-keep-in-use.js does not exist (§9 script red); §7's Add click finds no button.
 //
 // HOW IT GOES RED (each watched red before trusting the green):
 //   - on main: GET /org/menu is a 404 and navGroups has no personNavLayout
@@ -88,14 +98,15 @@ const call = async (tok, method, p, body) => {
   ok("§1 GET /org/menu answers", d.status === 200, d);
   ok("§1 no saved layout and all four Major Gifts tabs", d.body && d.body.layout === null && JSON.stringify(d.body.mgViews) === JSON.stringify(["top100", "portfolios", "pipeline", "plans"]), d.body);
   const def = shownIds(N.personNavLayout(null, null));
-  ok("§1 the default rail shows Auctions and Peer-to-peer", def.includes("auctions") && def.includes("p2p"), def);
-  ok("§1 …and every other entry", ["dashboard", "donors", "fundraising", "majorgifts", "events", "memberships", "grants", "finance", "settings"].every(i => def.includes(i)), def);
+  // NAV-2: the four that start off are off an org that never saved a layout (it was every entry on, NAV-1)
+  ok("§1 the default rail has no Auctions, Peer-to-peer, Memberships or Major Gifts", ["auctions", "p2p", "memberships", "majorgifts"].every(i => !def.includes(i)), def);
+  ok("§1 …and every other entry", ["dashboard", "donors", "fundraising", "events", "grants", "finance", "settings"].every(i => def.includes(i)), def);
   const me = await call(admin, "GET", "/me/nav-layout");
   ok("§1 /me/nav-layout carries the org's menu, so the shell reads both in one request", me.body && me.body.org && Array.isArray(me.body.org.mgViews), me.body);
 
   console.log("\n§2 · hide, show, reorder; a person's hide is theirs");
   const orgRail = N.orgNavLayout(null);
-  let next = N.setNavVisible(orgRail, "auctions", false);
+  let next = N.setNavVisible(orgRail, "p2p", true);
   next = N.setNavVisible(next, "grants", false);
   next = N.moveNavItem(next, "raise", "events", -2);
   const put = await call(admin, "PUT", "/org/menu", { layout: N.flattenNav(next) });
@@ -103,9 +114,9 @@ const call = async (tok, method, p, body) => {
   const back = (await call(admin, "GET", "/org/menu")).body;
   const merged = N.personNavLayout(null, back.layout);
   const shown = shownIds(merged);
-  ok("§2 Auctions turned off is gone from the menu", !shown.includes("auctions"), shown);
+  ok("§2 Auctions, never added, is not on the menu", !shown.includes("auctions"), shown);
   ok("§2 Grants turned off is gone from the menu", !shown.includes("grants"), shown);
-  ok("§2 Peer-to-peer, left on, is still there", shown.includes("p2p"), shown);
+  ok("§2 Peer-to-peer, added, is there", shown.includes("p2p"), shown);
   const raise = merged.find(g => g.id === "raise").items.map(i => i.id);
   ok("§2 the reorder persisted: Events moved up two within Raise, to the top", raise.indexOf("events") === 0 && raise.indexOf("fundraising") === 1, raise);
   const staffPut = await call(staff, "PUT", "/org/menu", { layout: N.flattenNav(orgRail) });
@@ -195,8 +206,35 @@ const call = async (tok, method, p, body) => {
     await page.locator(".side-nav-btn").first().waitFor({ timeout: 30000 });
     const rail = (await page.$$eval(".side-nav-btn", bs => bs.map(b => (b.innerText || "").split("\n").map(s => s.trim()).filter(Boolean).join(" ")))).join(" | ");
     await shot("1-rail-default");
-    ok("§7 the rail has Auctions and Peer-to-peer by default", /Auctions/.test(rail) && /Peer-to-peer/.test(rail), rail);
-    ok("§7 …and Events and Major Gifts", /Events/.test(rail) && /Major Gifts/.test(rail), rail);
+    ok("§7 NAV-2: the rail has no Auctions, Peer-to-peer, Memberships or Major Gifts by default", !/Auctions|Peer-to-peer|Memberships|Major Gifts/.test(rail), rail);
+    ok("§7 …and has Events and Grants", /Events/.test(rail) && /Grants/.test(rail), rail);
+    // NAV-2 item 3: Major Gifts off the rail lives inside Fundraising; an old address lands there
+    await page.goto(`${APP}/app/majorgifts?subtab=pipeline`, { waitUntil: "networkidle", timeout: 60000 });
+    await page.locator('[data-fr-view="top100"]').waitFor({ timeout: 20000 }).catch(() => {});
+    await shot("1b-majorgifts-in-fundraising");
+    ok("§7 NAV-2: /app/majorgifts off the rail opens Fundraising → Major gifts, on the one view the org shows (Top 100)", /\/app\/fundraising\?fr=top100/.test(page.url()) && await page.locator('[data-fr-view="top100"]').count() === 1, page.url());
+    const mgParts = await page.$$eval("[data-fr-part]", els => els.map(e => e.getAttribute("data-fr-part"))).catch(() => []);
+    ok("§7 …with the views the org shows (Top 100 only, as set) after At a glance and Proposals", mgParts.join() === "majorgifts,proposals,top100", mgParts);
+    // NAV-2 item 2: Settings → Menu → Add to your sidebar, one click, no reload
+    await page.goto(`${APP}/app/settings?section=menu`, { waitUntil: "networkidle", timeout: 60000 });
+    await page.locator('[data-testid="org-menu-add"]').waitFor({ timeout: 20000 }).catch(() => {});
+    const addRows = await page.$$eval('[data-testid="org-menu-add"] [data-nav-add-row]', els => els.map(e => e.getAttribute("data-nav-add-row"))).catch(() => []);
+    ok("§7 NAV-2: Add to your sidebar lists the four that start off", ["auctions", "p2p", "memberships", "majorgifts"].every(i => addRows.includes(i)), addRows);
+    await shot("1c-settings-menu-add");
+    await page.locator('[data-testid="org-menu-add"] [data-nav-add="auctions"]').click().catch(() => {});
+    await page.locator('[data-testid="org-menu-msg"]').waitFor({ timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const afterAdd = (await page.$$eval(".side-nav-btn", bs => bs.map(b => b.innerText))).join(" | ");
+    ok("§7 NAV-2: one click on Add puts Auctions on the rail without a reload", /Auctions/.test(afterAdd), afterAdd);
+    await page.locator('[data-testid="org-menu-add"] [data-nav-add="majorgifts"]').click().catch(() => {});
+    await page.waitForTimeout(600);
+    await page.locator('[data-testid="org-menu-list"] [data-nav-toggle="grants"]').click().catch(() => {});
+    await page.waitForTimeout(600);
+    const afterGrants = (await page.$$eval(".side-nav-btn", bs => bs.map(b => b.innerText))).join(" | ");
+    await shot("1d-settings-menu-grants-off");
+    ok("§7 NAV-2: Take off on Grants takes it off the rail the same way", !/Grants/.test(afterGrants) && /Major Gifts/.test(afterGrants), afterGrants);
+    const [lay] = await q(`SELECT nav_layout FROM orgs WHERE id=$1`, [ORG]);
+    ok("§7 …and the org's saved menu names Auctions on and Grants off", /"id":"auctions","visible":true/.test(lay.nav_layout || "") && /"id":"grants","visible":false/.test(lay.nav_layout || ""), lay);
     await page.goto(`${APP}/app/fundraising?fr=campaigns`, { waitUntil: "networkidle", timeout: 60000 });
     const parts = await page.$$eval("[data-fr-part], [data-key]", els => els.map(e => e.textContent.trim())).catch(() => []);
     ok("§7 Fundraising → Campaigns & pages still has its Auctions part", parts.some(t => /^Auctions$/.test(t)), parts.slice(0, 20));
@@ -238,11 +276,85 @@ const call = async (tok, method, p, body) => {
     await page.locator('[data-testid="org-menu-msg"]').waitFor({ timeout: 10000 }).catch(() => {});
     const afterHide = (await page.$$eval(".side-nav-btn", bs => bs.map(b => b.innerText))).join(" | ");
     await shot("6-settings-menu-auctions-off");
-    ok("§7 Settings → Menu: Hide on Auctions takes it off the rail without a reload", !/Auctions/.test(afterHide) && /Peer-to-peer/.test(afterHide), afterHide);
+    ok("§7 Settings → Menu: Take off on Auctions takes it off the rail without a reload", !/Auctions/.test(afterHide) && /Major Gifts/.test(afterHide), afterHide);
     await call(admin, "PUT", "/org/menu", { layout: null });
     ok("§7 no console error or page error on the walk", errors.length === 0, errors.slice(0, 5));
     await browser.close();
   }
+
+  console.log("\n§9 · NAV-2: four start off, added in one click, Major Gifts inside Fundraising, orgs in use keep them");
+  const FOUR = ["auctions", "p2p", "memberships", "majorgifts"];
+  ok("§9 one list names the four that start off", N.DEFAULT_OFF && FOUR.every(i => N.DEFAULT_OFF.has(i)) && N.DEFAULT_OFF.size === 4, N.DEFAULT_OFF && [...N.DEFAULT_OFF]);
+  const vis = (lay, id) => lay.flatMap(g => g.items).find(i => i.id === id).visible;
+  ok("§9 an org with no saved layout has the four off", FOUR.every(i => vis(N.orgNavLayout(null), i) === false));
+  const savedOn = [{ id: "auctions", visible: true }, { id: "majorgifts", visible: true }];
+  ok("§9 an org whose saved layout names one as visible keeps it", vis(N.orgNavLayout(savedOn), "auctions") && vis(N.orgNavLayout(savedOn), "majorgifts"));
+  ok("§9 …and the ones it does not name stay off", !vis(N.orgNavLayout(savedOn), "p2p") && !vis(N.orgNavLayout(savedOn), "memberships"));
+  ok("§9 an entry added next month (not in the list) is still on for an org that saved last month", vis(N.orgNavLayout(savedOn), "grants") && vis(N.orgNavLayout(savedOn), "events"));
+  // a person who saved their own layout before NAV-2 (every entry named on) sees the org's add, and not before it
+  const personOld = N.flattenNav(N.navLayout(null));
+  ok("§9 a person follows the org: off until the org adds it", !shownIds(N.personNavLayout(personOld, null)).includes("auctions"));
+  ok("§9 …and on once it does, unless they took it off", shownIds(N.personNavLayout(personOld, savedOn)).includes("auctions")
+    && !shownIds(N.personNavLayout(personOld.map(r => r.id === "auctions" ? { ...r, visible: false } : r), savedOn)).includes("auctions"));
+  ok("§9 every entry has its sentence for Add to your sidebar", N.ALL_NAV_IDS.every(i => typeof N.NAV_PURPOSE[i] === "string" && N.NAV_PURPOSE[i].length > 10));
+  // Major Gifts placement
+  const off = { onRail: false, views: ["portfolios", "pipeline", "plans"] };
+  const r1 = MG.routeMajorGifts("majorgifts", { subtab: "pipeline", scope: "mine" }, true, off);
+  ok("§9 Major Gifts off the rail: /app/majorgifts opens Fundraising on the same view", r1.tab === "fundraising" && r1.opts.frSection === "pipeline" && r1.opts.scope === "mine", r1);
+  const r2 = MG.routeMajorGifts("fundraising", { frSection: "top100" }, true, off);
+  ok("§9 …an old link to a view the org does not show opens the first it shows (Pipeline, the Top 100 being off)", r2.tab === "fundraising" && r2.opts.frSection === "pipeline", r2);
+  const r3 = MG.routeMajorGifts("pipeline", {}, true, off);
+  ok("§9 …the old Pipeline tab lands there too", r3.tab === "fundraising" && r3.opts.frSection === "pipeline", r3);
+  const r4 = MG.routeMajorGifts("fundraising", { frSection: "plans" }, true, { onRail: true, views: off.views });
+  ok("§9 on the rail, it opens its own page as before (ASKS-1)", r4.tab === "majorgifts" && r4.opts.subtab === "plans", r4);
+  ok("§9 without the permission, neither: Home", MG.routeMajorGifts("majorgifts", {}, false, off).tab === "dashboard" && MG.routeMajorGifts("fundraising", { frSection: "pipeline" }, false, off).tab === "dashboard");
+  ok("§9 Fundraising adds the views only off the rail and only with the permission", MG.mgInFundraising(true, false, off.views).map(v => v.id).join() === "portfolios,pipeline,plans"
+    && MG.mgInFundraising(false, false, off.views) === null && MG.mgInFundraising(null, false, off.views) === null && MG.mgInFundraising(true, true, off.views) === null && MG.mgInFundraising(true, null, off.views) === null);
+  const mgSec = FS.FR_SECTIONS.find(x => x.id === "majorgifts");
+  ok("§9 Fundraising's Major gifts section: At a glance, Proposals, then the org's views", MV.frShown(mgSec, { mgViews: MG.mgInFundraising(true, false, off.views) }).parts.map(x => x.id).join() === "majorgifts,proposals,portfolios,pipeline,plans");
+  ok("§9 …and just At a glance and Proposals with Major Gifts on the rail", MV.frShown(mgSec, { mgViews: null }).parts.map(x => x.id).join() === "majorgifts,proposals");
+  ok("§9 both ways draw the same components (Fundraising renders Top100View, PortfolioView, Pipeline, PlansView for those parts)",
+    ["top100\" && <Top100View", "portfolios\" && (", "pipeline\" && (", "plans\" && ("].every(k => fs.readFileSync(path.join(ROOT, "client/src/components/Fundraising.jsx"), "utf8").includes(`subtab === "${k}`)));
+  // The keep-in-use script, on made-up orgs
+  const KO = ["org_nav2_auc", "org_nav2_t100", "org_nav2_none", "org_nav2_chose", "org_nav2_mem"];
+  const wipe = async () => { for (const o of KO) {
+    for (const t of ["auction_items", "auctions", "membership_levels"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
+    // the audit log is append-only, so a made-up org that has one stays, reset
+    await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => q(`UPDATE orgs SET nav_layout=NULL, top100_enabled=false WHERE id=$1`, [o])); } };
+  await wipe();
+  for (const o of KO) await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,$2,$3,1,'active','team') ON CONFLICT (id) DO NOTHING`, [o, "Made-up " + o.slice(9), o.replace(/_/g, "-")]);
+  await q(`UPDATE orgs SET top100_enabled=true WHERE id='org_nav2_t100'`);
+  await q(`UPDATE orgs SET nav_layout=$1 WHERE id='org_nav2_chose'`, [JSON.stringify([{ id: "auctions", visible: false }])]);
+  for (const o of ["org_nav2_auc", "org_nav2_chose"]) {
+    await q(`INSERT INTO auctions (id,org_id,title,public_slug,opens_at,closes_at,created_by,created_by_name) VALUES ($1,$2,'Made-up auction',$3,'2026-12-05T18:00:00Z','2026-12-05T21:00:00Z','system:test','Test')`, ["auc_" + o, o, o.replace(/_/g, "-") + "-auc"]);
+    await q(`INSERT INTO auction_items (id,org_id,auction_id,title,starting_bid,bid_increment,created_by,created_by_name) VALUES ($1,$2,$3,'Made-up quilt',50,5,'system:test','Test')`, ["ai_" + o, o, "auc_" + o]);
+  }
+  await q(`INSERT INTO membership_levels (id,org_id,name,price,term,created_by,created_by_name) VALUES ('ml_nav2','org_nav2_mem','Friend',25,'12_months','system:test','Test')`).catch(e => console.log("  (membership level fixture: " + e.message + ")"));
+  const KS = require(path.join(ROOT, "scripts/ops/nav2-keep-in-use.js"));
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest" });
+  const lines = [];
+  const dry = (await KS.main({ pool, apply: false, log: l => lines.push(l) })).filter(f => KO.includes(f.id));
+  const byId = Object.fromEntries(dry.map(f => [f.id, f.turn]));
+  ok("§9 script: the org with auction items gets Auctions", (byId.org_nav2_auc || []).join() === "auctions", byId);
+  ok("§9 script: the org on the Top 100 gets Major Gifts", (byId.org_nav2_t100 || []).join() === "majorgifts", byId);
+  ok("§9 script: the org with a membership level gets Memberships", (byId.org_nav2_mem || []).join() === "memberships", byId);
+  ok("§9 script: an org with no data, and an org that chose Auctions off, are left alone", !byId.org_nav2_none && !byId.org_nav2_chose, byId);
+  ok("§9 script: it prints org ids and counts, never a name", lines.some(l => /org_nav2_auc: turn on auctions/.test(l)) && lines.some(l => /auction items 1/.test(l)) && !lines.some(l => /Made-up/.test(l)), lines.filter(l => /nav2/.test(l)));
+  const [dryRow] = await q(`SELECT nav_layout FROM orgs WHERE id='org_nav2_auc'`);
+  ok("§9 script: the dry run writes nothing", dryRow.nav_layout === null, dryRow);
+  const appliedAt = (await q(`SELECT NOW() AS t`))[0].t;
+  await KS.main({ pool, apply: true, log: () => {} });
+  const after = Object.fromEntries((await q(`SELECT id, nav_layout FROM orgs WHERE id = ANY($1)`, [KO])).map(r => [r.id, r.nav_layout ? JSON.parse(r.nav_layout) : null]));
+  ok("§9 --apply: Auctions on for the org using it, nothing else of the four, nothing moved", N.orgNavLayout(after.org_nav2_auc).flatMap(g => g.items).filter(i => FOUR.includes(i.id) && i.visible).map(i => i.id).join() === "auctions"
+    && N.flattenNav(N.orgNavLayout(after.org_nav2_auc)).map(r => r.id).join() === N.ALL_NAV_IDS.join(), after.org_nav2_auc);
+  ok("§9 --apply: the Top 100 org comes out with Major Gifts on", shownIds(N.orgNavLayout(after.org_nav2_t100)).includes("majorgifts"), after.org_nav2_t100);
+  ok("§9 --apply: the org that chose Auctions off still has it off; the empty org is untouched", after.org_nav2_none === null && !shownIds(N.orgNavLayout(after.org_nav2_chose)).includes("auctions"), after);
+  const aud = await q(`SELECT org_id, entity_label, user_id FROM fin_audit_log WHERE org_id = ANY($1) AND action='nav2 keep in use' AND created_at >= $2`, [KO, appliedAt]);
+  ok("§9 --apply: one audit row per org changed, in that org's log", aud.length === 3 && aud.every(a => a.entity_label === "Menu" && /^system:/.test(a.user_id)), aud);
+  ok("§9 a second run finds nothing more to do", (await KS.findInUse(pool)).filter(f => KO.includes(f.id)).length === 0);
+  await pool.end();
+  await wipe();
 
   console.log("\n§8 · no org id in the code");
   let archOk = true, archOut = "";
