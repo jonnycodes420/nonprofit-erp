@@ -330,6 +330,7 @@ app.delete("/households/:id", requireAuth, wrap(async (req, res) => {
 const CN = require("./connections");
 const DONOR_RELATIONSHIP_TYPES = ["spouse", "partner", "household", "family", "employer_match", "owner", "works_at", ...CN.CONNECT_TYPES];
 const PERSON_TO_ORG = new Set(["owner", "works_at"]);
+const CREDITING_LINKS = new Set(["owner", "program_officer"]);   // NUMBERS-10 item 3: softThrough.js CREDIT_LINKS
 const isOrgRow = d => !!d && (["organisation", "organization"].includes(String(d.kind || "").toLowerCase())
   || (Array.isArray(d.person_types) && d.person_types.includes("organization")));
 // Only these two types pool into a shared "household total" — family and
@@ -429,15 +430,15 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
-  // NUMBERS-9 item 5 (W-1125-Finance-37, repeat): a person linked to an organization by anything but Owner
-  // (a program officer, works at) holds nothing through it unless a gift credits them. The rail says so by
-  // name, rather than leaving an empty Giving tab beside the organization's lifetime to be read as a fault.
+  // NUMBERS-9 item 5 (W-1125-Finance-37, repeat): a person linked to an organization by anything but Owner or
+  // program officer (NUMBERS-10 item 3: works at, and the rest) holds nothing through it unless a gift credits
+  // them. The rail says so by name, rather than leaving an empty Giving tab beside the organization's lifetime.
   const throughIds = new Set(givesThrough.map(g => g.id));
   const notThrough = await (async () => {
     const orgs = await query(`SELECT id, name, kind, person_types FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, relatedIds]);
     const [self] = await query("SELECT kind, person_types FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
     if (isOrgRow(self)) return [];
-    return relationships.filter(r => r.relationshipType !== "owner" && !throughIds.has(r.relatedDonorId)
+    return relationships.filter(r => !CREDITING_LINKS.has(r.relationshipType) && !throughIds.has(r.relatedDonorId)
         && isOrgRow(orgs.find(o => o.id === r.relatedDonorId)))
       .map(r => ({ id: r.relatedDonorId, name: (orgs.find(o => o.id === r.relatedDonorId) || {}).name || "", type: r.relationshipType }));
   })();
