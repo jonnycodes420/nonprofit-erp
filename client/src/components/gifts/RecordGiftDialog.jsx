@@ -40,6 +40,7 @@ const lbl = { fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4, d
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
 import { methodChoices, methodValue, NOT_SET } from "../../../../shared/giftMethods.js";   // GIFTS-3: one list of methods
 import { giftAmountProblem } from "../../lib/amountCheck";   // INPUT-1
+import { isFarOutside, askFarOutside } from "../../lib/farOutside";   // IMPORT-11
 import { confirmGiftDate } from "../../lib/giftDateCheck";   // INPUT-1: Jan 1, 1900 asks first
 import { askConfirm } from "../ConfirmDialog";
 
@@ -119,7 +120,11 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
         const d = r && r.donor;
         done(r, { id: d ? d.id : (r.person && r.person.id), name: d ? d.name : personName(np) }, another);
       } else {
-        const r = await apiFetch(`/donors/${p.id}/gifts`, { method: "POST", body: JSON.stringify(giftBody()) });
+        // IMPORT-11: a gift far outside the pattern asks first, in the server's words
+        const post = far => apiFetch(`/donors/${p.id}/gifts`, { method: "POST", body: JSON.stringify({ ...giftBody(), confirmFarOutside: far }) });
+        let r;
+        try { r = await post(undefined); }
+        catch (e) { if (!isFarOutside(e)) throw e; if (!(await askFarOutside(askConfirm, e))) { setBusy(false); return; } r = await post(true); }
         done(r, p, another);
       }
     } catch (e) {

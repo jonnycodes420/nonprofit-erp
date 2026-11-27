@@ -93,7 +93,8 @@ async function flows14Checks({ orgId, get, q, agree, diffs, skip, today, named =
     if (r && r.file) {
       const off = (r.officers || []).filter(o => Number(o.portfolio_count) > 0);
       const [k] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id = $1 AND d.deleted_at IS NULL AND d.erased_at IS NULL
-                              AND (COALESCE(d.imported_total, 0) > 0 OR EXISTS (SELECT 1 FROM gifts kg WHERE kg.org_id = d.org_id AND kg.donor_id = d.id AND ${KEPT("kg")}))`, [orgId]);   // DEFINE-1: the Donors tab is who has given
+                              AND (COALESCE(d.imported_total, 0) > 0 OR EXISTS (SELECT 1 FROM gifts kg WHERE kg.org_id = d.org_id AND kg.donor_id = d.id AND ${KEPT("kg")}
+                                   AND (kg.scheduled_on IS NULL OR kg.scheduled_on <= $2)))`, [orgId, today]);   // DEFINE-1: the Donors tab is who has given; TRUTH-6 (IMPORT-11): a gift dated after today makes nobody a donor until its day
       const tab = await get("/donors?role=donor&limit=1").catch(() => null);
       const rowsN = off.reduce((s, o) => s + Number(o.portfolio_count), 0) + Number(r.file.unassigned.portfolio_count)
         + (r.file.other ? r.file.other.count : 0) - (r.file.outside ? r.file.outside.count : 0);

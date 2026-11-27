@@ -65,6 +65,7 @@ function mount(ctx) {
         acceptReason: r.accept_reason, acceptedOnBehalf: !!r.accepted_on_behalf,
         flaggedAt: r.flagged_at, flaggedByName: r.flagged_by_name, flagNote: r.flag_note },
       money, lines: side.lines, byYear: side.byYear,
+      rowChecks: summary.rowChecks || null,   // IMPORT-11: copies, over the cap, far outside, future-dated, counted either way
       funds: vf.byFund ? side.funds : null,
       fundsUnavailable: vf.byFund ? null : "This file was imported before Steward kept its funds, so there is no file side to compare.",
       spot,
