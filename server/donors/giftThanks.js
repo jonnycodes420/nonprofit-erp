@@ -38,6 +38,8 @@ async function stopJourneysOfGift(client, orgId, donorId, giftId, who) {
   const steps = await queryTx(client, `SELECT id, thread_id, status FROM cultivation_plan_steps
                                         WHERE org_id = ? AND plan_id = ANY(?::text[]) AND status IN ('open','pending')`, [orgId, ids]);
   const threads = steps.filter(s => s.status === "open" && s.thread_id).map(s => s.thread_id);
+  // NUMBERS-10 item 6: the open step's own words, for the timeline line that says it was cancelled.
+  const openSteps = (await queryTx(client, `SELECT label FROM cultivation_plan_steps WHERE org_id = ? AND plan_id = ANY(?::text[]) AND status = 'open'`, [orgId, ids])).map(s => s.label);
   let tasks = 0;
   if (threads.length) {
     // Void first: closing a thread marks its task done (the thread's trigger), and a voided task is
@@ -54,7 +56,40 @@ async function stopJourneysOfGift(client, orgId, donorId, giftId, who) {
   }
   await runTx(client, `UPDATE cultivation_plans SET status = 'abandoned', closed_at = NOW(), end_reason = 'gift_deleted'
                         WHERE org_id = ? AND id = ANY(?::text[])`, [orgId, ids]);
-  return { tasks, journeys: plans.map(p => p.template_name || "a journey") };
+  return { tasks, journeys: plans.map(p => p.template_name || "a journey"), openSteps };
+}
+
+// NUMBERS-10 item 6 (W-1127-Finance-03): "deleting a donor's gifts still leaves the 'Call to say thank
+// you' journey step and note in place with no gift behind it". The step was skipped and its task voided,
+// but the timeline kept "Journey step: Call to say thank you, due …" with nothing after it to say the
+// thank-you would not happen. So when a delete cancels a thank-you (a journey's open step, or a task
+// Steward made for the gift), the timeline gets ONE line saying so; the gift's Undo takes the line away
+// (giftDeleteUndo.js, `cancelLineId`), so an undone delete leaves the timeline as it was (THANKS-1's
+// complaint was a note that never went away). Inside the delete's transaction. Answers the line's id or null.
+const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayWords = d => /^\d{4}-\d{2}-\d{2}/.test(String(d || "")) ? `${MON[Number(String(d).slice(5, 7)) - 1]} ${Number(String(d).slice(8, 10))}, ${String(d).slice(0, 4)}` : "";
+function cancelWords(g, { tasks = 0, journeys = [], openSteps = [] } = {}) {
+  if (!(tasks > 0) && !journeys.length) return null;
+  const day = dayWords(g.date);
+  const what = `the ${usd(Math.round((Number(g.amount) || 0) * 100))} gift${day ? ` of ${day}` : ""} was removed`;
+  if (journeys.length) {
+    const step = openSteps.length ? `${openSteps.join(", ")} (${journeys.join(", ")}) is cancelled` : `the journey it started (${journeys.join(", ")}) is stopped`;
+    return `Thank-you cancelled: ${what}, so ${step}.`;
+  }
+  return `Thank-you cancelled: ${what}, so ${tasks === 1 ? "the thank-you task Steward made for it is" : `the ${tasks} tasks Steward made for it are`} cancelled.`;
+}
+async function cancelLine(client, { orgId, g, who, tasks, journeys, openSteps }) {
+  const note = g && g.donor_id ? cancelWords(g, { tasks, journeys, openSteps }) : null;
+  if (!note) return null;
+  const [o] = await queryTx(client, "SELECT timezone FROM orgs WHERE id = ?", [orgId]);
+  const day = require("../../orgTime").orgToday({ timezone: o && o.timezone });   // ORG_TZ_SEAM_OK (the org's civil today)
+  const id = require("../shared/newId").newId("i");
+  await runTx(client, `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata)
+                        VALUES (?, ?, ?, 'activity', ?, ?, ?, ?, ?)`,
+    [id, orgId, g.donor_id, note, day, (who && who.id) || "system:gift-delete", (who && who.name) || null,
+     JSON.stringify({ via: "gift_delete", removed_gift_id: g.id, line_key: `thanks-cancelled:${g.id}` })]);
+  return id;
 }
 
 // The timeline's one note for a delete: the words FIX-10 wrote for the gift's own tasks, and the
@@ -74,4 +109,4 @@ function cancelledWords(tasks, journeys = []) {
   return n ? n.replace(/^Gift removed, thank-you cancelled\.\s*/, "Its thank-you was cancelled. ").trim() : "";
 }
 
-module.exports = { stopJourneysOfGift, deleteNote, cancelledWords, STARTED_BY, SKIPPED };
+module.exports = { stopJourneysOfGift, deleteNote, cancelledWords, cancelLine, cancelWords, STARTED_BY, SKIPPED };

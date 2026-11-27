@@ -39,7 +39,10 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     `SELECT t.id, t.donor_id, t.gift_id, t.body, t.voice, t.opened_at, t.created_at,
             d.name AS donor_name, d.email AS donor_email, d.salutation AS donor_salutation, d.spouse_name AS donor_spouse, d.kind AS donor_kind,
-            g.amount::float AS amount, g.date AS gift_date, f.name AS fund_name
+            g.amount::float AS amount, g.date AS gift_date, f.name AS fund_name,
+            -- NUMBERS-10 item 4: the day's other gifts this draft thanks for (ONE-MOVE-1), each by its amount
+            (SELECT json_agg(json_build_object('id', ag.id, 'amount', ag.amount::float) ORDER BY ag.created_at, ag.id)
+               FROM gifts ag WHERE ag.org_id = t.org_id AND ag.id = ANY(t.also_gift_ids)) AS also_gifts
        FROM thank_you_drafts t
        JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
        JOIN gifts g ON g.id = t.gift_id AND g.org_id = t.org_id
@@ -78,7 +81,7 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
     allOpened: rows.length > 0 && rows.every(r => !!r.opened_at),
     voice: { ready: voice.ready, samples: voice.count, needs: Math.max(0, draftMod.VOICE_SAMPLE_MIN - voice.count) },
     drafts: rows.map(r => ({ id: r.id, donorId: r.donor_id, giftId: r.gift_id, donorName: r.donor_name,
-      donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
+      donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date, alsoGifts: r.also_gifts || [],
       fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
       subject: "Thank you for your gift",   // COMMS-3: Open in my email's subject line
       // POLISH-2: signed by whoever is reading the queue, since she sends it.

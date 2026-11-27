@@ -445,6 +445,10 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // TRUTH-6: a scheduled gift says so, "Scheduled, Dec 15", where its amount is.
   { const SC = require("../../shared/numbers/scheduled"); const t = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
     for (const g of d.gifts) if (g.scheduled) g.scheduled_label = SC.scheduledLabel(g.scheduled_on, t); }
+  // NUMBERS-10 item 4: the Gift History header counts and totals exactly these rows, by the glance's rule
+  // (shared/numbers/giftHistoryHead.js); each row says whether it is in the count and the total, and why not.
+  { const GH = require("../../shared/numbers/giftHistoryHead"); for (const g of d.gifts) Object.assign(g, GH.rowFlags(g));
+    d.gift_history_head = GH.giftHistoryHead(d.gifts); }
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
   // computation as the list and every badge.

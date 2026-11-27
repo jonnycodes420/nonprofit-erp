@@ -32,6 +32,11 @@ export function giftOnDate(cents, date) {
   const day = date ? displayDateLong(date instanceof Date ? date : String(date).slice(0, 10)) : "";
   return day ? `${money(cents)} on ${day}` : money(cents);
 }
+// NUMBERS-10 item 4: "$1,000 and $25", "$1,000, $25 and $10".
+export function giftListWords(cents) {
+  const w = (cents || []).map(money);
+  return w.length <= 1 ? (w[0] || "") : `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}`;
+}
 const firstName = full => String(full || "").trim().split(/\s+/)[0] || "";
 
 // ── Her greeting and her sign-off, out of her own samples ─────────────────
@@ -129,9 +134,15 @@ export function thankYouDraft({
   campaignName = null,         // the appeal it came to, when it came to one
   person = null,               // FIX-45: { salutation, spouseName, kind } for the greeting
   tribute = null,              // CHECK-2: { type: "memory" | "honor", name } from the gift
+  // NUMBERS-10 item 4 (W-1127-Finance-01): one person's gifts on one day share one draft (ONE-MOVE-1),
+  // and the draft names EACH gift ("your gifts of $1,000 and $25"), never their sum as one gift.
+  // Cents, in the order the gifts came in; two or more makes the plural letter.
+  giftsCents = null,
 } = {}) {
   const first = firstName(donorName) || "friend";
-  const amt = money(giftCents);
+  const many = Array.isArray(giftsCents) && giftsCents.length >= 2 ? giftsCents.map(c => Number(c) || 0) : null;
+  if (many) giftCents = many.reduce((n, c) => n + c, 0);
+  const amt = many ? giftListWords(many) : money(giftCents);
   const amtOn = giftOnDate(giftCents, date);
   const to = generalFund && !campaignName ? ", which will go where it's needed most"
     : fundName ? ` to ${fundName}` : campaignName ? ` to ${campaignName}` : "";
@@ -140,7 +151,11 @@ export function thankYouDraft({
   const before = Number.isFinite(Number(giftCountBefore)) ? Number(giftCountBefore) : null;
 
   let middle;
-  if (isRecurring === true) {
+  if (many) {
+    // Each gift by its own amount, on their day. The plain sentence: what we were told is that she gave twice.
+    const day = date ? displayDateLong(date instanceof Date ? date : String(date).slice(0, 10)) : "";
+    middle = `Thank you for your gifts of ${amt}${day ? ` on ${day}` : ""}${to}. Each one is a real help, and we are grateful you thought of us.`;
+  } else if (isRecurring === true) {
     // A monthly giver is thanked for the ARRANGEMENT, not for one charge.
     middle = `Thank you for your monthly gift of ${amt}${to}. Giving every month is the steadiest kind of help there is, and we notice it.`;
   } else if (isFirstGift === true) {
