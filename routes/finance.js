@@ -515,6 +515,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
         received: { cents: b.receivedCents, amount: toDollars(b.receivedCents), count: b.receivedCount, source: { key: "gifts", params: { from: fyFrom, to: today, fund: f.id } } },
         waiting: { cents: b.gifts.waiting.cents, amount: toDollars(b.gifts.waiting.cents), count: b.gifts.waiting.n, source: { key: "ledger-status", params: { status: "waiting", fund: f.id } } },
         balanceCents: balance, balance: toDollars(balance), balanceWords: NUM.fundCard.balanceWords(b), transactions: b.rows,
+        inCents: b.inCents, feesInCents: b.feesInCents, feeWords: NUM.fundCard.feeWords(b),   // NUMBERS-10 item 1: covered fees in, or the fee line
         gapWords: NUM.fundCard.gapWords(b), gapLines: NUM.fundGap.gapLines(b, f.id),   // NUMBERS-9 item 1: the dialog's own line
         inPeriod: toDollars(b.inPeriodCents), outPeriod: toDollars(b.outPeriodCents),
         inPeriodCents: b.inPeriodCents, outPeriodCents: b.outPeriodCents,
@@ -534,6 +535,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
       received: NUM.fundBooks.SENTENCES.received,
       waiting: NUM.fundBooks.SENTENCES.waiting,
       balance: NUM.fundCard.SENTENCES.balance,
+      gifts: NUM.fundCard.SENTENCES.gifts,
       inPeriod: "Income posted to this fund inside the current month, in your organization's time zone.",
       restrictedBy: "The grants and donors whose money went into this fund, largest first. Read from the transactions and the gifts, never from the fund's name.",
     },
@@ -572,7 +574,7 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
     gifts: gifts.map(g => ({ ...g, amount: Number(g.amount), ledgerWord: WORD[g.ledger] })), giftCount: f.gifts.total.n, giftCents: f.gifts.total.cents,
     waitingCents: f.gifts.waiting.cents, waitingCount: f.gifts.waiting.n,
     // NUMBERS-9 item 1: gifts on the books beside transactions in, and the rows that make any difference.
-    postedCents: f.gifts.posted.cents, inCents: f.inCents, gapWords: NUM.fundCard.gapWords(f), gapLines: NUM.fundGap.gapLines(f, fundId),
+    postedCents: f.gifts.posted.cents, inCents: f.inCents, feesInCents: f.feesInCents, feeWords: NUM.fundCard.feeWords(f), gapWords: NUM.fundCard.gapWords(f), gapLines: NUM.fundGap.gapLines(f, fundId),
     sentence: `Balance ${NUM.fundCard.balanceWords(f)}${cut(rows.length, f.rows, "transactions")} ${NUM.fundCard.giftWords(f)}${cut(gifts.length, f.gifts.total.n, "gifts")}` });
 }));
 
@@ -4601,14 +4603,10 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId]),
     query(`SELECT date, type, amount FROM fin_transactions
            WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId, cur.start, cur.end]),
-    query(`SELECT f.id, f.name, f.restricted,
-                  COALESCE(SUM(CASE WHEN ft.type='income' THEN ft.amount
-                                    WHEN ft.type='expense' THEN -ft.amount ELSE 0 END), 0) AS balance
-           FROM fin_funds f
-           LEFT JOIN ${NUM.fundLines.LEDGER_FUND_ROWS()} ft ON ft.fund_id = f.id AND ft.org_id = f.org_id
-           WHERE f.org_id = ?
-           GROUP BY f.id, f.name, f.restricted
-           ORDER BY f.restricted ASC, f.name ASC`, [orgId, orgId, orgId]),
+    // NUMBERS-10 item 1: a fund's balance is the fund card's own figure (fundCard.fundLedger), never a second sum.
+    Promise.all([query(`SELECT f.id, f.name, f.restricted FROM fin_funds f WHERE f.org_id = ? ORDER BY f.restricted ASC, f.name ASC`, [orgId]),
+                 NUM.fundCard.fundLedger(query, orgId)])
+      .then(([fs, led]) => fs.map(f => ({ ...f, balanceCents: (led.get(f.id) || { balanceCents: 0 }).balanceCents }))),
     query(`SELECT COUNT(DISTINCT fund_id) AS cnt FROM fin_transactions
            WHERE org_id = ? AND date >= ? AND date <= ? AND fund_id IS NOT NULL AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId, cur.start, cur.end]),
     // B1 — the org's whole giving history (all gifts) vs what actually reached the
@@ -4683,7 +4681,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     monthly,
     activeFundCount: parseInt(activeFundRows[0]?.cnt || 0),
     fundBalances: fundRows.map(f => ({
-      id: f.id, name: f.name, restricted: f.restricted, balance: parseFloat(f.balance) || 0,
+      id: f.id, name: f.name, restricted: f.restricted, balance: toDollars(f.balanceCents), balanceCents: f.balanceCents,
     })),
     giftHistoryTotal, giftHistoryCount, ledgerGiftTotal, giftHistoryNote: NUM.allGifts.undatedWords(undated, "finance"),
     unledgeredGiving, hasUnledgeredGiving: unledgeredGiving > 1,
