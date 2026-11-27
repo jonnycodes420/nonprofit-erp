@@ -722,7 +722,7 @@ app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res
                       acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
                       acknowledged_via=COALESCE(acknowledged_via, 'email')
       WHERE org_id=? AND id=?`, [actor(req).id, whoName, orgId, g.id]);
-  const drafts = await query("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND gift_id=? AND sent_at IS NULL AND skipped_at IS NULL RETURNING id", [orgId, g.id]).catch(() => []);
+  const drafts = await query("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND (gift_id=? OR ? = ANY(also_gift_ids)) AND sent_at IS NULL AND skipped_at IS NULL RETURNING id", [orgId, g.id, g.id]).catch(() => []);
   const linked = await linkedTaskChange(req, t.id, { done: 1 });
   if (linked && linked.refused) return res.status(409).json(linked.refused);
   if (!linked) await run("UPDATE tasks SET done=1, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
@@ -989,7 +989,9 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     // ENGAGE-1 §3 — a step that IS an ask carries the suggested ask, worked
     // out from this donor's own gifts (engagement.js; never wealth data).
     if (t.next_step_type === "check_in_ask" || /\bask\b/i.test(String(t.next_step_label || ""))) {
-      list[list.length - 1].suggestedAsk = await engagementMod.suggestedAsk(query, orgId, t.donor_id).catch(() => null);
+      // ONE-MOVE-1: the person's one move's ask (Home's), engagement's only when there is no move
+      const pa = await require("../insights/personAsk").askFor(query, orgId, t.donor_id, today, () => engagementMod.suggestedAsk(query, orgId, t.donor_id)).catch(() => null);
+      list[list.length - 1].suggestedAsk = pa && pa.ask && !pa.ask.noAsk ? pa.ask : null;
     }
   }
 

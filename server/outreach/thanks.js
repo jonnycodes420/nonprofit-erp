@@ -61,8 +61,13 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
   const since = await require("../../routes/crm").reportHooks.thanksSince(orgId);
   const bl = await TB.backlog(query, orgId, since);
   const sinceWords = orgTime.formatCivil(since);
-  const backlog = { ...bl, sinceWords, source: { key: "unthanked", params: { since } }, definition: TB.SENTENCE,
-    sentence: bl.n !== rows.length || bl.drafted !== rows.length ? TB.backlogWords(bl, sinceWords) : null };
+  // ONE-MOVE-1 item 3: the window the sentence names is the list's window. A draft for a gift dated
+  // before it (a gift typed in late) is still listed, and said as such, never counted as inside it.
+  const before = rows.filter(r => r.gift_date && String(r.gift_date).slice(0, 10) < String(since).slice(0, 10)).length;
+  const inside = rows.length - before;
+  const beforeWords = before ? ` ${before.toLocaleString("en-US")} more ${before === 1 ? "draft is" : "drafts are"} for ${before === 1 ? "a gift" : "gifts"} dated before ${sinceWords}.` : "";
+  const backlog = { ...bl, sinceWords, inside, before, source: { key: "unthanked", params: { since } }, definition: TB.SENTENCE,
+    sentence: bl.n !== inside || bl.drafted !== bl.n || before ? TB.backlogWords(bl, sinceWords) + beforeWords : null };
   res.json({
     count: rows.length,
     backlog,
@@ -114,13 +119,17 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
   const intId = newId("int");
   // COMMS-3: what the gift said before, so Undo puts back only what this changed (thankYouUnsend.js).
   const [prevGift] = await query("SELECT acknowledgement_sent, acknowledgement_sent_at, thanked_at FROM gifts WHERE id=? AND org_id=?", [d.gift_id, orgId]);   // ACK-READ-OK: kept only so Undo can put the mark back exactly as it was
+  // ONE-MOVE-1: a draft for one day's gifts thanks every one; Undo puts each back (previousGifts)
+  const dayIds = require("./draftGifts").giftIdsOf(d);
+  const previousGifts = Object.fromEntries((await query("SELECT id, acknowledgement_sent, acknowledgement_sent_at, thanked_at FROM gifts WHERE id = ANY(?) AND org_id=?", [dayIds, orgId]))   // ACK-READ-OK: kept only so Undo can put each mark back
+    .map(g => [g.id, { acknowledgement_sent: g.acknowledgement_sent, acknowledgement_sent_at: g.acknowledgement_sent_at, thanked_at: g.thanked_at }]));   // ACK-READ-OK: kept only so Undo can put each mark back
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorName, d.gift_id,
-     JSON.stringify({ via: "thank_you_queue", draftId: d.id, previousGift: prevGift || null })]);
+     JSON.stringify({ via: "thank_you_queue", draftId: d.id, previousGift: prevGift || null, previousGifts })]);
   await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
-  await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
+  await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id = ANY(?) AND org_id=?", [dayIds, orgId]);
   // The thread cycle: a thank-you thread this closes closes as an OUTCOME.
   const closed = await query(
     `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
@@ -163,13 +172,13 @@ app.post("/thank-yous/mark-all-sent", requireAuth, checkWriteAccess, wrap(async 
   const actorNameAll = (meAll && meAll.name) || act.name;
   let marked = 0;
   for (const d of open) {
-    const [full] = await query("SELECT donor_id, gift_id FROM thank_you_drafts WHERE id=?", [d.id]);
+    const [full] = await query("SELECT donor_id, gift_id, also_gift_ids FROM thank_you_drafts WHERE id=?", [d.id]);
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [newId("int"), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorNameAll,
        full.gift_id, JSON.stringify({ via: "thank_you_queue_all", draftId: d.id })]);
-    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [full.gift_id, orgId]);
+    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id = ANY(?) AND org_id=?", [require("./draftGifts").giftIdsOf(full), orgId]);   // ONE-MOVE-1: the day's gifts
     marked++;
   }
   await run("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND sent_at IS NULL AND skipped_at IS NULL", [orgId]);
@@ -374,7 +383,7 @@ app.post("/acknowledgments/mark", requireAuth, checkWriteAccess, wrap(async (req
       WHERE org_id=? AND id = ANY(?) RETURNING id`, [actor(req).id, who, via, req.user.orgId, ids]);
   // The drafted thank-you (88b) for these gifts is done too; leaving it in the
   // queue would ask her to thank somebody twice.
-  await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [req.user.orgId, ids]).catch(() => {});
+  await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND (gift_id = ANY(?) OR also_gift_ids && ?::text[]) AND sent_at IS NULL AND skipped_at IS NULL", [req.user.orgId, ids, ids]).catch(() => {});
   res.json({ marked: rows.length });
 }));
 
