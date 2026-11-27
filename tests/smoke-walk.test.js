@@ -1599,6 +1599,7 @@ async function donorScreensSayNothingWrong(browser) {
       // that is the product working. Anything else has genuinely lost its
       // way into the app and is a failure.
       if (HIDDEN_FOR_CRM.has(id)) { console.log(`  SKIP  tab ${id} — hidden from the CRM for this org (tabRegistry CRM_HIDDEN_TABS)`); continue; }
+      if (await require("./lib/offRailTab").openOffRail(id, { page, APP, look, ok })) continue;   // NAV-2: off the rail, opened by its address
       ok(`tab ${id} — reachable from the nav`, false, "no nav button whose label is " + label);
       continue;
     }

@@ -6,15 +6,18 @@
 // (Jonathan, for any org, POST /admin/orgs/:id/menu). The caller passes `load`
 // and `save`; everything else is the same.
 //
-// The sidebar: every entry, Show / Hide and moved within its group (drag, or
-// the arrows). Every entry starts on for every org (Jonathan, 10 Nov), and
-// each org hides what it doesn't use. Hiding is the menu only: every link and
-// route still works and nothing is deleted. Each person can still hide more
-// for themselves (the sidebar's own Customize).
+// The sidebar, in two parts (NAV-2, 27 Nov): what is on it, each entry with
+// Take off and moved within its group (drag, or the arrows), and everything
+// else, each with its icon, one sentence and Add. Every entry starts on except
+// Auctions, Peer-to-peer, Memberships and Major Gifts (navGroups.js
+// DEFAULT_OFF), which an org adds when it uses them. Taking an entry off is
+// the menu only: every link and route still works and nothing is deleted.
+// Each person can still take more off for themselves (the sidebar's Customize).
 import { useEffect, useState } from "react";
 import { T } from "../shared";
 import { apiFetch } from "../../api";
 import { NavLayoutList } from "../CustomizeNav";
+import { NavAddList } from "../NavAddList";
 import { orgNavLayout, flattenNav, moveNavItem, setNavVisible } from "../../lib/navGroups";
 import { TABS, CRM_HIDDEN_TABS } from "../../lib/tabRegistry";
 import { MG_VIEWS } from "../../lib/majorGiftsTab";
@@ -48,18 +51,24 @@ export function OrgMenuCard({ load, save, canEdit = true, who = "Everyone in you
   return (
     <div style={box} data-testid="org-menu">
       <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Menu</div>
-      <p style={note}>{who} sees the sidebar this way. Hiding an entry takes it off the menu only: its pages and links still work,
-        and nothing is deleted. Each person can still hide more for themselves.</p>
-      <div style={{ opacity: canEdit ? 1 : 0.6, pointerEvents: canEdit ? "auto" : "none" }}>
-        <NavLayoutList groups={groups} labelOf={labelOf} testId="org-menu-list"
-          onMove={(gid, id, d) => write(moveNavItem(groups, gid, id, d))}
-          onToggle={(id, v) => write(setNavVisible(groups, id, v))} />
+      <p style={note}>{who} sees the sidebar this way. Taking an entry off is the menu only: its pages and links still work,
+        and nothing is deleted. Each person can still take more off for themselves.</p>
+      {/* NAV-2: the two parts side by side at desktop width, so Add is on the first screen; stacked on a phone */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "0 28px", alignItems: "start",
+        opacity: canEdit ? 1 : 0.6, pointerEvents: canEdit ? "auto" : "none" }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 6 }}>On your sidebar</div>
+          <NavLayoutList groups={groups} labelOf={labelOf} testId="org-menu-list"
+            onMove={(gid, id, d) => write(moveNavItem(groups, gid, id, d))}
+            onToggle={(id, v) => write(setNavVisible(groups, id, v))} />
+        </div>
+        <NavAddList groups={groups} labelOf={labelOf} testId="org-menu-add" onAdd={id => write(setNavVisible(groups, id, true))} />
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <button type="button" data-testid="org-menu-reset" disabled={!canEdit} onClick={() => put({ layout: null })}
           style={{ background: T.white, border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "8px 14px", color: T.ink2, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
           Back to the defaults</button>
-        <span style={{ fontSize: 12, color: T.ink3 }}>The defaults show every entry.</span>
+        <span style={{ fontSize: 12, color: T.ink3 }}>The defaults show every entry except Auctions, Peer-to-peer, Memberships and Major Gifts.</span>
       </div>
       {msg && <div role="status" data-testid="org-menu-msg" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>{msg}</div>}
     </div>
@@ -90,7 +99,7 @@ export function MajorGiftsTabsCard({ load, save, canEdit = true, announce = fals
             {top100 ? "On: Major Gifts has a Top 100 tab, and a profile shows the person's place on it."
               : "Off: no Top 100 tab, and no Top 100 on profiles or in Atlas. Major Gifts opens on Pipeline. Nobody on the list is removed."}</span></span>
       </label>
-      <p style={note}>Choose which tabs the Major Gifts page shows. With only one on, the page is just that view, with no tabs. The sidebar still says Major Gifts.</p>
+      <p style={note}>Choose which tabs the Major Gifts page shows. With only one on, the page is just that view, with no tabs. While Major Gifts is not on the sidebar (Settings → Menu), these views are in Fundraising → Major gifts.</p>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         {views.map(v => (
           <label key={v.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5, color: T.ink, minHeight: 36 }}>

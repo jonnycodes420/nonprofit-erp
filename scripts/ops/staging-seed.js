@@ -128,6 +128,8 @@ async function main() {
     const g = await api("POST", `/donors/${id}/gifts`, wt, { amount: 50 + i * 25, date: `2026-0${1 + (i % 9)}-15`, type: "one-time", payment_method: "check" });
     if (g.status !== 200 && g.status !== 201) throw new Error(`a gift for ${name} was not recorded (${g.status})`);
   }
+  // NAV-2: the walk org keeps all four entries that start off a new org's rail, so the fleet walks what it walked
+  await require("../../server/org/navTurnOn").turnOn(q, WALK, require("../../server/org/navTurnOn").NAV2_OFF);
   console.log(`[staging] ${WALK}: ${WALK_PEOPLE.length} people, one gift each, and the walk account ${WALK_EMAIL}`);
 
   // 3. the real-shaped fixtures, imported the way a person imports them

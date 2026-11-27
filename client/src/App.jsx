@@ -37,7 +37,7 @@ import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
 import { useMajorGiftsAccess } from "./lib/majorGiftsAccess";   // ASKS-1
-import { routeMajorGifts } from "./lib/majorGiftsTab";   // ASKS-1
+import { routeMajorGifts, mgInFundraising } from "./lib/majorGiftsTab";   // ASKS-1, NAV-2
 import { startPageReads } from "./lib/pageReads";   // PROFILE-SPEED-1
 const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
 // PERF-2: the app's typefaces. app.html writes their faces into its head
@@ -195,14 +195,21 @@ function AppShell() {
     // null means "never customized", which is also what a failure means: the
     // default rail, never a blank one. The rail is not held back until this
     // lands — a nav that is not there yet is worse than one that settles.
-    apiFetch("/me/nav-layout")
+    const readNav=()=>apiFetch("/me/nav-layout")
       .then(r=>{setNavSaved(Array.isArray(r?.layout)?r.layout:null);setNavOrg(r?.org||null);})
       .catch(()=>{});
+    readNav();
     // NAV-1 (menu): Settings → Menu / Major gifts saved; the rail follows without a reload
     const onOrgMenu=e=>setNavOrg(e.detail||null);
+    // NAV-2: an admin elsewhere added or took off an entry; this tab, back in view, reads the menu again
+    const onBack=()=>{if(document.visibilityState==="visible")readNav();};
     window.addEventListener("steward:org-menu",onOrgMenu);
-    return ()=>window.removeEventListener("steward:org-menu",onOrgMenu);
+    document.addEventListener("visibilitychange",onBack);
+    return ()=>{window.removeEventListener("steward:org-menu",onOrgMenu);document.removeEventListener("visibilitychange",onBack);};
   },[]);
+  // NAV-2: is Major Gifts on this person's rail? null until the menu is read. Off, it lives in Fundraising.
+  const mgOnRail=navOrg?personNavLayout(navSaved,navOrg.layout||null,{role:auth?.user?.role||null}).some(g=>g.items.some(i=>i.id==="majorgifts"&&i.visible)):null;
+  const mgPlace={onRail:mgOnRail,views:navOrg?.mgViews};
 
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
@@ -370,7 +377,7 @@ function AppShell() {
     // Plans: an old Fundraising link to any of them opens Major Gifts on it.
     // Somebody without the permission goes Home.
     const mgFrom=t;
-    ({tab:t,opts}=routeMajorGifts(t,opts,canMG));
+    ({tab:t,opts}=routeMajorGifts(t,opts,canMG,mgPlace));   // NAV-2: off the rail, Fundraising → Major gifts
     // an address that named the old place is replaced by the new one (Back does not return to it)
     if(how?.fromUrl&&t!==mgFrom)routerNavigate(tabHref(t,opts),{replace:true,state:{internal:true}});
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
@@ -386,7 +393,7 @@ function AppShell() {
     setTasksIntent((opts?.scope||opts?.view)&&t==="tasks"?{scope:opts.scope,view:opts.view}:null);
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode,unit:opts.unit,year:opts.year}:null);   // NUMBERS-8: LYBUNT's unit and year
-    setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
+    setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection,stageTop:!!opts?.stageTop}:null);
     setMgIntent(t==="majorgifts"?{view:opts?.subtab,scope:opts?.scope,stageTop:!!opts?.stageTop}:null);   // COMMS-3: Audience's "Set stages for your top 40"
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
     // open, rather than on a list somebody then has to find it in.
@@ -418,6 +425,13 @@ function AppShell() {
     routerNavigate(tabHref("dashboard"),{replace:true,state:{internal:true}});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,canMG]);
+  // NAV-2: /app/majorgifts while Major Gifts is off this person's rail (known once the menu is read, or
+  // taken off while open): the same view inside Fundraising, replacing the address.
+  useEffect(()=>{
+    if(tab!=="majorgifts"||canMG!==true||mgOnRail!==false)return;
+    navigateTo("majorgifts",{subtab:mgIntent?.view,scope:mgIntent?.scope,stageTop:mgIntent?.stageTop||undefined},{fromUrl:true});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab,canMG,mgOnRail]);
 
   // FIX-13 Part 6 — read the URL on load, on Back/Forward, and when a plain
   // <Link> anywhere in the app changes it. Pushes the app made itself are
@@ -431,7 +445,7 @@ function AppShell() {
     shownHref.current=here;
     if(r.legacy){
       // ASKS-1: the old Pipeline, Top 100, Portfolios and Plans addresses canonicalise to Major Gifts
-      const rr=routeMajorGifts(r.tab,r.opts,canMG);
+      const rr=routeMajorGifts(r.tab,r.opts,canMG,mgPlace);
       const canon=tabHref(rr.tab,rr.opts);
       routerNavigate(canon,{replace:true,state:{internal:true}});
     }
@@ -1086,7 +1100,7 @@ function AppShell() {
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="fundraising"&&<AtlasNote place="gifts" onNavigate={navigateTo}/>}
       {tab==="majorgifts"&&canMG===true&&<MajorGiftsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={mgIntent?.view} initialScope={mgIntent?.scope} stageTop={mgIntent?.stageTop} views={navOrg?.mgViews}/>}
-      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} hasP2p={navOrg?navOrg.hasP2p:undefined}/>}
+      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} hasP2p={navOrg?navOrg.hasP2p:undefined} mgViews={mgInFundraising(canMG,mgOnRail,navOrg?.mgViews)} mgStageTop={fundraisingIntent?.stageTop}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the
           Settings section is untouched, so both doors open the same thing. */}
