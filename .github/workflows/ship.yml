@@ -151,6 +151,7 @@ jobs:
         env:
           PROD_AI_SMOKE_WAIT_SHA: ${{ inputs.sha }}
           PROD_AI_SMOKE_WORKER: ${{ vars.RAILWAY_WORKER_SERVICE != '' && '1' || '' }}
+          PROD_AI_SMOKE_PASSWORD: ${{ secrets.PROD_AI_SMOKE_PASSWORD }}
         run: node .ship-tools/scripts/ci/prod-ai-smoke.js
 
       - name: Deploy prod's frontend

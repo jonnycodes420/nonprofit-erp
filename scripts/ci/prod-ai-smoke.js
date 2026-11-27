@@ -29,7 +29,10 @@
 //        PROD_AI_SMOKE_BACKEND=http://localhost:5601 node scripts/ci/prod-ai-smoke.js
 const BACKEND = (process.env.PROD_AI_SMOKE_BACKEND || process.env.STATUS_BACKEND_URL || "https://nonprofit-erp-production.up.railway.app").replace(/\/+$/, "");
 const EMAIL = process.env.PROD_AI_SMOKE_EMAIL || "director@harborlight.demo";
-const PASSWORD = process.env.PROD_AI_SMOKE_PASSWORD || "demo-harbor-2026";
+// SECURE-DEMO: no fallback. The repo is public, so the prod demo password is a
+// GitHub secret (PROD_AI_SMOKE_PASSWORD) in CI and DEMO_ADMIN_PASSWORD under
+// `railway run`, checked in runAiSmoke before any call.
+const PASSWORD = process.env.PROD_AI_SMOKE_PASSWORD || process.env.DEMO_ADMIN_PASSWORD || "";
 // A question no template reads, so the model's query plan must answer it
 // (planSource "query"; a template answer would prove nothing about the
 // model), and an instruction that exercises the find (filter_spec, the FIX-29
@@ -80,6 +83,7 @@ const askPasses = (a) => a.status === 200 && a.body.answered === true && a.body.
 
 async function runAiSmoke({ backend = BACKEND, email = EMAIL, password = PASSWORD, retryMs = 15000 } = {}) {
   const lines = [];
+  if (!password) return { ok: false, unset: true, lines: ["the demo password is not set (PROD_AI_SMOKE_PASSWORD, or DEMO_ADMIN_PASSWORD under railway run)"] };
   const login = await post(`${backend}/auth/login`, null, { email, password }, 20000);
   if (!login.body || !login.body.token) return { ok: false, lines: [`sign-in to the demo failed (HTTP ${login.status})`] };
   const tok = login.body.token;

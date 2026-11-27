@@ -254,7 +254,7 @@ if (require.main === module) (async () => {
   let aiOk = null, aiDetail = "";
   if (process.env.STATUS_SKIP_SMOKE === "1" || process.env.STATUS_SKIP_AI === "1") aiDetail = "skipped";
   else if (backendSha) {
-    try { const r = await require("./prod-ai-smoke").runAiSmoke({ backend: BACKEND }); aiOk = r.ok; aiDetail = r.lines.join(" · "); }
+    try { const r = await require("./prod-ai-smoke").runAiSmoke({ backend: BACKEND }); aiOk = r.unset ? null : r.ok; aiDetail = (r.unset ? "skipped: " : "") + r.lines.join(" · "); }
     catch (e) { aiOk = false; aiDetail = `errored: ${e.message}`; }
   } else aiDetail = "backend unreachable, not run";
 
