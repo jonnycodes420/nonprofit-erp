@@ -18,7 +18,7 @@ async function n10Delete({ ok, api, q, freshOrg, surfaces, drainQueue }) {
   const ORG = "org_n10del";
   const tok = await freshOrg(ORG, "Numbers ten delete (test)");
   const one = async (sql, a) => (await q(sql, a))[0] || {};
-  const day = n => { const d = new Date(Date.now() + n * 864e5); return d.toISOString().slice(0, 10); };
+  const day = n => require("../clock").dayOffset(n);
   const j = await api("POST", "/journeys", tok, { name: "New donor, first year", trigger: "first_gift", enabled: true,
     steps: [{ type: "thank", label: "Call to say thank you", offsetDays: 2 }, { type: "send", label: "Send a handwritten note", offsetDays: 7 }] });
   const p = (await api("POST", "/donors", tok, { name: "Rufus Tallgrass", email: "rufus.tallgrass@numbers10.example" })).body || {};
