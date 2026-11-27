@@ -188,6 +188,10 @@ const GUARDED_WRITERS = [
   // LEDGER-3: gifts with no fund take the org's default fund; ledger rows take their gift's fund.
   // Dry run by default; --apply writes through writerDbUrl, one audit row per org. org_creo skipped.
   "ledger3-repair",
+  // HONEST-3: notes on open quiet-connection tasks whether anyone is emailed; with --prefs, turns
+  // connection alerts on for each org's first admin. Dry run by default; --apply writes through
+  // writerDbUrl, one audit row per org. org_creo skipped.
+  "honest3-connection-alerts",
   // FLOWS-16: rewrites Atlas proposal lines that said "Saved 0 things." to "Nothing was saved.". Dry run by
   // default; --apply writes through writerDbUrl, one audit row per org. org_creo skipped.
   "flows16-saved-zero",

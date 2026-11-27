@@ -210,7 +210,7 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
                   ) : (
                     <div style={{ ...MAIN.big, cursor: "default", border: "1px solid " + T.bg2, background: T.bg, color: T.ink, flexWrap: "wrap" }}>
                       {primary ? ICON_MAIL : ICON_CAL}
-                      <span style={{ flexGrow: 1, fontWeight: 600 }}>{p.label}{p.calendarGranted ? " and calendar" : ""}<span style={{ display: "block", fontWeight: 400, fontSize: 13, color: T.ink3 }}>{p.paused ? "Paused" : "Connected"} as {p.address} · {syncedPhrase(p.health ? p.health.lastMailReadAt : p.lastSyncedAt)}{p.example ? " · an example" : ""}</span></span>
+                      <span style={{ flexGrow: 1, fontWeight: 600 }}>{p.label}{p.calendarGranted ? " and calendar" : ""}<span style={{ display: "block", fontWeight: 400, fontSize: 13, color: T.ink3 }}>{p.badge ? <span data-testid="inbox-badge" data-state={p.badge.state}>{p.badge.words}</span> : p.paused ? "Paused" : "Connected"} · {p.address} · {syncedPhrase(p.health ? p.health.lastMailReadAt : p.lastSyncedAt)}</span></span>
                       {!p.example && <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                         <button type="button" data-testid={`inbox-read-now-${p.key}`} onClick={() => act(p.key, `/mailbox/${p.key}/sync`, {}, "sync")} disabled={!!busy} style={quiet}>{busy === "sync:" + p.key ? "Reading…" : "Read now"}</button>
                         <button type="button" onClick={() => act(p.key, `/mailbox/${p.key}/pause`, { paused: !p.paused }, "pause")} disabled={!!busy} style={quiet}>{p.paused ? "Turn back on" : "Pause"}</button>

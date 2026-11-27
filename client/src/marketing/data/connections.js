@@ -5,4 +5,5 @@
 // Venmo and Toast, which Settings brings in as files, were missing. The list is now the server's
 // (GET /public/connections, server/connections/publicList.js), built from the registries Settings
 // reads, in Settings' three groups. The Connections page (pages/product.jsx) fetches it.
-export const GROUP_ORDER = ["connects", "files", "notYet"];
+// HONEST-3 item 3: the site lists what connects and what is imported from a file; nothing unavailable.
+export const GROUP_ORDER = ["connects", "files"];

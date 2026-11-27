@@ -447,7 +447,7 @@ app.get("/connections/:id/log", requireAuth, wrap(async (req, res) => {
   // directly" tile say "last successful check" from giving_sources.last_synced_at; this list read
   // only the runs in imports, so a check with no run row (a source synced before runs were kept,
   // or one seeded) showed "checked Nov 23" above "Steward has not checked this one yet".
-  require("../server/connections/history").withLastCheck(lines, s, C);
+  await require("../server/connections/history").withHistory(query, lines, s, C);   // HONEST-3: and the daily checks, with counts
   // The failure that is STILL standing goes at the top, because it is the one
   // thing on this screen somebody has to do something about.
   if (s.last_error) {
@@ -521,9 +521,10 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
        FROM giving_sources s
        LEFT JOIN fin_funds f ON f.id = s.default_fund_id AND f.org_id = s.org_id
       WHERE s.org_id = ? ORDER BY s.created_at ASC`, [req.user.orgId]);
+  const weekWhy = await require("../server/connections/weekWhy").weekWhys(query, req.user.orgId, rows);   // HONEST-3 item 3
   res.json({
     sources: rows.map(r => ({
-      id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider),
+      id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider), weekWhy: weekWhy[r.id] || null,
       displayName: r.display_name, status: r.status, connected: sourceIsConnected(r),
       defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
       sitsOnTopOf: r.sits_on_top_of || null,
@@ -1288,6 +1289,7 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
     delete r.draft_settings;
     if (r.page_kind === VP.KIND) {
       r.public_url = `/volunteer-page/${orgRow && orgRow.org_slug}/${r.slug}`;
+      r.short_url = r.published_at ? await require("../server/public/shortLinks").shortVolunteerUrl(query, req.user.orgId, r.slug) : null;   // HONEST-3 item 5
       for (const [k, key] of [["vol_views", "volpage-views"], ["vol_signups", "volpage-signups"], ["vol_shifts_filled", "volpage-shifts"]]) {
         r[k + "_source"] = { key, params: { vpage: r.id } };
         r[k] = (await FS.figureValue(req.user.orgId, r[k + "_source"])).value;

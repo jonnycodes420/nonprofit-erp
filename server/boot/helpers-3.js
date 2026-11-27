@@ -770,7 +770,7 @@ async function openGiftThread(orgId, donorId, { giftId, giftDate, actorId, actor
 // assigned to the given user or the org's first admin, linked to a person when
 // there is one. It writes the task and nothing else. Returns the new task id,
 // or null when one is already open or there is nobody to give it to.
-async function openAdminTask(orgId, { title, due = null, priority = "medium", donorId = null, assignee = null, actorId, actorName }) {
+async function openAdminTask(orgId, { title, due = null, priority = "medium", donorId = null, assignee = null, actorId, actorName, notes = null }) {
   const owner = assignee || (await query(
     `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC LIMIT 1`, [orgId]))[0];
   if (!owner) return null;
@@ -779,10 +779,10 @@ async function openAdminTask(orgId, { title, due = null, priority = "medium", do
   if (open) return null;
   const id = newId("t");
   await run(
-    `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,0,?,?,?,?,?)`,
+    `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,created_by,created_by_name,notes)
+     VALUES (?,?,?,?,?,?,0,?,?,?,?,?,?)`,
     [id, orgId, title, due || orgToday(await orgTz(orgId)), priority, donorId ? "donor" : "admin", donorId,   // ORG_TZ_SEAM_OK
-     owner.id, owner.name || owner.email || "", actorId, actorName || "Steward (automatic)"]);
+     owner.id, owner.name || owner.email || "", actorId, actorName || "Steward (automatic)", notes]);
   return id;
 }
 // SPLIT-2 end

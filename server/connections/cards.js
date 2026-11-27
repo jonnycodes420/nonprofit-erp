@@ -89,6 +89,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
       // appended by the provider loop below.
       parts: [{ key: "pages", label: "Take gifts on your giving pages" }],
       canDisconnect: false,
+      credentialHeld: !!(org && org.stripe_account_id),   // HONEST-3
       lastSyncedAt: null, liveSentence: "Stripe pays Steward the moment a gift is taken; there is nothing to check on a schedule.",
       gifts30: b.gifts30, dollars30Cents: b.cents30, lastGiftDate: b.last,
       figureSource: { key: "connection-gifts", params: { connection: "own_stripe" } },
@@ -148,6 +149,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
         ? "A file somebody drops in. Steward reads the file; it never reaches the provider."
         : "Steward reads it on a schedule. It never writes to it.",
       connected, canDisconnect: !!s,
+      credentialHeld: s ? !!s.credentials_sealed : null,   // HONEST-3: a badge says Connected only with a sign-in held
       // FIX-9 Part A.4 — NO CARD OFFERS AN ACTION IT CANNOT DO. A file-mode
       // provider has no API to connect to, and its own card said so and then
       // offered a Connect button underneath. The verb matches the mode.
@@ -220,7 +222,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
   {
     const BK = await import("../../shared/bookkeeping.js");
     const books = await query(
-      `SELECT id, vendor, status, last_sent_at, last_error, mapping, realm_id FROM bookkeeping_connections
+      `SELECT id, vendor, status, last_sent_at, last_error, mapping, realm_id, (credentials_sealed IS NOT NULL) AS cred FROM bookkeeping_connections
         WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
     const byVendor = new Map(books.map(b => [b.vendor, b]));
     // PARITY-2 Part 5: QuickBooks is offered only where the founder turned
@@ -275,7 +277,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
           id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key, sends: false,
           label: BK.VENDORS[key].label,
           subtitle: BK.VENDORS[key].notSendingSentence,
-          connected: !!b, canDisconnect: !!b,
+          connected: !!b, canDisconnect: !!b, credentialHeld: b ? b.cred === true : null,
           action: b ? null : "connect", actionLabel: b ? null : "Connect",
           oauthProvider: OAUTH_BY_VENDOR[key] || null,
           lastSentAt: null, lastSyncedAt: null,
@@ -292,7 +294,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
         subtitle: QSm ? QSm.sendsSentence(qMap)
           : key === "xero" ? "Steward sends one bank transaction per gift when you press Sync. It never sends the same gift twice."
           : "Steward sends one deposit per payout. It never sends the same payout twice.",
-        connected: !!b, canDisconnect: !!b,
+        connected: !!b, canDisconnect: !!b, credentialHeld: b ? b.cred === true : null,
         action: b ? null : "connect", actionLabel: b ? null : "Connect",
         oauthProvider: OAUTH_BY_VENDOR[key] || null,
         lastSentAt: lastSent,
@@ -367,7 +369,7 @@ async function buildConnectionCards({ query, orgTz, orgToday, orgTime }, orgId) 
         id: "email:" + key, kind: "email_marketing", provider: key, label: p.label,
         money: false,
         subtitle: "Your own newsletter tool. Steward reads who opened, who clicked and who asked to stop. It adds people to your list only if you turn that on, and it never sends the email.",
-        connected, canDisconnect: connected,
+        connected, canDisconnect: connected, credentialHeld: row ? !!row.credentials_sealed : null,
         action: connected ? null : "connect", actionLabel: connected ? null : "Connect",
         oauthProvider: p.oauthKey,
         lastSyncedAt: row?.last_synced_at || null,

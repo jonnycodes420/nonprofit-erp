@@ -20,4 +20,19 @@ function withLastCheck(lines, source, C) {
   return lines;
 }
 
-module.exports = { withLastCheck };
+// HONEST-3 item 3 (W-1126-Integrations-05): "PayPal history keeps no counts". Each daily check now
+// keeps what it read (server/connections/checks.js), and the history lists those runs with their
+// counts beside the sync's own runs, newest first. The "not kept" line above stays only for a stamp
+// no run of either kind explains (a source the seed wrote, a sync from before runs were kept).
+async function withHistory(query, lines, source, C) {
+  const CK = require("./checks");
+  const by = await CK.recentChecks(query, source.org_id, 50);
+  for (const chk of by[source.id] || []) {
+    lines.push({ id: "check:" + chk.at, at: chk.at.slice(0, 10), atInstant: chk.at, ok: chk.ok, counts: chk.counts,
+      sentence: `Daily check: ${chk.sentence}.`, skipped: [], skippedRows: [], notices: [] });
+  }
+  lines.sort((a, b) => (Date.parse(b.atInstant || b.at) || 0) - (Date.parse(a.atInstant || a.at) || 0));
+  return withLastCheck(lines, source, C);
+}
+
+module.exports = { withLastCheck, withHistory };

@@ -30,7 +30,7 @@ export function PageNotOpen({ base, notOpen, brand, sentence }) {
       {notOpen && brand && <OrgBrandHeader logo={brand.logo} name={brand.name} />}
       {/* HONEST-2 item 2: whose page it is, what they do, and that it opens soon (never a bare notice). */}
       {notOpen && brand && brand.mission && <div data-testid="give-not-open-mission" style={{ fontSize: 14, color: T.ink2, lineHeight: 1.55, maxWidth: 520, margin: "0 auto 14px" }}>{brand.mission}</div>}
-      <div data-testid="give-not-open" style={{ fontSize: 16, fontWeight: 700, color: notOpen ? T.ink : T.terra700, marginBottom: 8 }}>{notOpen === "paused" ? "Not taking gifts" : notOpen ? (brand && brand.opensSoon) || "Opens soon" : "Page not found"}</div>
+      <div data-testid="give-not-open" style={{ fontSize: 16, fontWeight: 700, color: notOpen ? T.ink : T.terra700, marginBottom: 8 }}>{notOpen === "paused" ? "Not taking gifts" : notOpen ? (brand && (brand.heading || brand.opensSoon)) || "This page isn't published yet" : "Page not found"}</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{sentence}</div>
     </div>
   );

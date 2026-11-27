@@ -1298,7 +1298,8 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
           const goal = linked ? (p.campaign_goal != null ? parseFloat(p.campaign_goal) : null) : (p.goal_amount != null ? parseFloat(p.goal_amount) : null);
           const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : null;
           const isVol = p.page_kind === "volunteer";
-          const url = isVol ? (p.public_url ? `${window.location.origin}${p.public_url}` : "")
+          // HONEST-3 item 5: a volunteer page shares its short link (/volunteer/<org>) when that is the page it opens.
+          const url = isVol ? (p.short_url ? `${window.location.origin}${p.short_url}` : p.public_url ? `${window.location.origin}${p.public_url}` : "")
             : p.public_url ? `${window.location.origin}${p.public_url}`
             : (orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "");
           // VOL-PAGE-1 — a volunteer page sits in the same list, and its three
@@ -1325,7 +1326,7 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                 ))}
               </div>
               <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} live={!!p.published_at} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
-              {shareId === p.id && url && <SharePanel url={url} embedUrl={url + "?embed=1"} filenameBase={`volunteer-page-${p.slug}`} />}
+              {shareId === p.id && url && <SharePanel url={url} embedUrl={(p.public_url ? `${window.location.origin}${p.public_url}` : url) + "?embed=1"} filenameBase={`volunteer-page-${p.slug}`} />}
             </div>
           );
           // GIVE-EDIT-1 — a giving page shows how it is doing the way the

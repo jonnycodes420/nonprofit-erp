@@ -128,8 +128,9 @@ async function run({ ok, login, api, q }) {
   const missing = [...names(wants)].filter(n => !names(given).has(n));
   ok("§3 every name routes/jobs.js reads is handed to it by its mount (the sweep included)",
     names(wants).has("sweepQuietConnections") && missing.length === 0, missing);
-  ok("§3 the sweep is scheduled, for live orgs, with no email",
-    /every\("sweepQuietConnections"[^\n]*sweepQuietConnections\(\{ live: true, notify: false \}\)/.test(src("routes/jobs.js")));
+  // HONEST-3 item 2: and it emails, gated by the admin's "A connection stops working" and the org's staff email.
+  ok("§3 the sweep is scheduled, for live orgs, emailing only through notifyUserOnce's gates",
+    /every\("sweepQuietConnections"[^\n]*sweepQuietConnections\(\{ live: true, notify: true \}\)/.test(src("routes/jobs.js")));
 
   // ── §4 · History reads the status's own check ─────────────────────────────
   const log = await api("GET", "/connections/gs_hon_gb/log", tok);

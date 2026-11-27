@@ -46,19 +46,33 @@ async function oauthReadiness() {
   return out;
 }
 
-async function connectionsFor(deps, orgId) {
+// HONEST-3 item 1: every card also carries `reasons` (what stops it working today), `checks` (the
+// daily check's last three runs with their counts) and `badge`, from server/connections/checks.js.
+// The Settings card, the panel, the tiles and FlowWord all draw the badge; none decides one.
+// `skipChecks` is the daily check itself, which reads the cards before it writes a run.
+async function connectionsFor(deps, orgId, { now = null, skipChecks = false } = {}) {
+  const CK = require("./checks");
   const body = await buildConnectionCards(deps, orgId);
   const today = deps.orgToday(await deps.orgTz(orgId));                // ORG_TZ_SEAM_OK
   const ready = await oauthReadiness();
   const needsQbo = body.cards.some(c => c.kind === "bookkeeping" && c.provider === "quickbooks" && c.connected);
   const qbo = needsQbo ? await qboFacts(deps.query, orgId) : null;
-  const [org] = await deps.query("SELECT org_kind FROM orgs WHERE id=?", [orgId]);
+  const [org] = await deps.query("SELECT org_kind, qbo_auto_sync FROM orgs WHERE id=?", [orgId]);
   const demo = require("../../orgKind").isDemoOrg(org);   // HONEST-2 item 1: a demo's connections are examples
+  const checks = skipChecks ? {} : await CK.recentChecks(deps.query, orgId);
   for (const card of body.cards) {
-    card.flow = flowOf(card, { today, qbo, demo, oauthReady: card.oauthProvider ? ready[card.oauthProvider] !== false : null });
+    const oauthReady = card.oauthProvider ? ready[card.oauthProvider] !== false : null;
+    card.flow = flowOf(card, { today, qbo, demo, oauthReady });
+    const isQbo = card.kind === "bookkeeping" && card.provider === "quickbooks";
+    card.reasons = CK.reasonsOf(card, { demo, oauthReady, now, qbo: isQbo ? qbo : null, qboAutoSync: isQbo ? org && org.qbo_auto_sync === true : null });
+    if (isQbo && skipChecks) Object.defineProperty(card, "_qbo", { value: qbo, enumerable: false });
+    card.checks = checks[card.id] || [];
+    card.badge = CK.badgeOf(card, { reasons: card.reasons, checks: card.checks, now });
   }
   const sum = summarize(body.cards);
-  return { ...body, flowCounts: sum.counts, flowSentence: sum.sentence };
+  // HONEST-3 item 2: when a connection needs someone, whether anyone will be emailed about it.
+  const alertReach = sum.counts.needs_you && !skipChecks ? await require("./alertReach").alertReach(deps.query, orgId) : null;
+  return { ...body, flowCounts: sum.counts, flowSentence: sum.sentence, alertReach };
 }
 
 module.exports = { connectionsFor, qboFacts, oauthReadiness };
