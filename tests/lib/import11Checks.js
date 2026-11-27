@@ -130,6 +130,10 @@ async function import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drain
   const refund = await api("POST", `/gifts/${ids[1]}/refund`, tok, { amount: "1234.56", reason: "test" });
   ok("§I11.5 a typed scheduled gift gets no draft, and a scheduled gift refuses a refund until its date",
     typed.status === 201 && tDraft.n === 0 && refund.status === 409 && refund.body.error === "scheduled", JSON.stringify([typed.status, tDraft, refund.status, refund.body]));
+  const fran = (await one("SELECT donor_id FROM gifts WHERE id=$1", [ids[1]])).donor_id;
+  const rail = (await api("GET", `/donors/${fran}/rail`, tok)).body || {};
+  ok("§I11.5 the profile's rail lists no thank-you for a gift that has not come in", Array.isArray(rail.thankYous) && !rail.thankYous.some(t => ids.includes(t.giftId)),
+    JSON.stringify(rail.thankYous));
   const SC = require("../../shared/numbers/scheduled");
   const line = await SC.scheduledLine((sql, args) => q(sql.replace(/\?/g, (() => { let i = 0; return () => `$${++i}`; })()), args), ORG);
   ok(`§I11.5 the Giving summary says the real dates ("from ${soon} … to Jan 1, 2031"), never "the next Jan 1"`,

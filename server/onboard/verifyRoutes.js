@@ -53,7 +53,10 @@ function mount(ctx) {
     const side = V.lines({ file: fileFacts, held: sheet ? { ...held, people: held.peopleAll } : held });
     // The file's total is MONEY-4's one footing (the receipt and the Imports list read it too).
     const fileCentsOne = sheet ? require("../imports/footing").importFooting(r, summary).dollars.fileCents : null;
-    const money = sheet ? V.moneyFootingFromGaps({ fileCents: fileCentsOne != null ? fileCentsOne : vf.fileCents, gaps: vf.gaps, heldCents: held.cents })
+    // IMPORT-11: gifts dated after today are in the file and not yet In Steward's money: their own line, never "not explained"
+    const schedGap = held.scheduled && held.scheduled.rows ? [{ bucket: "scheduled", reason: "scheduled", rows: held.scheduled.rows, cents: held.scheduled.cents, lines: held.scheduled.lines,
+      words: "dated after today, so they count on their dates, not yet" }] : [];
+    const money = sheet ? V.moneyFootingFromGaps({ fileCents: fileCentsOne != null ? fileCentsOne : vf.fileCents, gaps: [...(vf.gaps || []), ...schedGap], heldCents: held.cents })
       : V.moneyFooting({ reconciliation: summary.reconciliation, refusedRows: summary.refusedRows || [], heldCents: held.cents });
     const spotKeys = (vf.spot || []).map(s => s.key).filter(Boolean);
     const heldByKey = sheet ? await ST.heldForIds(query, req.user.orgId, r.id, spotKeys, { LIFETIME, GIFT_COUNT, LAST_DATE })
