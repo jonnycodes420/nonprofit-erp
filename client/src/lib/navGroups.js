@@ -73,29 +73,8 @@ export const ALL_NAV_IDS = NAV_GROUPS.flatMap(g => g.items);
 // Only the ORG's layer starts them off; a person follows the org.
 export const DEFAULT_OFF = new Set(["auctions", "p2p", "memberships", "majorgifts"]);
 
-// One plain sentence for each entry: what it is for. The menu editors show it
-// beside an entry that is not on the sidebar, with its Add button.
-export const NAV_PURPOSE = {
-  dashboard: "Where every day starts: who to thank, call or ask next.",
-  tasks: "Your to-do list, and what is due for each person.",
-  calendar: "Everything with a date: events, deadlines and tasks.",
-  donors: "Every person and organization you know, and their giving.",
-  groups: "Lists of people you keep together, like a board or a committee.",
-  journeys: "Steps that follow up with people over time, each one yours to send.",
-  communications: "Letters, emails and thank-yous: drafts and what went out.",
-  portal: "The page your donors sign in to.",
-  fundraising: "Campaigns, giving pages, pledges and money coming in.",
-  majorgifts: "Big asks: the pipeline, portfolios and plans for each prospect.",
-  events: "Galas, tickets, sponsors and who came.",
-  auctions: "Auction items, bids and what each item raised.",
-  p2p: "Supporters raising money for you on their own pages.",
-  memberships: "Membership levels, members and renewals.",
-  grants: "Funders, deadlines, reports and restricted money.",
-  volunteers: "Volunteers, their shifts and their hours.",
-  finance: "The ledger, deposits and funds.",
-  reports: "Every report and dashboard, and the board report.",
-  settings: "Your organization, people, connections and this menu.",
-};
+// The sentence for each entry (Add to your sidebar) is lib/navPurpose.js: only the editors read it,
+// so it stays out of Home's first download (perf-app).
 
 // NAV-1 (menu, 10 Nov) · THE ORG'S LAYOUT, merged the same way a person's is:
 // its order within each group, and what it shows. NAV-2: an entry the org's

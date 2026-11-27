@@ -9,7 +9,7 @@
   (`orgNavLayout` passes it to `navLayout`); a person follows the org. An org that saved a layout
   before NAV-2 named every entry, so it keeps everything it had.
 - **Add to your sidebar.** Both editors (Settings → Menu, the sidebar's Customize) list what is on the
-  sidebar (Take off, move) and everything else with its icon, a sentence (`NAV_PURPOSE`) and Add
+  sidebar (Take off, move) and everything else with its icon, a sentence (`lib/navPurpose.js`, kept out of the first download) and Add
   (`client/src/components/NavAddList.jsx`). In Settings the two parts sit side by side, so Add is on
   the first screen. Other people's tabs pick up a change when they come back into view (App.jsx reads
   `/me/nav-layout` again on `visibilitychange`); the admin's own rail follows at once, as before.

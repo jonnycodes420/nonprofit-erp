@@ -478,7 +478,7 @@ are off an org's rail until the org adds them (`DEFAULT_OFF` in `client/src/lib/
 list). The merge rule for the ORG's layer: an entry its saved layout does not name is on, except
 `DEFAULT_OFF`, which is on only once the saved layout names it visible; a person follows the org.
 Settings → Menu and the person's Customize have two parts: what is on the sidebar (Take off, move)
-and **Add to your sidebar** (every other entry, its icon, one sentence from `NAV_PURPOSE`, Add); any
+and **Add to your sidebar** (every other entry, its icon, one sentence from `lib/navPurpose.js`, Add); any
 entry but Home and Settings can go either way. **Major Gifts off a person's rail lives inside
 Fundraising → Major gifts** (At a glance, Proposals, then the views the org shows), for people with
 the permission; `routeMajorGifts(tab, opts, can, { onRail, views })` sends every old link there, and

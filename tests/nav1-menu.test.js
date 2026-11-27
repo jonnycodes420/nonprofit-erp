@@ -296,7 +296,8 @@ const call = async (tok, method, p, body) => {
   ok("§9 a person follows the org: off until the org adds it", !shownIds(N.personNavLayout(personOld, null)).includes("auctions"));
   ok("§9 …and on once it does, unless they took it off", shownIds(N.personNavLayout(personOld, savedOn)).includes("auctions")
     && !shownIds(N.personNavLayout(personOld.map(r => r.id === "auctions" ? { ...r, visible: false } : r), savedOn)).includes("auctions"));
-  ok("§9 every entry has its sentence for Add to your sidebar", N.ALL_NAV_IDS.every(i => typeof N.NAV_PURPOSE[i] === "string" && N.NAV_PURPOSE[i].length > 10));
+  const NP = (await esm("client/src/lib/navPurpose.js")).NAV_PURPOSE;
+  ok("§9 every entry has its sentence for Add to your sidebar", N.ALL_NAV_IDS.every(i => typeof NP[i] === "string" && NP[i].length > 10));
   // Major Gifts placement
   const off = { onRail: false, views: ["portfolios", "pipeline", "plans"] };
   const r1 = MG.routeMajorGifts("majorgifts", { subtab: "pipeline", scope: "mine" }, true, off);

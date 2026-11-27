@@ -1,14 +1,15 @@
 // NAV-2 (27 Nov) · ADD TO YOUR SIDEBAR. The second part of both menu editors
 // (Settings → Menu for the org, the sidebar's own Customize for a person):
 // every entry that is not on the sidebar, with its icon, one plain sentence of
-// what it is for (lib/navGroups.js NAV_PURPOSE) and an Add button. The first
+// what it is for (lib/navPurpose.js) and an Add button. The first
 // part, what is on it, is CustomizeNav.jsx's NavLayoutList.
 //
 // `groups` is the same merged layout the first part reads; this lists its
 // entries that are off. Home and Settings are never off, so never here.
 import { T } from "./shared";
 import { NavIcon } from "./NavIcon";
-import { NAV_PURPOSE, NEVER_HIDDEN } from "../lib/navGroups";
+import { NEVER_HIDDEN } from "../lib/navGroups";
+import { NAV_PURPOSE } from "../lib/navPurpose";
 
 export function NavAddList({ groups, labelOf, onAdd, testId = "nav-add-list", empty }) {
   const off = (groups || []).flatMap(g => g.items.filter(i => !i.visible && !NEVER_HIDDEN.has(i.id)));
