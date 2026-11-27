@@ -48,6 +48,10 @@ export function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
     }catch(e){ setTz(prev); setErr(errorMessage(e, "Could not save the timezone.")); }
     setSaving(false);
   }
+  // Why the list can't be changed right now, in words; null when it can.
+  const lockedReason=!isAdmin?"Only an admin can change the time zone. Ask an admin on your team."
+    :isReadOnly?"Your account is read-only, so the time zone can't change until the subscription is active again (Settings, Billing)."
+    :tz===null?"Reading your time zone…":saving?"Saving…":null;
   const today=(()=>{ try{ return tz? new Intl.DateTimeFormat("en-US",{timeZone:tz,weekday:"long",month:"long",day:"numeric"}).format(new Date()):""; }catch{ return ""; } })();
   return(
     <div ref={cardRef} id="settings-timezone"
@@ -77,7 +81,8 @@ export function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
         {savedAt>0&&<span style={{fontSize:12,color:T.green||T.greenDk}}>Saved</span>}
       </div>
       {err&&<div style={{fontSize:12,color:T.terracotta,marginTop:8}}>{err}</div>}
-      {!isAdmin&&<div style={{fontSize:12,color:T.ink3,marginTop:8}}>Only an admin can change this.</div>}
+      {/* POLISH-15 item 4 (W-1127-Settings-02): a locked list always says why, beside it. */}
+      {lockedReason&&<div data-testid="tz-locked-reason" style={{fontSize:12,color:T.ink3,marginTop:8}}>{lockedReason}</div>}
       {!confirmed&&<div data-testid="tz-unconfirmed" style={{fontSize:12,color:T.ink3,marginTop:8}}>Nobody has chosen this yet; it is Steward&rsquo;s default. Sequences and timed reminders wait until somebody here does.</div>}
     </div>
   );

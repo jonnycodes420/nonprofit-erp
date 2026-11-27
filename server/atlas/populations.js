@@ -108,6 +108,9 @@ function countDefinition(ask) {
   if (!v.definition) return null;
   const label = String(v.label || "").split(" · ")[0].trim();
   const d = String(v.definition).trim();
+  // POLISH-15: a definition that already starts with its label ("People. Counted from…") is said once,
+  // never "People: people. Counted from…".
+  if (label && d.toLowerCase().startsWith(label.toLowerCase())) return /[.!?]$/.test(d) ? d : d + ".";
   return label ? `${label}: ${d.charAt(0).toLowerCase()}${d.slice(1)}${/[.!?]$/.test(d) ? "" : "."}` : d;
 }
 

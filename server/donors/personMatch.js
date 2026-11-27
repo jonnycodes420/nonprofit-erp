@@ -35,13 +35,34 @@ function foldedPattern(q) {
   return "%" + fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%";
 }
 
+// POLISH-15 item 1 (prod check, 27 Nov: "Fenwick Ravensmere did not surface
+// by full name or surname"). The whole phrase was matched as one string, so
+// "ravensmere f" or "Ravensmere Fenwick" found nobody. Now a name also matches
+// when EVERY word typed starts a word of the name, in any order. The name's
+// words are its folded letters and digits, split on anything else, so
+// "Smith-Jones" has the words "smith" and "jones".
+const NAME_WORDS = col => `(' ' || regexp_replace(${FOLD(col)}, '[^a-z0-9]+', ' ', 'g'))`;
+// One argument: the typed words as a text[] (LIKE wildcards escaped). An empty
+// list matches nothing (bool_and over no rows is NULL).
+const NAME_WORDS_MATCH = `COALESCE((SELECT bool_and(${NAME_WORDS("donors.name")} LIKE '% ' || pmw.w || '%' ESCAPE '\\')
+       FROM unnest(?::text[]) pmw(w)), false)`;
+// The typed words, folded and escaped, from what somebody typed.
+function nameWordsOf(q) {
+  return fold(String(q || "")).split(/[^a-z0-9]+/).filter(Boolean).map(w => w.replace(/[\\%_]/g, ch => "\\" + ch));
+}
+// The same words from a foldedPattern(...) (what every caller already holds).
+function wordsOfPattern(p) {
+  const raw = String(p || "").replace(/^%|%$/g, "").replace(/\\(.)/g, "$1");
+  return nameWordsOf(raw);
+}
+
 // The condition over an unaliased `donors` row. `p` is foldedPattern(...).
 // Phone digits are matched by the callers, which already do it their way.
 // REDTEAM-2: the text is a constant (it never depends on what was typed);
-// only the seven arguments do. A caller composing SQL uses PERSON_MATCH_SQL.
+// only the eight arguments do. A caller composing SQL uses PERSON_MATCH_SQL.
 const PERSON_MATCH_SQL = (() => {
   const E = "ESCAPE '\\'";
-  return `(${FOLD("donors.name")} LIKE ? ${E} OR ${FOLD("donors.email")} LIKE ? ${E}
+  return `(${FOLD("donors.name")} LIKE ? ${E} OR ${NAME_WORDS_MATCH} OR ${FOLD("donors.email")} LIKE ? ${E}
      OR ${FOLD("donors.contact_name")} LIKE ? ${E} OR ${FOLD("donors.employer")} LIKE ? ${E}
      OR lower(COALESCE(donors.phone,'')) LIKE ? ${E}
      OR EXISTS (SELECT 1 FROM households pmh WHERE pmh.org_id = donors.org_id AND pmh.id = donors.household_id AND ${FOLD("pmh.name")} LIKE ? ${E})
@@ -52,7 +73,7 @@ const PERSON_MATCH_SQL = (() => {
                    AND lower(COALESCE(pmo.kind,'')) IN ('organization','organisation') AND ${FOLD("pmo.name")} LIKE ? ${E}))`;
 })();
 function personMatchSql(p) {
-  return { sql: PERSON_MATCH_SQL, args: [p, p, p, p, p, p, p] };
+  return { sql: PERSON_MATCH_SQL, args: [p, wordsOfPattern(p), p, p, p, p, p, p] };
 }
 
 // WALKB-1 · A RESULT SAYS WHY IT MATCHED. A search for "Marlowe" found seven
@@ -64,7 +85,7 @@ function personMatchSql(p) {
 const PERSON_MATCH_REASON_SQL = (() => {   // REDTEAM-2: a constant, as PERSON_MATCH_SQL
   const E = "ESCAPE '\\'";
   return `(CASE
-      WHEN ${FOLD("donors.name")} LIKE ? ${E} THEN 'name'
+      WHEN ${FOLD("donors.name")} LIKE ? ${E} OR ${NAME_WORDS_MATCH} THEN 'name'
       WHEN ${FOLD("donors.email")} LIKE ? ${E} THEN 'email' || chr(9) || donors.email
       WHEN ${FOLD("donors.contact_name")} LIKE ? ${E} THEN 'contact' || chr(9) || donors.contact_name
       WHEN ${FOLD("donors.employer")} LIKE ? ${E} THEN 'employer' || chr(9) || donors.employer
@@ -81,29 +102,45 @@ const PERSON_MATCH_REASON_SQL = (() => {   // REDTEAM-2: a constant, as PERSON_M
     END)`;
 })();
 function personMatchReasonSql(p) {
-  return { sql: PERSON_MATCH_REASON_SQL, args: [p, p, p, p, p, p, p] };
+  return { sql: PERSON_MATCH_REASON_SQL, args: [p, wordsOfPattern(p), p, p, p, p, p, p] };
 }
 
 // FLOWS-4 (W-1109-Volunteers-27) · THE ORDER A PERSON SEARCH ANSWERS IN.
 // "Jonathan A" and Enter opened Jonathan Atkinson: every name containing the
 // words ranked together and the larger giver won, so the exact match came
-// third. Now, on the whole query, folded:
+// third. POLISH-15 item 1 added the word tiers (2 and 4). On the whole query,
+// folded:
 //   0  the full name is exactly what was typed ("Jonathan A")
 //   1  the name starts with it as whole words ("Jonathan A. Reyes")
-//   2  the name starts with it ("Jonathan Atkinson")
-//   3  the name contains it ("Mary Jonathan Abel")
-//   4  something else matched (email, household, ...)
+//   2  every word typed is a whole word of the name ("Ravensmere" finds every
+//      Ravensmere; "Ravensmere Fenwick" finds Fenwick Ravensmere)
+//   3  the name starts with it ("Jonathan Atkinson")
+//   4  the words typed are whole words of the name but the last, which
+//      starts one: a name still being typed ("ravensmere f")
+//   5  every word typed starts a word of the name ("raven fen")
+//   6  the name contains it ("Mary Jonathan Abel")
+//   7  something else matched (email, household, ...)
 // Ties: the most recent activity first (last gift, then the last change to
 // the record), then the id. Over an unaliased `donors`; args are rankArgs(q).
-const RANK_ORDER_SQL = `(CASE WHEN ${FOLD("donors.name")} = ? THEN 0
+// NAME_RANK_SQL is the tier alone (args rankArgs(q)); a search row carries it
+// so the top bar shows every whole-word match (WHOLE_WORD_TIER and below).
+const NAME_RANK_SQL = `(CASE WHEN ${FOLD("donors.name")} = ? THEN 0
       WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 1
-      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 2
-      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 3 ELSE 4 END),
+      WHEN COALESCE((SELECT bool_and(${NAME_WORDS("donors.name")} || ' ' LIKE '% ' || pmw.w || ' %' ESCAPE '\\')
+             FROM unnest(?::text[]) pmw(w)), false) THEN 2
+      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 3
+      WHEN COALESCE((SELECT bool_and(${NAME_WORDS("donors.name")} || ' ' LIKE '% ' || pmw.w || CASE WHEN pmw.n < cardinality(pmw.all_w) THEN ' %' ELSE '%' END ESCAPE '\\')
+             FROM (SELECT x.w, x.n, ?::text[] AS all_w FROM unnest(?::text[]) WITH ORDINALITY x(w, n)) pmw), false) THEN 4
+      WHEN ${NAME_WORDS_MATCH} THEN 5
+      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 6 ELSE 7 END)`;
+const WHOLE_WORD_TIER = 2;
+const RANK_ORDER_SQL = `${NAME_RANK_SQL},
     NULLIF(donors.last_gift_date, '') DESC NULLS LAST, donors.updated_at DESC NULLS LAST, donors.id`;
 function rankArgs(q) {
   const f = fold(String(q || "").trim().replace(/\s+/g, " "));
   const esc = f.replace(/[\\%_]/g, ch => "\\" + ch);
-  return [f, esc + " %", esc + "%", "%" + esc + "%"];
+  const words = nameWordsOf(q);
+  return [f, esc + " %", words, esc + "%", words, words, words, "%" + esc + "%"];
 }
 
 // The words a person reads for a reason: "email: marlowe@harbor.org".
@@ -116,4 +153,4 @@ function matchReasonWords(reason) {
   return value ? `${label}: ${value}` : label;
 }
 
-module.exports = { FOLD, fold, foldedPattern, personMatchSql, personMatchReasonSql, PERSON_MATCH_SQL, PERSON_MATCH_REASON_SQL, matchReasonWords, RANK_ORDER_SQL, rankArgs };
+module.exports = { FOLD, fold, foldedPattern, nameWordsOf, NAME_RANK_SQL, WHOLE_WORD_TIER, personMatchSql, personMatchReasonSql, PERSON_MATCH_SQL, PERSON_MATCH_REASON_SQL, matchReasonWords, RANK_ORDER_SQL, rankArgs };

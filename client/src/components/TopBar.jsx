@@ -264,13 +264,15 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
       const rows = [];
       kinds.forEach(k=>(((all?exp:byKind)[k.kind])||[]).forEach(r=>{
         const row = k.row(r);
-        rows.push({ group:g, key:k.kind+"_"+r.id, title:r.title, ...row, chip:k.kind==="person"&&twins.has(nameKey(r.title))?typeChip(r):null,
+        rows.push({ group:g, key:k.kind+"_"+r.id, title:r.title, wholeName:!!r.wholeName, ...row, chip:k.kind==="person"&&twins.has(nameKey(r.title))?typeChip(r):null,
           onSelect:row.url?()=>window.location.assign(row.url):()=>onNavigate(row.tab,row.opts),
           href:row.url||(row.link===false?undefined:tabHref(row.tab,row.opts)) });
       }));
-      const shown = all ? rows : rows.slice(0, GROUP_TOP);
+      // POLISH-15 item 1: every whole-word name match shows ("Ravensmere" lists every Ravensmere), then the usual three.
+      const top = Math.max(GROUP_TOP, rows.filter(r=>r.wholeName).length);
+      const shown = all ? rows : rows.slice(0, top);
       out.push(...shown);
-      const hasMore = !all && (rows.length > GROUP_TOP || kinds.some(k=>more[serverKey(k)]));
+      const hasMore = !all && (rows.length > top || kinds.some(k=>more[serverKey(k)]));
       if (hasMore) out.push({ group:g, key:"seeall_"+g, title:"See all "+g.toLowerCase(), seeAll:g, isSeeAll:true });
     });
     navMatches.forEach(a=>out.push({

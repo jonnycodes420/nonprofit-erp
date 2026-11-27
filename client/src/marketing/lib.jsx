@@ -12,6 +12,11 @@ import { SRC, STATS, QUOTES, srcShort } from "./data/research";
 import { LEADERSHIP_SHOWN } from "./data/team";
 import { CREW, CREW_NEVER } from "./data/crew";
 
+// POLISH-15 item 4: where the header's and footer's "How it works" land, a
+// section of /pricing that exists (pages/pricing.jsx).
+export const HOW_IT_WORKS_ID = "how-it-works";
+export const HOW_IT_WORKS_HREF = "/pricing#" + HOW_IT_WORKS_ID;
+
 // ── Rich strings ───────────────────────────────────────────────────────────
 // Copy in the data modules keeps the reference's inline <b>, <em> and <br>.
 // This turns exactly those three tags into elements; anything else stays text.
@@ -229,9 +234,9 @@ export function PriceBlock({ h1 }) {
   );
 }
 
-export function Steps({ eb, h, list }) {
+export function Steps({ eb, h, list, id }) {
   return (
-    <section className="steps-s"><div className="wrap">
+    <section className="steps-s" id={id}><div className="wrap">
       <div className="eyebrow">{eb}</div>
       <h2 className="mix h-l" style={{ marginTop: 22 }}>{rich(h)}</h2>
       <div className="steps">
