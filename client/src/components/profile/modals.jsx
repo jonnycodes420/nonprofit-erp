@@ -2,7 +2,7 @@
 // from DonorProfile.jsx (Log a touchpoint, Edit, the follow-up task, the gift link).
 import { useEffect, useRef, useState } from "react";
 import { newRequestKey } from "../../lib/requestKey";   // SAFE-EDIT-1 item 1
-import { useOpenFormDirty } from "../../lib/dirtyGuard";   // SAFE-EDIT-1 item 2: Back or a rail link asks first
+import { useOpenFormDirty } from "../../lib/formDirty";   // SAFE-EDIT-1 item 2: Back or a rail link asks first
 import { orgTodayCivil, orgTodayPlus } from "../../lib/orgToday";
 import { greetingLine } from "../../../../shared/greeting.js";
 import { Modal, SC, STAGES, Spin, T, TpField, TpYesNo, activeMark } from "../shared";

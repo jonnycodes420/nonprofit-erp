@@ -13,7 +13,7 @@ import { useTimelineExtras } from "../ProfileTimeline";
 import { timelineCounts, buildTimelineItems } from "../MeetingPanels";
 import { errorMessage } from "../../lib/domainError";
 import { usePeoplePicker } from "../../lib/people";
-import { useOpenFormDirty } from "../../lib/dirtyGuard";   // SAFE-EDIT-1 item 2
+import { useOpenFormDirty } from "../../lib/formDirty";   // SAFE-EDIT-1 item 2
 import { fmtFull } from "../shared";
 
 export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign, reassignId, setReassignLoading, initialAddGift, localInts, rel, loadRailRef, onStageChange }) {
