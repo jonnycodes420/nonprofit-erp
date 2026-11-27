@@ -60,6 +60,21 @@ function on(type, name, run, { applies = () => true, maxAttempts = 5 } = {}) {
   });
 }
 
+// SPEED-4 · TOLD ONCE PER ORG, NOT A JOB PER EVENT. Some work follows any
+// change to an org, never one person's (the stored reports' refresh): a job
+// per event was 2,125 jobs for one import's gifts, and the queue went through
+// them at two a second while the undo waited behind. A listener here is called
+// once per org each time the relay moves that org's events of its types; what
+// it does is its own (it queues one folded job).
+const relayedListeners = [];   // { types: Set, fn(orgId) }
+function onRelayed(types, fn) { relayedListeners.push({ types: new Set(types), fn }); }
+async function tellRelayed(rows) {
+  for (const l of relayedListeners) {
+    const orgs = new Set(rows.filter(ev => ev.org_id && l.types.has(ev.type)).map(ev => ev.org_id));
+    for (const orgId of orgs) await Promise.resolve().then(() => l.fn(orgId)).catch(e => console.error("[outbox] relayed:", e.message));
+  }
+}
+
 const ACTOR = { id: "system:outbox", name: "Steward (what follows a change)" };
 const newId = () => "ev_" + uuid().replace(/-/g, "").slice(0, 20);
 
@@ -116,6 +131,7 @@ async function relay(ids = null) {
      SELECT (SELECT COUNT(*) FROM ev)::int AS events, (SELECT COUNT(*) FROM ins)::int AS jobs`,
     [rows.map(r => r.id), ACTOR.id, ACTOR.name, J.id, J.name, J.org, J.key, J.payload, J.round, J.max]);
   const out = moved[0] || { events: 0, jobs: 0 };
+  if (out.events && relayedListeners.length) await tellRelayed(rows);
   if (out.jobs) { const JQ = require("../../jobQueue"); if (JQ.runsJobs()) JQ.poke(); }
   return out.events;
 }
@@ -194,5 +210,5 @@ async function handled(eventId, name, { timeoutMs = 30000 } = {}) {
   }
 }
 
-module.exports = { handled, runNow, configure, dep, on, handlers, rowFor, write, markReady, relay, relaySoon, startSweep, prune, pending,
+module.exports = { handled, runNow, configure, dep, on, onRelayed, handlers, rowFor, write, markReady, relay, relaySoon, startSweep, prune, pending,
   ACTOR, STALE_MS, jobName };

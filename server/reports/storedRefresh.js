@@ -11,12 +11,11 @@
 //
 // What those reports read is written in the change's own request (the gift,
 // the person's totals); what the after-change step writes later (the rhythm,
-// tasks, the thank-you draft, scores) none of them reads. So this is a handler
-// of its own on the change's event (JOBS-1), beside the after-change step and
-// not behind it, and it recomputes the answers that name their tables itself,
-// the quickest first. (A first version queued a job of its own from the
-// handler: under the load that second wait for a lane was 0.1 to 2.4 s more.)
-// One refresh per org at a time in a process, and any changes while it runs
+// tasks, the thank-you draft, scores) none of them reads. So the change's event
+// (JOBS-1) asks for it as it is relayed, beside the after-change step and not
+// behind it: this org's refresh is queued at once, and that job recomputes the
+// answers that name their tables, the quickest first.
+// One refresh per org at a time (the queued job below), and any changes while it runs
 // fold into one more pass (orgSummary.refreshOrg skips what is current).
 //
 // The slower refresh (orgSummaryRefresh) still follows for everything else and
@@ -35,28 +34,22 @@ function schedule(orgId) {
   return require("../../jobQueue").enqueue({ name: NAME, orgId, key: `${NAME}:${orgId}`, payload: { orgId }, runAfterMs: 0, priority: 3 });
 }
 
-// Folded per org, like the slower refresh: while one runs, any number of
-// changes ask for ONE more pass after it, never one each (an import's events
-// would otherwise queue a pass apiece).
-const running = new Map();   // orgId -> { done, again }
+// Folded per org, like the slower refresh: the job's key holds one waiting
+// at most, and a key never runs twice at once, so any number of changes while
+// one runs are ONE more pass after it, never one each (an import's events
+// would otherwise queue a pass apiece). orgSummary.refreshOrg skips what is current.
 function refreshNow(orgId) {
   if (!orgId) return Promise.resolve(0);
-  const cur = running.get(orgId);
-  if (cur) { cur.again = true; return cur.done; }
-  const st = { again: false, done: null };
-  st.done = (async () => {
-    let n = 0;
-    try {
-      do { st.again = false; n += await require("../../orgSummary").refreshOrg(orgId, { named: true }); } while (st.again);
-    } finally { running.delete(orgId); }
-    return n;
-  })();
-  running.set(orgId, st);
-  return st.done;
+  return require("../../orgSummary").refreshOrg(orgId, { named: true });
 }
 
 require("../../jobQueue").handle(NAME, (payload) => refreshNow(payload && payload.orgId));
-OUTBOX.on("gift.recorded", "storedReports", async (p) => { await refreshNow(p.orgId); });
-OUTBOX.on("donor.changed", "storedReports", async (p) => { await refreshNow(p.orgId); });
+// Asked for when the relay moves an org's gift or person events: once per org
+// each time, never a job per event (an import writes a gift.recorded for every
+// gift: 2,125 in one file), and never a `handler:` job, which every write's
+// follow-up waits on (tests/lib/drainQueue.js). As a handler it made import9
+// take 42 s, not 7, and import8, import9 and integrity1 pass their 300 s
+// deadline in CI.
+OUTBOX.onRelayed(["gift.recorded", "donor.changed"], (orgId) => schedule(orgId));
 
 module.exports = { NAME, schedule, refreshNow };
