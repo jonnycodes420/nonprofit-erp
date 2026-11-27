@@ -44,7 +44,7 @@ slowest call, and nobody could tell a slow report from a slow runner.
   current within 2 s). `tests/reports-speed1-stored.test.js` §1 covers the two new keys; §2 now accepts a stored answer
   computed after the gift (the refresh can win the race), never one from before it.
 - **After merge (2a7045e, 27 Nov).** Four nightly-shaped runs on the runner the same afternoon all FAILED, including the
-  code from before SPEED-4. With SPEED-4: Annual from the store 80 to 86%, SYBUNT 76 to 87%. The 95% bar was never
+  code from before SPEED-4. With SPEED-4: Annual from the store 83 to 86%, SYBUNT 76 to 87%. The 95% bar was never
   reached on the runner: 89 to 92% on the branch's one run that morning. SYBUNT p95 983 to 2,403 ms; profile 1,021 to
   1,348 ms. A follow-up that kept the refresh job going while gifts arrived did no better on one run and was not merged.
   The laptop runs met the bar; the runner is the open question for the next brief.
