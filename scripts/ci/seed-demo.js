@@ -56,25 +56,7 @@ const DB = process.env.DATABASE_URL || "postgres://steward@localhost:5544/stewar
 
 const ORG = "org_b72demo";
 const ADMIN_EMAIL = "director@harborlight.demo";
-// SECURE-DEMO: the repo is public, so the production demo's password is never
-// written here. Scratch, CI and staging use SCRATCH_PASSWORD, which opens
-// nothing on production. A production run takes DEMO_ADMIN_PASSWORD (Railway,
-// production) and refuses without it (demoPassword). Set in main().
-const SCRATCH_PASSWORD = "demo-harbor-2026";
-let ADMIN_PASSWORD = SCRATCH_PASSWORD;
-// -> the password this run gives the demo's two staff logins.
-function demoPassword({ isProdRun, env = process.env } = {}) {
-  const set = String(env.DEMO_ADMIN_PASSWORD || "");
-  if (!isProdRun) return set || SCRATCH_PASSWORD;
-  if (set.length < 12) throw new Error("a production run needs DEMO_ADMIN_PASSWORD (12 characters or more) set on Railway's production service. The scratch password is public and never goes to production.");
-  if (set === SCRATCH_PASSWORD) throw new Error("DEMO_ADMIN_PASSWORD is the public scratch password. Pick a new one.");
-  return set;
-}
-// --password-only: sets the two staff logins' password from demoPassword and
-// signs every session of theirs out, and changes nothing else. The demo org
-// refuses a password change in the app (it is a shared login), so this is how
-// it rotates. The same identity guards as a full seed run first.
-const PASSWORD_ONLY = process.argv.includes("--password-only");
+const { SCRATCH_PASSWORD, demoPassword, rotateDemoPassword } = require("../lib/demoPassword"); let ADMIN_PASSWORD = SCRATCH_PASSWORD; // SECURE-DEMO: set in main()
 // The only users this seed creates. Anyone else in the demo org is a real
 // account holder (FIX-3 C, finding 8), and the seed removes them.
 const SEEDED_USER_EMAILS = [ADMIN_EMAIL, "officer@harborlight.demo"];
@@ -329,22 +311,8 @@ async function main() {
     console.log(`[identity] database "${dbName}" is an allowlisted scratch target\n`);
   }
 
-  try { ADMIN_PASSWORD = demoPassword({ isProdRun }); } catch (e) { refuse(e.message); }
-
+  ADMIN_PASSWORD = demoPassword({ isProdRun, refuse }); if (process.argv.includes("--password-only")) return rotateDemoPassword({ client, refuse, org: ORG, emails: SEEDED_USER_EMAILS, password: ADMIN_PASSWORD });
   const q = (sql, params = []) => client.query(sql, params).then(r => r.rows);
-
-  if (PASSWORD_ONLY) {
-    if (!process.env.DEMO_ADMIN_PASSWORD) refuse("--password-only sets the password from DEMO_ADMIN_PASSWORD. Set it first.");
-    const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12);
-    const users = await q(`UPDATE users SET password_hash=$1, sessions_valid_after=NOW() WHERE org_id=$2 AND lower(email) = ANY($3) RETURNING id`,
-                          [hash, ORG, SEEDED_USER_EMAILS.map(e => e.toLowerCase())]);
-    const ended = users.length ? await q(`UPDATE user_sessions SET revoked_at=NOW(), revoked_by='system:seed-demo' WHERE revoked_at IS NULL AND user_id = ANY($1) RETURNING id`,
-                                         [users.map(u => u.id)]) : [];
-    console.log(`[password] ${users.length} demo login${users.length === 1 ? "" : "s"} given the new password; ${ended.length} open session${ended.length === 1 ? "" : "s"} signed out (any other browser follows within 30 seconds). Nothing else changed.`);
-    await client.end();
-    if (users.length !== SEEDED_USER_EMAILS.length) process.exit(1);
-    return;
-  }
 
   // ── FIX-3 C, finding 8 — a real person in the demo is named and removed
   // FIRST, by the same rule the prod check reads, so the run's log says who
@@ -3907,9 +3875,7 @@ async function main() {
   console.log(`  raised in ${YEAR}: $${Math.round(thisYear.d).toLocaleString()}`);
   console.log(`  the eleven drifted mid-level donors: ${driftedIds.length}`);
   console.log(`  timezone: ${TZ} · today here: ${TODAY}`);
-  const shown = process.env.DEMO_ADMIN_PASSWORD ? "(the DEMO_ADMIN_PASSWORD you set)" : ADMIN_PASSWORD;
-  console.log(`\n  sign in:  ${ADMIN_EMAIL} / ${shown}`);
-  console.log(`  officer:  officer@harborlight.demo / ${shown}\n`);
+  const shown = process.env.DEMO_ADMIN_PASSWORD ? "(the DEMO_ADMIN_PASSWORD you set)" : ADMIN_PASSWORD; console.log(`\n  sign in:  ${ADMIN_EMAIL} / ${shown}\n  officer:  officer@harborlight.demo / ${shown}\n`);
 
   await client.end();
 }
