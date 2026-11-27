@@ -506,7 +506,7 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
     const refused = await mfetch("DELETE", `/pledges/${plId}`, token);
     const [plStill] = await q(`SELECT COUNT(*)::int AS n FROM pledges WHERE id=$1`, [plId]);
     ok("§8b a pledge with a payment applied cannot be deleted, and says why", refused.status === 409
-      && /payments applied/.test(refused.body.sentence || "") && plStill.n === 1, { status: refused.status, body: refused.body });
+      && /payments? applied/.test(refused.body.sentence || "") && plStill.n === 1, { status: refused.status, body: refused.body });
   }
 
   await wipe(ORG_A);
