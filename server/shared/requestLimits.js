@@ -299,7 +299,12 @@ function answerError(err, req, res, route) {
     res.status(503).json({ error: err.message, code: err.code });
     return true;
   }
-  if (err && err.code === "request_abandoned") { if (!res.headersSent && !res.destroyed) res.status(499).end(); return true; }
+  if (err && err.code === "request_abandoned") {
+    // POLISH-14 item 1: said once, as what it is: nobody is waiting for the answer.
+    console.warn(`[499] ${req.method} ${route} rid=${req.id || "-"} abandoned: the browser left before it finished`);
+    if (!res.headersSent && !res.destroyed) res.status(499).end();
+    return true;
+  }
   return false;
 }
 

@@ -26,6 +26,11 @@ const FREQ_WORDS = { weekly: "a week", monthly: "a month", quarterly: "a quarter
 const GRACE_DAYS = 7;
 const LABEL = "Recorded by staff · offline";   // a card plan reads "Card on file · Stripe"
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+// POLISH-14 item 2: a date in a sentence reads in words ("Dec 26", "Jan 26, 2027"), never ISO.
+// shared/displayDate.js is ESM: loaded once at require, read synchronously after.
+let DD = null;
+import("../../shared/displayDate.js").then(m => { DD = m; }).catch(() => {});
+const words = (d, today) => (DD ? DD.displayDateShort(d, today) : d);
 
 // Civil-date arithmetic on YYYY-MM-DD, no clock and no zone.
 const toUtc = d => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
@@ -61,8 +66,8 @@ function planState(plan, payments, today) {
   const $ = v => "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(Number(v)) ? 0 : 2, maximumFractionDigits: 2 });
   const sentence = cancelled ? "Cancelled. No more payments are expected."
     : !next ? "Complete: every payment through its end date is recorded."
-    : behind ? `Behind: ${missed === 1 ? "a payment" : `${missed} payments`} expected by ${nthDate(plan, paid)} ${missed === 1 ? "has" : "have"} not been recorded (a payment is late after ${GRACE_DAYS} days).`
-    : `On track. Next payment of ${$(plan.amount)} expected ${next}.`;
+    : behind ? `Behind: ${missed === 1 ? "a payment" : `${missed} payments`} expected by ${words(nthDate(plan, paid), today)} ${missed === 1 ? "has" : "have"} not been recorded (a payment is late after ${GRACE_DAYS} days).`
+    : `On track. Next payment of ${$(plan.amount)} expected ${words(next, today)}.`;
   return { nextExpected: cancelled ? null : next, behind, missed, paidCount: paid, sentence,
            status: cancelled ? "cancelled" : !next ? "complete" : behind ? "behind" : "active" };
 }

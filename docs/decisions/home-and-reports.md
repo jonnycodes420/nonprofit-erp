@@ -743,3 +743,27 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - **A button never names a day gone.** A card action's date is computed from the day the answer is built for (`server/insights/taskSpread.js`); after its day, tasks are due from today, spread like ATLAS-7's first calls.
 - **Insights' stored answer carries the engine's version** (`insightsData.js` ENGINE). Bump it when `computeInsights` says something different for the same rows, or the day's answer built on the old code stays "fresh" after a deploy.
 - **Look-alike "may not be gifts" rows are decided as a group, never automatically.** The group is the reason plus the memo's pattern (`shared/numbers/notGiftGroups.js`); a group click does exactly the row's own decision (`server/insights/reviewDecide.js`) to rows it re-checks are in the group, previews the change live, and has one Undo.
+
+## POLISH-14 · all time, so far, and a backlog at real size (2026-11-27)
+
+- **All time is every gift on file dated to today, or with no date** (`shared/numbers/allGifts.js`). Reports' All
+  time (Top donors, the `gifts-all` source) and Finance's gifts on file (the empty-ledger line) read it; a gift dated
+  after today counts from its day, as every span reads it. Finance's Posted + Waiting + History keep every money row
+  (a fund card and its rows foot on that), so they differ from All time only by a dated-ahead gift with no schedule,
+  which no writer makes (TRUTH-6 schedules them). A
+  gift with no date is in All time, in Lifetime and in Finance's Waiting to post (it cannot post without a date), and
+  in no year's total; each figure's sentence says so (`undatedWords`). Atlas's "all time" is still a date span
+  (1900 to today) and leaves undated gifts out: the next brief's to decide.
+- **A year-to-date figure says "so far this fiscal year" and shows last fiscal year's whole year beside it.** The
+  board pack's Financial Snapshot and Donor Dashboard tiles, its summary text and the AI prompt, and Home's retention
+  tile (`lastYearFull`, the `retention-window` source over last year against the year before). The ledger in a span is
+  `shared/numbers/ledgerSpan.js`. "Awarded YTD" was never a fiscal-year figure; it reads "Received on active grants".
+- **The Acknowledgment backlog is a handler, not a builder filter** (`server/reports/ackBacklogReport.js`): the one
+  backlog rule (`thankBacklog.js` WAITING) from Home's own start day (`reportHooks.thanksSince`) to today by default,
+  its count and total first as figures (`unthanked` with `to`, and `measure: sum`), pages of 50 oldest first, a date
+  range she can widen. CSV and PDF are the whole range. A standard report that answers `paging` gets the paged head
+  (`components/reports/PagedReportHead.jsx`).
+- **A date on a screen is the org's date in words**, the year only when it isn't the org's year: Home's heading,
+  the import list and receipt (and the undo sentence's day), Add to calls (Insights' call-list name, Calls to make),
+  The Thread's rows, the recurring plan's sentence and dates, and the pledge schedule preview
+  (`scheduleWords(rows, today)`, semicolons once a date carries its year).

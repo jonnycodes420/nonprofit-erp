@@ -13,7 +13,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { askConfirm } from "../ConfirmDialog";
 import { T, fmtFull } from "../shared";
-import { displayDate } from "../../../../shared/displayDate";
+import { displayDate, displayDateShort } from "../../../../shared/displayDate";   // POLISH-14 item 2
 import { orgTodayCivil } from "../../lib/orgToday";
 import { told } from "../../lib/stewardTold";
 import { useChanged } from "../../lib/changes";
@@ -91,9 +91,9 @@ export default function OfflinePlans({ donorId, isReadOnly, giftsFull = [] }) {
               <span style={{ fontSize: 11, color: T.ink3 }}>{p.label}{p.method ? ` · ${p.method}` : ""}{p.fund_name ? ` · ${p.fund_name}` : ""}</span>
             </div>
             <div data-testid="offline-plan-sentence" style={{ fontSize: 12, color: T.ink2, marginTop: 4 }}>{p.sentence}</div>
-            <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>From {displayDate(p.start_date)}{p.end_date ? ` to ${displayDate(p.end_date)}` : ""} · {countLabel(p.paidCount, "payment")} recorded</div>
+            <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>From {displayDateShort(p.start_date, orgTodayCivil())}{p.end_date ? ` to ${displayDateShort(p.end_date, orgTodayCivil())}` : ""} · {countLabel(p.paidCount, "payment")} recorded</div>
             {p.payments.length > 0 && <div data-testid="offline-plan-payments" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-              {p.payments.map(g => <span key={g.giftId} style={{ fontSize: 11, background: T.bg, borderRadius: 6, padding: "2px 7px", color: T.ink2 }}>{displayDate(g.date)} · {fmtFull(g.amount)}</span>)}</div>}
+              {p.payments.map(g => <span key={g.giftId} style={{ fontSize: 11, background: T.bg, borderRadius: 6, padding: "2px 7px", color: T.ink2 }}>{displayDateShort(g.date, orgTodayCivil())} · {fmtFull(g.amount)}</span>)}</div>}
             {!isReadOnly && p.status !== "cancelled" && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
               {pay && pay.planId === p.id
                 ? <>

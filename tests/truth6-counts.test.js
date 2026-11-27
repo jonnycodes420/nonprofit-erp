@@ -54,6 +54,29 @@ const { DIST } = require("./lib/dist");
   ok("§1 …and Finance's months this FY sum to Reports' header", finInFy === gs.giftCount, { finInFy, header: gs.giftCount });
   const drill = (await api("GET", `/finance/overview/month?month=${month}`, tok)).body || {};
   ok("§1 the month's rows say the count and label what is not a gift", drill.count === finMonth.gifts && (drill.rows || []).filter(r => !r.counted).every(r => !!r.label) && /not a gift/.test(drill.sentence || ""), { count: drill.count, sentence: drill.sentence });
+  // POLISH-14 item 3 (Duet, 27 Nov): Finance read $354,497.50 / 495 gifts and
+  // Reports' All time $353,997.50 / 493: two gifts with no date were in one and
+  // not the other. Two undated gifts ($250 each, as an old system's file leaves
+  // them) and the two all-time figures must agree, each saying where the
+  // undated gifts are. Red on main: Reports' All time is $500 and 2 gifts short.
+  for (const [k, who] of [["undatedA", ids.ines], ["undatedB", ids.petra]]) {
+    await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, payment_method, created_by, created_by_name)
+             VALUES ($1, $2, $3, 250, NULL, 'check', 'system:test-fixture', 'Test fixture')`, [`g_p14_${k}_${f.run}`, f.org, who]);
+  }
+  const finAll = (await api("GET", "/finance/summary?yearMode=fiscal", tok)).body || {};
+  const topAll = (await api("GET", "/reports/top-donors?scope=lifetime&limit=10", tok)).body || {};
+  const [keyAll] = await q(`SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS c FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                             WHERE g.org_id = $1 AND d.deleted_at IS NULL AND LOWER(COALESCE(g.type,'')) !~ '(soft|match)' AND (g.date IS NULL OR LEFT(g.date,10) <= $2)`, [f.org, f.today]);
+  const ls = finAll.ledgerStatus || {};
+  const repCents = Math.round(Number(topAll.figures && topAll.figures.allTime && topAll.figures.allTime.value) * 100);
+  ok("§1 Finance's gifts on file and Reports' All time are one figure, undated gifts in both (by hand)", ls.all && ls.all.cents === repCents && repCents === Number(keyAll.c) && Math.round(finAll.giftHistoryTotal * 100) === repCents,
+    { finance: ls.all && ls.all.cents, history: finAll.giftHistoryTotal, reports: repCents, key: Number(keyAll.c) });
+  ok("§1 each says where the two undated gifts are", /2 gifts \(\$500\) have no date/.test(ls.waiting && ls.waiting.sentence || "") && /2 gifts \(\$500\) have no date.*no year's total/.test(topAll.allTimeNote || ""),
+    { finance: ls.waiting && ls.waiting.sentence, reports: topAll.allTimeNote });
+  const allRows = (await api("GET", "/figures/gifts-all/rows?pageSize=100", tok)).body || {};
+  ok("§1 Reports' All time opens its rows, the undated ones labelled", Math.round(Number(allRows.value) * 100) === repCents && (allRows.rows || []).filter(r => /No date/.test(r.detail || "")).length === 2,
+    { value: allRows.value, undated: (allRows.rows || []).filter(r => /No date/.test(r.detail || "")).length });
+  await q(`DELETE FROM gifts WHERE org_id = $1 AND id LIKE 'g_p14_%'`, [f.org]);
   const odile = (await api("GET", `/donors/${ids.odile}`, tok)).body || {};
   const ledCnt = (await api("GET", "/finance/summary?yearMode=fiscal", tok)).body || {};
   ok("§1 the split gift is one gift with two lines", (odile.gifts || []).filter(g => Number(g.amount) > 0).length === 1 && ((odile.gifts || [])[0].fund_lines || []).length === 2, odile.gifts && odile.gifts.map(g => [g.amount, (g.fund_lines || []).length]));

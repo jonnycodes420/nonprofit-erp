@@ -91,7 +91,7 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
   // BUILD-97 Part 5 — every route's failure already passes through here, so
   // this is where a 5xx burst is countable without an APM and without missing
   // a route. It only NOTES; noteServerError rate-limits the alert itself.
-  try { noteServerError(); } catch (_) { /* never let telemetry break an error path */ }
+  try { noteServerError(err); } catch (_) { /* never let telemetry break an error path */ }
   next(err);
 });
 // SPLIT-2 end
