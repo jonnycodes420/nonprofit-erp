@@ -18,8 +18,7 @@
 // n10SoftEvent: real-shaped's fixture step (REAL_SHAPED_ONLY=N10C), the shapes the fleet saw, built in a fresh org.
 "use strict";
 
-const CREDIT = `LOWER(TRIM(COALESCE(%.type, ''))) IN ('soft credit','soft-credit','soft_credit','matching gift credit','matched gift credit','hard credit reversal')`;
-const credit = a => CREDIT.replace("%", a);
+const credit = a => `LOWER(TRIM(COALESCE(${a}.type, ''))) IN ('soft credit','soft-credit','soft_credit','matching gift credit','matched gift credit','hard credit reversal')`;
 const ORG = o => `(LOWER(COALESCE(${o}.kind,'')) IN ('organisation','organization') OR COALESCE(${o}.person_types,'[]'::jsonb) @> '["organization"]'::jsonb)`;
 
 // The key: Map "person|org" -> cents.
