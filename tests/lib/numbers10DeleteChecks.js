@@ -39,6 +39,11 @@ async function n10Delete({ ok, api, q, freshOrg, surfaces, drainQueue }) {
   const s1 = await st();
   ok("§N10D deleting her gifts closes the step and voids its call", d2.status === 200 && d1.status === 200
     && s1.plan.status === "abandoned" && s1.step.status === "skipped" && s1.call.voided === true, JSON.stringify([d1.body, s1]));
+  // NUMBERS-10 staging walk: the confirm before the delete must not promise what the delete then breaks.
+  const W = await import(require("path").join(__dirname, "..", "..", "client", "src", "lib", "giftDeleteWords.js"));
+  const said = W.giftDeleteDialog({}).body;
+  ok("§N10D the delete's confirm does not say nothing is added to the timeline, and says when a line is",
+    !/Nothing is added to their timeline\./.test(said) && /thank-you/i.test(said) && /timeline/.test(said), said);
   ok("§N10D the timeline says the thank-you was cancelled, once, naming the step and the gift",
     s1.lines.length === 1 && /^Thank-you cancelled: the \$100 gift of [A-Z][a-z]{2} \d{1,2}, \d{4} was removed, so Call to say thank you \(New donor, first year\) is cancelled\.$/.test(s1.lines[0]), s1.lines);
   await surfaces(ORG, { step: "§N10D after the deletes", token: tok });
