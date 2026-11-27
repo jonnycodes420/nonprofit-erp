@@ -137,7 +137,7 @@ async function import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drain
   const SC = require("../../shared/numbers/scheduled");
   const line = await SC.scheduledLine((sql, args) => q(sql.replace(/\?/g, (() => { let i = 0; return () => `$${++i}`; })()), args), ORG);
   ok(`§I11.5 the Giving summary says the real dates ("from ${soon} … to Jan 1, 2031"), never "the next Jan 1"`,
-    line && /dated from .+ to Jan 1, 2031/.test(line.sentence) && !/the next/.test(line.sentence), line && line.sentence);
+    line && /dated after today \(from .+ to Jan 1, 2031\)/.test(line.sentence) && !/the next/.test(line.sentence), line && line.sentence);
 
   // ── §I11.2 the form and the database refuse a gift over the cap ────────────
   const big = await api("POST", `/donors/${sol}/gifts`, tok, { amount: "1000000000", date: civilDay(), type: "cash" });

@@ -14,7 +14,8 @@
 //      the statement is shown with the org's name, the dates and the amounts;
 //      nothing is emailed
 //   §4 Donors > Import & tools > Import a spreadsheet (a People + Gifts
-//      workbook) > Continue > Import > Done: on Donors, the wizard and the file gone
+//      workbook joined on Donor ID, read by the one reader since IMPORT-11) > Import > Done:
+//      on Donors, the wizard and the file gone
 //   §5 Sign out: a working sign-in page, and signing in from it works
 //   §6 A profile whose person is merged away stops reading their status (no
 //      404 after) and shows the kept record
@@ -215,13 +216,14 @@ async function reset(org) {
     await page.getByText("Import & tools").first().click();
     await page.getByText("Import a spreadsheet", { exact: true }).first().click();
     await page.locator("input[type=file]").first().setInputFiles(file);
-    await page.locator('[data-testid="wb-continue"]').click({ timeout: 30000 });
-    if (await page.locator('[data-testid="wb-signals-continue"]').count()) await page.locator('[data-testid="wb-signals-continue"]').click();
-    await page.locator('[data-testid="wb-review"]').click({ timeout: 30000 });
-    await page.locator('[data-testid="wb-import"]').click({ timeout: 30000 });
-    await page.locator('[data-testid="wb-done"]').waitFor({ timeout: 60000 });
+    // IMPORT-11: a Gifts sheet keyed by the People sheet's ID, with no name column, is read by the one reader
+    // ("2 people and 2 gifts ($325.00) joined on Donor ID"), never the workbook screen
+    await page.locator('[data-testid="sheet-join"]').waitFor({ timeout: 60000 });
+    await page.locator('[data-testid="sheet-import-go"]:not([disabled])').click({ timeout: 60000 });
+    if (!(await page.locator('[data-testid="sheet-result"]').count())) await page.locator('[data-testid="sheet-import-go"]:not([disabled])').click({ timeout: 5000 }).catch(() => {});
+    await page.locator('[data-testid="sheet-done"]').waitFor({ timeout: 60000 });
     await shot("import-receipt");
-    await page.locator('[data-testid="wb-done"]').click();
+    await page.locator('[data-testid="sheet-done"]').click();
     await page.waitForTimeout(1500);
     await shot("import-done");
     const left = { workbook: await page.locator('[data-testid="sheet-import-workbook"]').count(), roles: await page.locator('[data-testid="wb-sheet-roles"]').count(), wizard: await page.locator('[data-testid="sheet-import"]').count() };

@@ -42,7 +42,7 @@ Thanked = No (a gift dated after today is no longer waiting for a thank-you). Re
 **What could have broken nearby:** every reader of a stored amount that used `toCents(x) || 0` now reads it exactly
 (`storedCentsOr0`): Major Gifts (pipeline, Top 100, plans), Grants (funders, award balances, reports), the board pack,
 Dashboard totals, the donor brief and Atlas lines, the impact report, giving-page cards. The import footing on the
-receipt and the Imports list. The thank-you backlog rule (Home, Acknowledgments, the rail, Report builder Thanked = No).
+receipt and the Imports list. The thank-you backlog rule (Home, Acknowledgments, the rail, Report builder Thanked = No, and the Groups starter "Gifts waiting for a thank-you").
 A workbook with a Donors sheet and a Gifts sheet that both carry names still opens the workbook screen as before.
 
 **Needs a write:** checks 1–5 run in org_stagewalk only. Check 6 is read-only.

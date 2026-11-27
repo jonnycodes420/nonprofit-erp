@@ -49,7 +49,7 @@ function scheduledLabel(date, today = null) {
 
 // "Jan 1, 2031", always with its year.
 const dayWords = d => { const x = String(d || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(x) ? `${MON[Number(x.slice(5, 7)) - 1]} ${Number(x.slice(8, 10))}, ${x.slice(0, 4)}` : "after today"; };
-const spanWords = (first, last) => !last || String(first).slice(0, 10) === String(last).slice(0, 10) ? `dated ${dayWords(first)}` : `dated from ${dayWords(first)} to ${dayWords(last)}`;
+const spanWords = (first, last) => !last || String(first).slice(0, 10) === String(last).slice(0, 10) ? `dated after today (${dayWords(first)})` : `dated after today (from ${dayWords(first)} to ${dayWords(last)})`;
 
 const SENTENCE = "A gift dated after today is scheduled: it is on file and listed as Scheduled, and it counts in no total, count, Lifetime or Last gift until its date.";
 
@@ -66,7 +66,7 @@ async function scheduledLine(query, orgId, { donorId = null } = {}) {
   if (!n) return null;
   const usd = "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 });
   return { n, cents, next: r.next, label: "Scheduled",
-    // IMPORT-11: the real dates, with their years ("dated Jan 1, 2031"; "from Mar 1, 2027 to Jan 1, 2031"),
+    // IMPORT-11: the real dates, with their years ("dated after today (Jan 1, 2031)"; "(from Mar 1, 2027 to Jan 1, 2031)"),
     // never "the next Jan 1" for a gift five years out
     sentence: `Scheduled: ${n} ${n === 1 ? "gift" : "gifts"}, ${usd}, ${spanWords(r.next, r.last)}. ${n === 1 ? "It counts" : "They count"} on ${n === 1 ? "its" : "their"} date, not before.` };
 }
