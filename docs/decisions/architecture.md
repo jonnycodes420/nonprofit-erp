@@ -473,6 +473,21 @@ at `/app/events?list=auctions`) as an addition; Auctions keeps its Fundraising p
 Peer-to-peer is in Fundraising's strip only for an org with a peer-to-peer page. `orgs.mg_views` is
 the Major Gifts tabs an org shows (NULL = all four; one = no strip). Both are settings, never an org id.
 
+**Four entries start off (NAV-2, 2026-11-27).** Auctions, Peer-to-peer, Memberships and Major Gifts
+are off an org's rail until the org adds them (`DEFAULT_OFF` in `client/src/lib/navGroups.js`, the one
+list). The merge rule for the ORG's layer: an entry its saved layout does not name is on, except
+`DEFAULT_OFF`, which is on only once the saved layout names it visible; a person follows the org.
+Settings → Menu and the person's Customize have two parts: what is on the sidebar (Take off, move)
+and **Add to your sidebar** (every other entry, its icon, one sentence from `lib/navPurpose.js`, Add); any
+entry but Home and Settings can go either way. **Major Gifts off a person's rail lives inside
+Fundraising → Major gifts** (At a glance, Proposals, then the views the org shows), for people with
+the permission; `routeMajorGifts(tab, opts, can, { onRail, views })` sends every old link there, and
+added to the rail it opens its own page (ASKS-1). Orgs already using one keep it through
+`scripts/ops/nav2-keep-in-use.js` (Jonathan runs it after the Ship). The demo and `org_stagewalk`
+seed all four on (`server/org/navTurnOn.js`, the one way a script turns entries on). A tab that is in
+the background re-reads the menu when it comes back into view, so another admin's change arrives
+without a reload.
+
 **A volunteer coordinator could not sign in at all** until NAV-1. Four of the shell's seven
 opening reads are refused for that role by the VOL-1 allowlist, correctly and by design, and one
 rejection threw in `loadData`, so the whole app rendered "Failed to connect" with the

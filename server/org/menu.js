@@ -5,7 +5,10 @@
 // Gifts for Allie's org". So two org settings, each a switch and never an org id:
 //
 //   orgs.nav_layout  the org's sidebar, [{ id, visible }] in order. NULL means
-//                    every entry shown (client/src/lib/navGroups.js orgNavLayout).
+//                    every entry shown except navGroups.js DEFAULT_OFF (NAV-2:
+//                    Auctions, Peer-to-peer, Memberships, Major Gifts), which
+//                    are on only once the saved list names them visible
+//                    (client/src/lib/navGroups.js orgNavLayout).
 //                    Each person's own layout (users.nav_layout, /me/nav-layout)
 //                    sits on top: they may hide more and reorder, never show
 //                    what the org hid. Hiding is the menu only; every route and

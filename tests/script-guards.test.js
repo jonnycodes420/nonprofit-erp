@@ -123,6 +123,10 @@ const GUARDED_WRITERS = [
   // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
   // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "undo1-reopen-journeys",
+  // NAV-2: turns Auctions, Peer-to-peer, Memberships or Major Gifts on in the menu of each org that never
+  // chose a setting for it and has data in it. Dry run by default; --apply writes through writerDbUrl,
+  // one audit row per org. Never org_creo or the demo. Nothing sends.
+  "nav2-keep-in-use",
   // SENDS-3: clears one org's pledge reminder stamps the one overdue rule (pledgeSchedule.overdueOf) disagrees
   // with. Dry run by default; --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "sends3-pledge-stamps",

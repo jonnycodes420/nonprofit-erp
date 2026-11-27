@@ -17,6 +17,7 @@ import { useState } from "react";
 import { T, Modal } from "./shared";
 import { NavIcon } from "./NavIcon";
 import { NEVER_HIDDEN } from "../lib/navGroups";
+import { NavAddList } from "./NavAddList";   // NAV-2: everything else, each with Add
 
 const rowStyle = (visible, dragOver) => ({
   display: "flex", alignItems: "center", gap: 10,
@@ -35,13 +36,23 @@ const miniBtn = disabled => ({
 
 // NAV-1 (menu): the list itself, shared by this dialog (a person's sidebar)
 // and Settings → Menu / super-admin (the org's, settings/OrgMenuEditor.jsx).
-export function NavLayoutList({ groups, labelOf, onMove, onToggle, testId = "customize-nav" }) {
+// NAV-2: it lists what is ON the sidebar, each with Take off; what is not is
+// the second part, NavAddList (./NavAddList.jsx), each with Add. A move is
+// between the entries shown: the step is counted in the whole group, so an
+// entry that is off never sits in the way.
+export function NavLayoutList({ groups: all, labelOf, onMove, onToggle, testId = "customize-nav" }) {
+  const groups = (all || []).map(g => ({ ...g, items: g.items.filter(i => i.visible) }));
+  const step = (gid, id, d) => {
+    const g = groups.find(x => x.id === gid), full = (all.find(x => x.id === gid) || { items: [] }).items;
+    const at = g.items.findIndex(i => i.id === id), to = g.items[at + d];
+    if (to) onMove(gid, id, full.findIndex(i => i.id === to.id) - full.findIndex(i => i.id === id));
+  };
   const [drag, setDrag] = useState(null);       // { groupId, id }
   const [over, setOver] = useState(null);       // id currently dragged onto
 
   const drop = (groupId, id) => {
     if (!drag || drag.groupId !== groupId || drag.id === id) { setDrag(null); setOver(null); return; }
-    const g = groups.find(x => x.id === groupId);
+    const g = all.find(x => x.id === groupId);
     const from = g.items.findIndex(i => i.id === drag.id);
     const to = g.items.findIndex(i => i.id === id);
     onMove(groupId, drag.id, to - from);
@@ -66,16 +77,16 @@ export function NavLayoutList({ groups, labelOf, onMove, onToggle, testId = "cus
             <span style={{ color: it.visible ? T.ink : T.ink3, display: "flex" }}><NavIcon id={it.id} size={17} /></span>
             <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: it.visible ? T.ink : T.ink3 }}>{name}</span>
             <button type="button" aria-label={`Move ${name} up`} disabled={idx === 0}
-              onClick={() => onMove(g.id, it.id, -1)} style={miniBtn(idx === 0)}>↑</button>
+              onClick={() => step(g.id, it.id, -1)} style={miniBtn(idx === 0)}>↑</button>
             <button type="button" aria-label={`Move ${name} down`} disabled={idx === g.items.length - 1}
-              onClick={() => onMove(g.id, it.id, 1)} style={miniBtn(idx === g.items.length - 1)}>↓</button>
+              onClick={() => step(g.id, it.id, 1)} style={miniBtn(idx === g.items.length - 1)}>↓</button>
             {pinned
               ? <span style={{ fontSize: 11, color: T.ink3, fontWeight: 600, width: 62, textAlign: "right" }}>Always on</span>
               : <button type="button" data-nav-toggle={it.id} aria-pressed={!it.visible}
                   onClick={() => onToggle(it.id, !it.visible)}
                   style={{ background: "none", border: "none", color: T.greenDk, fontSize: 12, fontWeight: 700,
                            cursor: "pointer", width: 62, textAlign: "right", padding: 0 }}>
-                  {it.visible ? "Hide" : "Show"}
+                  Take off
                 </button>}
           </div>;
         })}
@@ -86,7 +97,7 @@ export function NavLayoutList({ groups, labelOf, onMove, onToggle, testId = "cus
 
 export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClose, error }) {
   return <Modal onClose={onClose} title="Customize the sidebar" width={460}
-    subtitle="Hide what you don't use, and put what you do use where you want it. This is yours alone: nobody else in your organization sees these changes."
+    subtitle="Take off what you don't use, add what you do, and put it where you want it. This is yours alone: nobody else in your organization sees these changes."
     footer={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <button type="button" data-testid="nav-reset" onClick={onReset}
         style={{ background: T.white, border: `1.5px solid ${T.bg3}`, borderRadius: 10, padding: "8px 14px",
@@ -103,9 +114,11 @@ export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClo
     {error && <div role="status" style={{ background: T.gold700, color: T.gold50, borderRadius: 10, padding: "8px 12px",
       fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
     <NavLayoutList groups={groups} labelOf={labelOf} onMove={onMove} onToggle={onToggle} />
+    <NavAddList groups={groups} labelOf={labelOf} onAdd={id => onToggle(id, true)}
+      empty="Everything your organization shows is on your sidebar." />
     <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>
       Home and Settings stay on the rail: one is where every link lands, and the other is where
-      you undo a mistake. An item you hide is still reachable from search and from every link to it.
+      you undo a mistake. An item you take off is still reachable from search and from every link to it.
     </div>
   </Modal>;
 }

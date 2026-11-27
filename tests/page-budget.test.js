@@ -90,7 +90,8 @@ async function fixture() {
     for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
     if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).then(() => true).catch(() => false)) break;
   }
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Page Budget Trust','page-budget-trust',1,'active','team','America/New_York')`, [ORG]);
+  // NAV-2: Auctions and Major Gifts start off a new org's rail; this walk clicks them, so the org has them on
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,nav_layout) VALUES ($1,'Page Budget Trust','page-budget-trust',1,'active','team','America/New_York',$2)`, [ORG, await require("../server/org/navTurnOn").allFourOn()]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Bea Budget','admin')`, ["u_" + ORG, ORG, EMAIL, bcrypt.hashSync("loadtest1234", 4)]);
   const names = [PERSON, "Odo Fenwick", "Lark Ambry", "Tobin Searle", "Wren Halloway", "Cass Mirrin", "Juno Pelt", "Rook Ashdown"];
   for (let i = 0; i < names.length; i++) {

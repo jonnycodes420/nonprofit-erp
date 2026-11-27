@@ -328,10 +328,10 @@ async function main() {
   // FIX-27 Part 9: the timezone is CHOSEN (timezone_confirmed_at), as a
   // director would have chosen it, so the sequences on the demo really run
   // and Communications has no reason to say they are paused.
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,mission,emails_enabled,is_demo_org)
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,mission,emails_enabled,is_demo_org,nav_layout)
            VALUES ($1,'Harborlight Youth Collective','harborlight',1,'active','team',$2,NOW(),
                    'After-school arts and mentoring for young people on the north shore.',
-                   false,true)`, [ORG, TZ]);   // INCIDENT 2026-09-22: a seeded org sends nothing
+                   false,true,$3)`, [ORG, TZ, await require("../../server/org/navTurnOn").allFourOn()]);   // INCIDENT 2026-09-22: a seeded org sends nothing · NAV-2: the menu with all four entries that start off on
   // FIX-5 — the two staff names are claimed FIRST, before a generated donor
   // can be handed either of them. The director's own name turning up again
   // halfway down her donor list is the worst version of this bug.
