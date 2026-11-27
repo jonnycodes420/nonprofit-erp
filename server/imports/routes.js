@@ -799,7 +799,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         reconciled: findings.length === 0, findings, notices: importNotices(r),
         beforeChecks: before, archived: !!r.archived_at,
         // POLISH-11 item 5 (W-1119-Atlas-13): the row says what Undo can still do, from the receipt's own rule.
-        ...importUndoWindow(r), reversedAt: r.reversed_at || null,
+        ...importUndoWindow(r, tzOrg && tzOrg.timezone), reversedAt: r.reversed_at || null,
         footing: r.reversed_at ? null : importFootingOf(r, summary),   // MONEY-4: the flag's own footing
         // TRANS-1 — a named import says where the file came from, and whether
         // it has a Move Report to open. `hasMoveReport` is the presence of the
@@ -909,7 +909,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       pledgeDollarsCreated: summary.pledgeDollarsCreated != null ? Number(summary.pledgeDollarsCreated) || 0
         : r.shape === "sheet" && summary.counts && summary.counts.pledgeCents != null ? (Number(summary.counts.pledgeCents) || 0) / 100 : 0,
       reversedAt: r.reversed_at || null,
-      ...importUndoWindow(r),
+      ...importUndoWindow(r, (await orgTz(req.user.orgId)).timezone),
       summary,
     },
   });
@@ -1233,12 +1233,13 @@ const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts"
 // POLISH-13 item 5: the hours are the one setting in shared/importUndo.js, which every screen reads.
 const SHAPE_REVERSE_HOURS = require("../../shared/importUndo.js").SHAPE_REVERSE_HOURS;
 // Whether a receipt offers Undo, and until when. The route below is the judge.
-function importUndoWindow(r) {
+// POLISH-14 item 2: `tz` is the org's zone, so the day in the sentence is the org's day, not UTC's.
+function importUndoWindow(r, tz) {
   if (!WHOLE_IMPORT_SHAPES.has(r.shape) || !r.committed_at) return { canUndo: false, undoUntil: null };
   const until = require("../../shared/importUndo.js").undoUntil(r.shape, r.committed_at);
   const now = new Date();
   // POLISH-13 item 5: and the one sentence every screen prints ("You can undo this import until Dec 3, 2026.").
-  return { canUndo: !r.reversed_at && until > now, undoUntil: until.toISOString(), undoSentence: r.reversed_at ? "" : require("../../shared/importUndo.js").undoWords(until, { now }) };
+  return { canUndo: !r.reversed_at && until > now, undoUntil: until.toISOString(), undoSentence: r.reversed_at ? "" : require("../../shared/importUndo.js").undoWords(until, { now, timeZone: tz || undefined }) };
 }
 
 // LIVE-1 — every journey an import's gift started: its open step's thread is
@@ -1271,7 +1272,7 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId, id = req.params.id;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
   if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organization." });
-  const win = importUndoWindow(imp);
+  const win = importUndoWindow(imp, (await orgTz(orgId)).timezone);
   const sj = imp.summary_json ? (typeof imp.summary_json === "string" ? JSON.parse(imp.summary_json) : imp.summary_json) : {};
   const n = async (sql, args) => Number(((await query(sql, args))[0] || {}).n) || 0;
   const counts = {

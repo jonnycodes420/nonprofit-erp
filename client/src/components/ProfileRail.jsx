@@ -14,6 +14,7 @@ import { Figure } from "./Figure";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
 import { orgTodayCivil } from "../lib/orgToday";
+import { displayOrgDateShort } from "../lib/orgDay";   // POLISH-14 item 2: a charge is a moment, read on the org's day
 import { MEETING_ACTION } from "./MeetingPanels";
 import { ClientFlag } from "./PrivacyPanel";
 
@@ -99,7 +100,7 @@ export function RecurringCard({ recurring }) {
       {r.failed
         ? <div data-testid="dp-rail-recurring-failed" style={{ fontSize: 12.5, color: T.gold500, fontWeight: 700, marginTop: 6 }}>The last charge failed.</div>
         : r.paused ? <div style={{ fontSize: 12.5, ...DIM, marginTop: 6 }}>Paused.</div>
-        : r.nextCharge ? <div style={{ ...ROW, marginTop: 6 }}><span style={DIM}>Next charge</span><span>{displayDate(r.nextCharge)}</span></div> : null}
+        : r.nextCharge ? <div style={{ ...ROW, marginTop: 6 }}><span style={DIM}>Next charge</span><span>{displayOrgDateShort(r.nextCharge, orgTodayCivil())}</span></div> : null}
     </RailSection>
   );
 }

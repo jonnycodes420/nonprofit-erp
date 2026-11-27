@@ -101,11 +101,12 @@ app.get("/groups/starters/:key", requireAuth, wrap(async (req, res) => {
   if (!st) return res.status(404).json({ error: "Not found" });
   const g = GR.starterGroup(st);
   const m = await GR.memberSql(orgId, g);
+  const groups = await GR.listGroups(orgId);   // POLISH-14 item 1: never an await inside Promise.all's array
   const [people, [{ n }], list] = await Promise.all([
     query(`SELECT d.id, d.name, d.last_gift_date, COALESCE(d.total_giving,0) AS total_giving FROM donors d
             WHERE d.org_id = ? AND d.id IN (${m.sql}) ORDER BY COALESCE(d.total_giving,0) DESC, d.name LIMIT 12`, [orgId, ...m.args]),
     query(`SELECT COUNT(*)::int AS n FROM (${m.sql}) x`, m.args),
-    GR.starterList(orgId, await GR.listGroups(orgId)),
+    GR.starterList(orgId, groups),
   ]);
   const row = [...list.starters].find(s => s.key === st.key);
   res.json({ key: st.key, name: st.name, term: st.term || null, asking: !!st.asking, count: n,

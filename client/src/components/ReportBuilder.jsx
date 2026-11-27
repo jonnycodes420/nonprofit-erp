@@ -18,6 +18,7 @@ import { cellText, centsOf, footCents, footCount, sortValue, nextSort, sortRows,
 import { DonorLink, useUrlWriter } from "./RecordLink";
 import { SaveAsGroup } from "./Groups";   // FLOWS-5: list reports save their people
 import { listReportOf, listGroupName } from "../lib/listReports";
+import { PagedReportHead } from "./reports/PagedReportHead";   // POLISH-14 item 6
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -160,7 +161,7 @@ function ResultTable({ out, onOpen, listId = null }) {
       {ids.length > 0 && <div style={{ marginBottom: 8 }}><SaveAsGroup name={listGroupName(listId)} donorIds={ids} testid="report-save-group" /></div>}
       <ReportTable cols={outColumns(out)} rows={rows} personOf={r => r._pid || null} onOpen={onOpen} />
       <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
-        {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "row" : "rows"}
+        {out.paging ? `Gifts ${((out.paging.page - 1) * out.paging.pageSize + 1).toLocaleString("en-US")} to ${((out.paging.page - 1) * out.paging.pageSize + rows.length).toLocaleString("en-US")} of ${out.totals.count.toLocaleString("en-US")}, oldest first` : `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "row" : "rows"}`}
         {out.capped ? ` · the first ${out.rows.length} are shown here; the file has all ${out.totals.count.toLocaleString("en-US")}` : ""}
       </div>
     </div>
@@ -299,14 +300,19 @@ export function BuilderView({ onSaved, onCancel, onOpen }) {
 export function ReportRunView({ id, meta, onOpen }) {
   const [out, setOut] = useState(null);
   const [msg, setMsg] = useState("");
+  // POLISH-14 item 6: a paged report's range and page ({} is its own default, Home's window).
+  const [ask, setAsk] = useState({});
+  useEffect(() => { setAsk({}); }, [id]);
+  const qs = new URLSearchParams(Object.entries(ask).filter(([, v]) => v)).toString();
+  const fileQs = new URLSearchParams(Object.entries({ from: ask.from, to: ask.to }).filter(([, v]) => v)).toString();
   useEffect(() => {
     let dead = false;
-    setOut(null); setMsg("");
-    apiFetch(`/saved-reports/${encodeURIComponent(id)}/run`)
+    setMsg("");
+    apiFetch(`/saved-reports/${encodeURIComponent(id)}/run${qs ? "?" + qs : ""}`)
       .then(o => { if (!dead) setOut(o); })
       .catch(e => { if (!dead) setMsg(errorMessage(e, "That report could not run.")); });
     return () => { dead = true; };
-  }, [id]);
+  }, [id, qs]);
   const name = meta?.name || out?.report?.name || "";
   const question = meta?.question || out?.report?.question || "";
   return (
@@ -318,11 +324,12 @@ export function ReportRunView({ id, meta, onOpen }) {
             {question && <div style={{ fontSize: 13, color: T.ink3, marginTop: 2 }}>{question}</div>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/csv`, `${name || "report"}.csv`).catch(e => setMsg(e.message))}>CSV</button>
-            <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/pdf`, `${name || "report"}.pdf`).catch(e => setMsg(e.message))}>PDF</button>
+            <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/csv${fileQs ? "?" + fileQs : ""}`, `${name || "report"}.csv`).catch(e => setMsg(e.message))}>CSV</button>
+            <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/pdf${fileQs ? "?" + fileQs : ""}`, `${name || "report"}.pdf`).catch(e => setMsg(e.message))}>PDF</button>
           </div>
         </div>
         {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
+        {out && out.paging && <PagedReportHead out={out} onRange={(from, to) => setAsk({ from, to, page: 1 })} onPage={page => setAsk(a => ({ ...a, from: out.paging.from, to: out.paging.to, page }))} />}
         {out ? (out.rows.length ? <ResultTable out={out} onOpen={onOpen} listId={id} /> : <div style={{ color: T.ink3, fontSize: 13 }}>Nothing matches this report yet.</div>)
           : !msg && <div style={{ color: T.ink3, fontSize: 13 }}>Running…</div>}
       </Card>

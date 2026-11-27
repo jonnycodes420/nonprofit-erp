@@ -154,7 +154,7 @@ function Does({ card, items, onNavigate, isReadOnly, onDone }) {
         return;
       }
       if (d.action === "group" || d.action === "call_list") {
-        const name = `${d.action === "call_list" ? "Call list" : "Group"}: ${card.title} (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
+        const name = `${d.action === "call_list" ? "Call list" : "Group"}: ${card.title} (${displayDate(orgTodayCivil())})`;   // POLISH-14 item 2: the org's day
         const g = await apiFetch("/groups", { method: "POST", body: JSON.stringify({ name, kind: "static", description: card.words && card.words.what }) });
         await apiFetch(`/groups/${g.id}/members`, { method: "POST", body: JSON.stringify({ donorIds: [...new Set(items.flatMap(i => i.ids))] }) });
         setMsg(`Made "${name}". Open it from Groups.`);

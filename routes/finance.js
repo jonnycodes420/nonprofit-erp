@@ -4621,7 +4621,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     // whole job is "your giving history lives in Reports", so it must equal
     // what Reports actually shows (trashed donors' gifts excluded).
     // NUMBERS-5: and Reports leaves credit rows out (money.js), so this does too.
-    query(`SELECT ${NUM.money.MONEY_SUM("g")} AS total, COUNT(*) FILTER (WHERE ${NUM.money.MONEY("g")})::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]),
+    NUM.allGifts.allGifts(query, orgId).then(a => [{ total: a.cents / 100, n: a.n, undated: a.undated }]),   // POLISH-14 item 3: Reports' All time, the one rule
     query(`SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions WHERE org_id = ? AND type='income' AND source IN ('gift','import','online','event') AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId]),
   ]);
 
@@ -4661,7 +4661,11 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const LS = NUM.ledgerStatus;
   const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
   const split = await LS.ledgerSplit(query, orgId, fyFrom);
-  const ledgerStatus = Object.fromEntries(["posted", "waiting", "history", "all"].map(k => [k, { count: split[k].n, cents: split[k].cents, amount: split[k].cents / 100, sentence: LS.SENTENCES[k] || "Every gift on file." }]));
+  const ledgerStatus = Object.fromEntries(["posted", "waiting", "history", "all"].map(k => [k, { count: split[k].n, cents: split[k].cents, amount: split[k].cents / 100, sentence: LS.SENTENCES[k] || NUM.allGifts.SENTENCE }]));
+  // POLISH-14 item 3: where a gift with no date is (always Waiting to post: history needs a date).
+  const undated = giftHistRows[0] && giftHistRows[0].undated;
+  if (undated && undated.n + undated.cents) ledgerStatus.waiting.sentence += " " + NUM.allGifts.undatedWords(undated, "finance");
+  ledgerStatus.all.sentence = `${NUM.allGifts.SENTENCE} ${NUM.allGifts.undatedWords(undated, "finance")}`;
 
   const FB = NUM.financeBasis;   // TRUTH-6 (W-1107-Finance-39X): each basis named, one line to Fundraising's figure
   const basis = { ...FB.BASIS, ...(await FB.financeBasis(query, orgId, { from: cur.start, to: cur.end, today: orgToday(_fpTz), revenueCents: Math.round(ytdRevenue * 100) })) };   // ORG_TZ_SEAM_OK
@@ -4681,7 +4685,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     fundBalances: fundRows.map(f => ({
       id: f.id, name: f.name, restricted: f.restricted, balance: parseFloat(f.balance) || 0,
     })),
-    giftHistoryTotal, giftHistoryCount, ledgerGiftTotal,
+    giftHistoryTotal, giftHistoryCount, ledgerGiftTotal, giftHistoryNote: NUM.allGifts.undatedWords(undated, "finance"),
     unledgeredGiving, hasUnledgeredGiving: unledgeredGiving > 1,
     ledgerStatus, fiscalYearFrom: fyFrom,
     // SWEEP-5: nothing has ever posted. Overview then says so in one card
