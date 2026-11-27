@@ -408,8 +408,8 @@ export const STANDARD_REPORTS = [
   { key: "retention", name: "Retention by cohort", question: "Of last year's donors, how many gave again?", kind: "handler", handler: "retention", params: { yearMode: "fiscal" } },
   // COUNTS-1: the one Lost rule (shared/numbers/lapse.js lostSql), Re-engage's Lost & Found.
   { key: "lapsed-24", name: "Lost: over 24 months", question: "Who has not given in more than two years?", kind: "handler", handler: "lost", params: {} },
-  { key: "ack-backlog", name: "Acknowledgment backlog", question: "Which gifts has nobody thanked yet?", kind: "builder",
-    def: { entity: "gifts", columns: ["donor", "date", "amount", "fund"], filter: { op: "and", rules: [{ field: "acknowledged", cmp: "eq", value: false }] }, sort: { field: "date", dir: "asc" } } },
+  // POLISH-14 item 6: the one backlog rule (thankBacklog.js) over Home's window, counted, totalled, in pages of 50.
+  { key: "ack-backlog", name: "Acknowledgment backlog", question: "Which gifts has nobody thanked yet?", kind: "handler", handler: "ack-backlog", params: {} },
   // BUILD-98 (switch) Part 5 — volunteer-to-donor conversion.
   { key: "volunteers-who-give", name: "Volunteers who give", question: "Which of our volunteers also give?", kind: "builder",
     def: { entity: "people", columns: ["name", "volunteer_hours", "lifetime", "last_gift_date"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "volunteer" }, { field: "lifetime", cmp: "gt", value: 0 }] }, sort: { field: "name", dir: "asc" } } },

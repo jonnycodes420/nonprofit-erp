@@ -4,11 +4,12 @@ import { errorMessage } from "../../lib/domainError";
 import { urlParam } from "../../lib/appUrls";
 import { T, SectionLabel, Modal } from "../shared";
 import { MoveReport } from "../MoveIn";
-import { displayDate, displayDateTime } from "../../../../shared/displayDate";
+import { displayDateShort } from "../../../../shared/displayDate";
 import ImportGiftLine from "../ImportGiftLine";
 import ImportUndo from "../ImportUndo";
 import { fmtCount, fmtMoney } from "./importsWords";
-import { displayOrgDate } from "../../lib/orgDay";
+import { displayOrgDate, displayOrgDateShort } from "../../lib/orgDay";
+import { orgTodayCivil } from "../../lib/orgToday";   // POLISH-14 item 2: the org's day, with the year only when it isn't this year
 
 export function ImportsHistory(){
   const [rows,setRows]=useState(null);
@@ -67,12 +68,12 @@ export function ImportsHistory(){
                         style={{background:"none",border:"none",padding:0,font:"inherit",color:T.greenDk,textDecoration:"underline",cursor:"pointer"}}>{r.archived?"Unarchive":"Archive"}</button></div>}
                     {/* FIX-52: a spreadsheet import still being written, or one rolled back */}
                     {(r.state==="in_progress"||r.state==="failed")&&<div data-testid="imports-state" style={{fontSize:11.5,color:r.state==="failed"?T.terra700:T.greenDk,marginTop:2}}>{r.sentence}</div>}
-                    {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone{r.reversedAt?` ${displayDate(r.reversedAt)}`:""}</div>}
+                    {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone{r.reversedAt?` ${displayOrgDateShort(r.reversedAt, orgTodayCivil())}`:""}</div>}
                     {/* POLISH-11 item 5: what Undo can still do, on the row itself */}
                     {r.state==="done"&&<div data-testid="imports-undo-window" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>
                       {r.undoSentence?r.undoSentence
-                        :r.canUndo&&r.undoUntil?`You can undo this import until ${displayDate(r.undoUntil)}.`
-                        :r.undoUntil?`The window to undo this import closed on ${displayDate(r.undoUntil)}.`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
+                        :r.canUndo&&r.undoUntil?`You can undo this import until ${displayOrgDateShort(r.undoUntil, orgTodayCivil())}.`
+                        :r.undoUntil?`The window to undo this import closed on ${displayOrgDateShort(r.undoUntil, orgTodayCivil())}.`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
                     {/* BUILD-88a A.7 — a run made before funds and payment
                         methods were written says so, and says what to do. */}
                     {(r.notices||[]).map((n,i)=>(
@@ -97,7 +98,7 @@ export function ImportsHistory(){
                       </button>
                     )}
                   </td>
-                  <td style={td}>{r.committedOn?displayDate(r.committedOn):""}</td>
+                  <td style={td}>{r.committedOn?displayDateShort(r.committedOn, orgTodayCivil()):""}</td>
                   <td style={td}>{r.by||"Not recorded"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.peopleSentence?(r.peopleRowsIn??(r.donorsCreated+(r.peopleMatched||0))):r.rowsIn)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.giftsCreated)}</td>
@@ -156,7 +157,7 @@ export function ImportsHistory(){
               {open.summary&&open.summary.leadSentence&&(
                 <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
               )}
-              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDateTime(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
+              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayOrgDate(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
               {/* FIX-52: every receipt that undoes as a whole offers Undo for its
                   window, whether or not it reconciles. */}
               <div style={{marginTop:14,borderTop:"1px solid "+T.bg3,paddingTop:12}}>
@@ -168,11 +169,11 @@ export function ImportsHistory(){
                   : open.canUndo
                     ? <>
                         <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null,justUndone:!!(r&&r.stayedCount)}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>
-                        {open.undoUntil&&<div data-testid="import-receipt-undo-until" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>{open.undoSentence||`You can undo this import until ${displayDate(open.undoUntil)}.`}</div>}
+                        {open.undoUntil&&<div data-testid="import-receipt-undo-until" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>{open.undoSentence||`You can undo this import until ${displayOrgDateShort(open.undoUntil, orgTodayCivil())}.`}</div>}
                       </>
                     : open.undoUntil
                       // POLISH-13 item 5: past its window the receipt says so, instead of no word at all
-                      ? <div data-testid="import-receipt-undo-closed" style={{fontSize:12.5,color:T.ink3}}>{open.undoSentence||`The window to undo this import closed on ${displayDate(open.undoUntil)}.`}</div>
+                      ? <div data-testid="import-receipt-undo-closed" style={{fontSize:12.5,color:T.ink3}}>{open.undoSentence||`The window to undo this import closed on ${displayOrgDateShort(open.undoUntil, orgTodayCivil())}.`}</div>
                       : null}
               </div>
             </div>

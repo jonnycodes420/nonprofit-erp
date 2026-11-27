@@ -59,6 +59,17 @@ async function waitingOlderThan(query, orgId, since, cutoff) {
   return { rows, older };
 }
 
+// POLISH-14 item 6: the Acknowledgment backlog report's page: the waiting gifts dated from..to,
+// oldest first, `limit` of them from `offset` (no limit: the whole range, for its CSV and PDF).
+async function waitingBetween(query, orgId, from, to, { limit = null, offset = 0 } = {}) {
+  return query(
+    `SELECT g.id, g.amount, g.date, g.donor_id, d.name, f.name AS fund
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.org_id = ? AND ${WAITING("g", "d")} AND g.date <= ?
+      ORDER BY g.date ASC, d.name, g.id${limit ? ` LIMIT ${Number(limit) | 0} OFFSET ${Math.max(0, Number(offset) | 0)}` : ""}`, [orgId, from, to]);
+}
+
 const SENTENCE = "Waiting to be thanked: every gift dated on or after the day you started with Steward with no thank-you logged. A refund, a gift refunded in full, sample data and a deleted person's gifts wait for no thanks. A drafted thank-you still waits until it is marked sent.";
 
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
@@ -73,4 +84,4 @@ function backlogWords(b, sinceWords) {
   return `${gifts(b.n)} (${usd(b.cents)}) ${b.n === 1 ? "is" : "are"} waiting to be thanked since ${sinceWords}; ${tail}.`;
 }
 
-module.exports = { waitingOlderThan, WAITING, DRAFTED, backlog, backlogWords, SENTENCE };
+module.exports = { waitingOlderThan, waitingBetween, WAITING, DRAFTED, backlog, backlogWords, SENTENCE };

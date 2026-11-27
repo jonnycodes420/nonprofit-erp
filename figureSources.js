@@ -810,18 +810,18 @@ const SOURCES = {
   // not a gift waiting for thanks.
   unthanked: {
     label: "Gifts not yet thanked",
-    measure: () => "count",
-    params: { since: "date:required", donor: "id" },
+    measure: p => (p.measure === "sum" ? "sum" : "count"),   // POLISH-14: the backlog report's total
+    params: { since: "date:required", to: "date", donor: "id", measure: "measure" },
     // FLOWS-14 (W-1115-Finance-02X): Home's org-wide count reads the profile's rule too
     // (shared/numbers/thanks.js): a refund row and a gift refunded in full wait for no thanks.
     // NUMBERS-9 item 6: waiting to be thanked is one definition (shared/numbers/thankBacklog.js WAITING),
     // read by Home, Acknowledgments' backlog, the thank-you card and the Report builder's Thanked = No.
-    sentence: (p, dd) => `Every gift${p.donor ? " from this person" : ""} dated on or after ${dd(p.since)}, the day you started with Steward, with no thank-you logged. A refund, a gift refunded in full, and sample data wait for no thanks. A drafted thank-you still waits until it is marked sent.`,
+    sentence: (p, dd) => `Every gift${p.donor ? " from this person" : ""} dated on or after ${dd(p.since)}${p.to ? ` and on or before ${dd(p.to)}` : ", the day you started with Steward,"} with no thank-you logged. A refund, a gift refunded in full, and sample data wait for no thanks. A drafted thank-you still waits until it is marked sent.`,
     sql: (orgId, p) => ({
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND ${require("./shared/numbers/thankBacklog").WAITING("g", "d")}${p.donor ? " AND g.donor_id = ?" : ""}`,
-      args: [orgId, p.since, ...(p.donor ? [p.donor] : [])],
+             WHERE g.org_id = ? AND ${require("./shared/numbers/thankBacklog").WAITING("g", "d")}${p.to ? " AND g.date <= ?" : ""}${p.donor ? " AND g.donor_id = ?" : ""}`,
+      args: [orgId, p.since, ...(p.to ? [p.to] : []), ...(p.donor ? [p.donor] : [])],
     }),
   },
   "thanks-marked": {

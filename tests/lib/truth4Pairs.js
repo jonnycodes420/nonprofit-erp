@@ -78,8 +78,11 @@ async function truth4Pairs({ orgId, get, q, agree, diffs, today }) {
     const years = (yoy && yoy.years) || [];
     const [old] = await q(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                             WHERE ${LIVE} AND ${NOT_CREDIT} AND g.date < $2`, [orgId, years.length ? years[years.length - 1].from : "0000"]);
+    // POLISH-14 item 3: All time is every gift on file, dated or not; a gift with no date is in no year.
+    const [und] = await q(`SELECT COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS c FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                            WHERE ${LIVE} AND ${NOT_CREDIT} AND COALESCE(LEFT(g.date, 10), '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`, [orgId]);
     if (years.length && !old.n) agree("truth4 all-time giving", [["Top donors' All-time", cents(top.figures.allTime && top.figures.allTime.value)],
-      ["Year over year's years, added up", years.reduce((n, y) => n + Number(y.cents || 0), 0)]], money);
+      ["Year over year's years, added up, and the gifts with no date", years.reduce((n, y) => n + Number(y.cents || 0), 0) + Number(und.c)]], money);
   }
 
   // ── bunt ──────────────────────────────────────────────────────────────────
