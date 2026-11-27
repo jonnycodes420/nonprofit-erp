@@ -17,12 +17,13 @@
 export const FRAME_SANDBOX = "allow-same-origin allow-scripts";
 const CSP = `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
 
-// The page with the policy first in its <head> (after the doctype, so the page
-// keeps its standards mode).
+// The page with the policy as its very first element (after the doctype, so
+// the page keeps its standards mode). Never placed by finding "<head": that
+// also matches "<header>" or a comment, and a policy in the body is ignored.
+// A meta before <head> goes into the head the parser opens for it.
 export function framedHtml(html) {
   const s = String(html || "");
   if (!s) return s;
-  if (/<head[^>]*>/i.test(s)) return s.replace(/<head[^>]*>/i, m => m + CSP);
   const dt = s.match(/^\s*<!doctype[^>]*>/i);
   return dt ? dt[0] + CSP + s.slice(dt[0].length) : CSP + s;
 }
