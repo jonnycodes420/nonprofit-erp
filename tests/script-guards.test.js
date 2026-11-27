@@ -96,6 +96,9 @@ const GUARDED_WRITERS = [
   // FLOWS-10: puts the demo's chapel photo alt right, alt text only, org_b72demo only. Dry run by
   // default; --apply writes through writerDbUrl, and a remote target must also answer env "staging".
   "flows10-demo-alts",
+  // NUMBERS-10 item 1: moves covered-fee gifts' ledger rows written at the gift before the fee to the charge, one org.
+  // Dry run by default; --apply writes through writerDbUrl, one audit row. Never org_creo; the demo only on staging.
+  "numbers10-fee-rows",
   // FLOWS-14: removes refund rows whose gift is gone, one org. Dry run by default; --apply writes
   // through writerDbUrl, and a remote target must hold org_stagewalk and answer env "staging" on BASE.
   "flows14-orphan-refunds",

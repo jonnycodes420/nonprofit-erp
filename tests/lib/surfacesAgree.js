@@ -1300,6 +1300,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skipSet.has("numbers9")) await require("./numbers9Checks").numbers9Checks({ orgId, get, q, agree, skip });
   // ── NUMBERS-10 items 2 and 4 · one thank-you backlog and window; a draft names each gift; the Gift History header foots (tests/lib/numbers10ThanksChecks.js) ──
   if (!skipSet.has("numbers10thanks")) await require("./numbers10ThanksChecks").numbers10ThanksChecks({ orgId, get, q, agree, skip });
+  // ── NUMBERS-10 item 1 · one fund total: card = dialog = Transactions = fund balances; covered fees said (tests/lib/numbers10FundChecks.js) ──
+  if (!skipSet.has("numbers10fund")) await require("./numbers10FundChecks").numbers10FundChecks({ orgId, get, q, agree, skip });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

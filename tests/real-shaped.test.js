@@ -163,12 +163,54 @@ async function importJob(tok, body) {
   }
 }
 
+// ── §N10A · NUMBERS-10 item 1 (W-1122-Finance-F7). One fund total, covered fees said ──────────────
+// A fund with a covered-fee gift posted at the charge (the product's way), one posted before the fee
+// (the old demo seed's way), a plain gift, hand-entered income and an expense. The card, its dialog,
+// Transactions (every year, this fund) and Finance's fund balances give one balance and one "in" to the
+// cent (tests/lib/numbers10FundChecks.js, inside the truth check); the repair script finds exactly the
+// row posted before the fee, and after --apply the gifts on the books and transactions in agree.
+async function n10Fund() {
+  console.log("\n§N10A one fund total, covered card fees said");
+  const ORG = "org_n10fund";
+  const tok = await freshOrg(ORG, "Fund total (test)");
+  const today = require("./clock").civilDay();
+  const p = await api("POST", "/donors", tok, { name: "Odile Farrant", email: "odile@n10fund.invalid" });
+  const pid = p.body && (p.body.id || (p.body.donor && p.body.donor.id));
+  const give = async amount => { const g = await api("POST", `/donors/${pid}/gifts`, tok, { type: "cash", paymentMethod: "Card", amount, date: today });
+    return g.body && (g.body.id || (g.body.gift && g.body.gift.id)); };
+  const plain = await give(300), atCharge = await give(26.06), beforeFee = await give(51.81);
+  const [{ fund_id: gen }] = await q(`SELECT fund_id FROM gifts WHERE id=$1`, [plain]);
+  // A donor covered the fee on two: one row at the charge (as recordGift posts), one at the gift before the fee.
+  await q(`UPDATE gifts SET cover_fee_amount = 1.06 WHERE id=$1`, [atCharge]);
+  await q(`UPDATE gifts SET cover_fee_amount = 1.81 WHERE id=$1`, [beforeFee]);
+  await q(`UPDATE fin_transactions SET amount = 50.00 WHERE gift_id=$1 AND type='income'`, [beforeFee]);
+  await api("POST", "/finance/transactions", tok, { date: today, description: "Raffle cash box", amount: 40, type: "income", fundId: gen });
+  await api("POST", "/finance/transactions", tok, { date: today, description: "Hall hire", amount: 120, type: "expense", fundId: gen });
+  const card = (((await api("GET", "/finance/funds-detail", tok)).body || {}).funds || []).find(f => f.id === gen) || {};
+  ok("§N10A fixture: the fund's balance is $300 + $26.06 + $50 + $40 - $120 = $296.06", card.balanceCents === 29606, card.balanceCents);
+  ok("§N10A the card says covered fees are in ($1.06) and names the one left out ($1.81 on 1 gift)",
+    /Card fees donors covered are in: \$1\.06 of the \$416\.06 in\./.test(card.balanceWords || "") && /\$1\.81 of card fees donors covered on 1 gift is not in it/.test(card.feeWords || ""), card.balanceWords);
+  await surfaces(ORG, { token: tok, step: "N10A before the repair", only: ["numbers10fund"] });
+  const env = { ...process.env, DATABASE_URL: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest" };
+  const run = args => require("child_process").execFileSync(process.execPath, [require("path").join(__dirname, "..", "scripts", "ops", "numbers10-fee-rows.js"), ...args], { env, encoding: "utf8" });
+  const dry = run(["--org", ORG]);
+  ok("§N10A the repair's dry run lists exactly the row posted before the fee, and writes nothing",
+    /: 1 in org_n10fund/.test(dry) && dry.includes(beforeFee) && (await q(`SELECT amount FROM fin_transactions WHERE gift_id=$1`, [beforeFee]))[0].amount == 50, dry);
+  run(["--org", ORG, "--apply"]);
+  const after = (((await api("GET", "/finance/funds-detail", tok)).body || {}).funds || []).find(f => f.id === gen) || {};
+  ok("§N10A after --apply the gifts on the books and transactions in agree, and both fees are in",
+    /Card fees donors covered are in: \$2\.87 of/.test(after.balanceWords || "") && !/is not in it/.test(after.feeWords || "") && !(after.gapLines || []).some(l => l.kind === "fee"), [after.balanceWords, after.gapWords]);
+  await surfaces(ORG, { token: tok, step: "N10A after the repair", only: ["numbers10fund"] });
+}
+
 async function main() {
   // TRASH-1: REAL_SHAPED_ONLY=T runs §T alone (a quick local loop); CI runs everything.
   if (process.env.REAL_SHAPED_ONLY === "T") { await trashMoney(); await closeDb(); summary(); return; }
   // IMPORT-11: REAL_SHAPED_ONLY=I11 runs §I11 alone (tests/lib/import11Checks.js); CI runs everything.
   const i11 = () => require("./lib/import11Checks").import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drainQueue });
   if (process.env.REAL_SHAPED_ONLY === "I11") { await i11(); await closeDb(); summary(); return; }
+  // NUMBERS-10 item 1: REAL_SHAPED_ONLY=N10A runs §N10A alone (one fund total, covered fees said).
+  if (process.env.REAL_SHAPED_ONLY === "N10A") { await n10Fund(); await closeDb(); summary(); return; }
   const ORG = "org_hs1real";
   const tok = await freshOrg(ORG, "Real-shaped (test)");
   const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
@@ -580,6 +622,7 @@ async function main() {
   // §T TRASH-1: one meaning of delete, for people and everything with money on it.
   await trashMoney();
   await i11();
+  await n10Fund();   // NUMBERS-10 item 1
 
   await closeDb();
   summary();
