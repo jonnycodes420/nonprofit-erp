@@ -458,7 +458,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   // Finance
   console.log("[board-report] step 4: fetching finance data...");
   const [ytdFinRows, allFinRows, topExpRows, budgetRows] = await Promise.all([
-    query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId, ytdS, ytdE]),
+    NUMBERS.ledgerSpan.ledgerByType(query, orgId, ytdS, ytdE).then(f => [{ type: "income", total: f.income }, { type: "expense", total: f.expense }]),   // POLISH-14: the one span rule, last year's full beside it
     query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId]),
     query(
       `SELECT a.name, SUM(ft.amount) as total FROM fin_transactions ft

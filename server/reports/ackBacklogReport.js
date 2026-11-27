@@ -27,8 +27,6 @@ async function ackBacklogReport(orgId, opts = {}) {
   let to = DAY.test(String(opts.to || "")) ? opts.to : today;
   if (from > to) [from, to] = [to, from];
   const page = Math.max(1, parseInt(opts.page, 10) || 1);
-  const where = `g.org_id = ? AND ${TB.WAITING("g", "d")} AND g.date <= ?`;
-  const args = [orgId, from, to];
   const countSrc = { key: "unthanked", params: { since: from, to } };
   const sumSrc = { key: "unthanked", params: { since: from, to, measure: "sum" } };
   const [count, total, countWords, sumWords, rows] = await Promise.all([
@@ -36,11 +34,7 @@ async function ackBacklogReport(orgId, opts = {}) {
     figureSources.figureValue(orgId, sumSrc),
     figureSources.figureSentence(countSrc),
     figureSources.figureSentence(sumSrc),
-    query(`SELECT g.id, g.amount, g.date, g.donor_id, d.name, f.name AS fund
-             FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-            WHERE ${where}
-            ORDER BY g.date ASC, d.name, g.id${opts.all ? "" : ` LIMIT ${PAGE} OFFSET ${(page - 1) * PAGE}`}`, args),
+    TB.waitingBetween(query, orgId, from, to, opts.all ? {} : { limit: PAGE, offset: (page - 1) * PAGE }),
   ]);
   const n = Number(count.value) || 0, c = cents(total.value);
   const pages = Math.max(1, Math.ceil(n / PAGE));

@@ -16,11 +16,10 @@ async function lastYearFull(query, orgId, org) {
   const FY = NUMBERS.fiscalYear;
   const prev = FY.fiscalYear(org || {}, -1), prev2 = FY.fiscalYear(org || {}, -2);
   const [fin, ret] = await Promise.all([
-    query(`SELECT type, SUM(amount) AS total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId, prev.start, prev.end]),
+    NUMBERS.ledgerSpan.ledgerByType(query, orgId, prev.start, prev.end),
     NUMBERS.retained.retention(query, orgId, { from: prev.start, to: prev.end }, { from: prev2.start, to: prev2.end }),
   ]);
-  const by = Object.fromEntries(fin.map(r => [r.type, parseFloat(r.total) || 0]));
-  const revenue = by.income || 0, expenses = by.expense || 0;
+  const revenue = fin.income, expenses = fin.expense;
   return { label: prev.label, start: prev.start, end: prev.end, revenue, expenses, net: revenue - expenses,
     retentionRate: ret.prior > 0 ? Math.round(ret.retained / ret.prior * 100) : null };
 }
