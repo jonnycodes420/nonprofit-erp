@@ -664,7 +664,7 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
     const open = await DG.openDraftForDay(query, orgId, donorId, thisGift.date, giftId);
     if (open) {
       const ids = [...new Set([...DG.giftIdsOf(open), giftId])];
-      const [{ c }] = await query(`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS c FROM gifts WHERE org_id=? AND id = ANY(?)`, [orgId, ids]);
+      const c = (await query(`SELECT ROUND(amount * 100)::bigint AS cents FROM gifts WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).reduce((n, r) => n + Number(r.cents), 0);
       const day = draftMod.thankYouDraft({ donorName: d.name, giftCents: Number(c), fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift.date, ...facts, giftCountBefore: null, isFirstGift: null });
       await query(`UPDATE thank_you_drafts SET body=?, also_gift_ids=? WHERE id=? AND org_id=? AND sent_at IS NULL AND skipped_at IS NULL`,
         [day.body, ids.filter(x => x !== open.gift_id), open.id, orgId]);
