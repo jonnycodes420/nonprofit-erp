@@ -502,7 +502,7 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
                           </>}
                           <EditedMarker item={pl}/>
                           {!isReadOnly&&<button onClick={()=>setPledgeEdit({id:pl.id,amount:String(pl.amount),dueDate:String(pl.due_date||"").slice(0,10),notes:pl.notes||"",sched:pledgeSched(pl)})} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit</button>}
-                          <button onClick={()=>deletePledge(pl.id)} aria-label="Delete this pledge" style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                          <button onClick={()=>deletePledge(pl.id,pl)} aria-label="Delete this pledge" style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                         </div>
                       </div>
                     );

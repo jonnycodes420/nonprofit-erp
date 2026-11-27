@@ -81,4 +81,12 @@ async function scheduledByImport(query, orgId, ids) {
   return new Map(rows.map(r => [r.import_id, Number(r.cents) || 0]));
 }
 
-module.exports = { spanWords, scheduledByImport, ORG_TODAY, DUE, SCHEDULED, scheduledOn, isScheduled, scheduledLabel, scheduledLine, SENTENCE };
+// NUMBERS-10 item 6: one import's own gifts stored as scheduled (not a pledge's payment): { n, cents },
+// for the headline that foots the file (shared/importHeadline.js).
+async function scheduledOfImport(query, orgId, importId) {
+  const [r] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS cents FROM gifts
+                            WHERE org_id = ? AND import_id = ? AND scheduled_on IS NOT NULL AND pledge_id IS NULL`, [orgId, importId]);
+  return { n: Number(r && r.n) || 0, cents: Number(r && r.cents) || 0 };
+}
+
+module.exports = { scheduledOfImport, spanWords, scheduledByImport, ORG_TODAY, DUE, SCHEDULED, scheduledOn, isScheduled, scheduledLabel, scheduledLine, SENTENCE };

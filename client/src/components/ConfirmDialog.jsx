@@ -37,8 +37,9 @@ function ConfirmHost() {
         {/* PLEDGES-2: a second answer (resolves "alt"), for a question with two ways forward */}
         {q.alt && <button type="button" data-testid="confirm-alt" onClick={() => done("alt")}
           style={{ ...btn, background: T.white, color: T.green, border: "1px solid " + T.green }}>{q.alt}</button>}
-        <button type="button" data-testid="confirm-yes" onClick={() => done(true)}
-          style={{ ...btn, background: q.danger ? T.terracotta : T.green, color: T.white, border: "none" }}>{q.yes || "Confirm"}</button>
+        {/* NUMBERS-10: `yes: false` is a notice with one way out (an act that can't be done says why, with no confirm) */}
+        {q.yes !== false && <button type="button" data-testid="confirm-yes" onClick={() => done(true)}
+          style={{ ...btn, background: q.danger ? T.terracotta : T.green, color: T.white, border: "none" }}>{q.yes || "Confirm"}</button>}
       </>}>
       {q.body && <div style={{ fontSize: 14, lineHeight: 1.6, color: T.ink, whiteSpace: "pre-line" }}>{q.body}</div>}
     </Modal>

@@ -126,6 +126,10 @@ const GUARDED_WRITERS = [
   // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
   // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "undo1-reopen-journeys",
+  // NUMBERS-10: stops journeys whose gift is gone, writes the "Thank-you cancelled" timeline line a stopped one
+  // lacks, voids open tasks for a gift that is gone, one org. Dry run by default; --apply through writerDbUrl,
+  // one audit row. Never org_creo or the demo. Nothing sends.
+  "numbers10-orphan-thanks",
   // NAV-2: turns Auctions, Peer-to-peer, Memberships or Major Gifts on in the menu of each org that never
   // chose a setting for it and has data in it. Dry run by default; --apply writes through writerDbUrl,
   // one audit row per org. Never org_creo or the demo. Nothing sends.

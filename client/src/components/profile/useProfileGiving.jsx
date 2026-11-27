@@ -242,13 +242,18 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     }catch(e){alert(errorMessage(e, "Could not update pledge"));}
   };
 
-  const deletePledge=async(id)=>{
+  // NUMBERS-10 item 6 (W-1127-Finance-03): a pledge that can't be deleted (payments applied) says why
+  // BEFORE any confirm, from the list's own `deleteRefusal`; a refusal from the server is said the same
+  // way, in the app, never a browser alert. A confirm is only ever shown for a delete that will happen.
+  const pledgeStays=(body)=>askConfirm({title:"This pledge stays on the record",body,yes:false,no:"Close"});
+  const deletePledge=async(id,pl)=>{
+    if(pl&&pl.deleteRefusal){await pledgeStays(pl.deleteRefusal);return;}
     if(!(await askConfirm({title:"Delete this pledge?",body:"It comes off this person's record, with its schedule and its line on the timeline. You can undo it.",yes:"Delete pledge",danger:true})))return;
     try{
       const r=await apiFetch(`/pledges/${id}`,{method:"DELETE"});
       told({donorId:donor.id,pledge:true});loadPledges();
       offerUndo(r,"pledge",loadPledges);
-    }catch(e){alert(errorMessage(e,"The pledge could not be deleted."));}
+    }catch(e){loadPledges();await pledgeStays(errorMessage(e,"The pledge could not be deleted."));}
   };
   // FIX-14 Part 3 — a pledge is edited in place: amount, due date, note.
   const [pledgeEdit,setPledgeEdit]=useState(null);
