@@ -622,6 +622,7 @@ async function main() {
   // §T TRASH-1: one meaning of delete, for people and everything with money on it.
   await trashMoney();
   await i11();
+  await n10Fund();   // NUMBERS-10 item 1
 
   await closeDb();
   summary();
