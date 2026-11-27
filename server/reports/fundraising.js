@@ -484,8 +484,7 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
         const p = retention.period;
         const w = { from1: figureSources.addYears(p.from1, -1), to1: figureSources.addYears(p.to1, -1), from0: p.from1, to0: p.to1 };
         const f = await figureSources.figureValue(orgId, { key: "retention-window", params: w }, {});
-        return { current: f.value == null ? null : Math.round(Number(f.value)), label: p.prevLabel || null, source: { key: "retention-window", params: w },
-          definition: "Retention last fiscal year, the whole year: of the people who gave the fiscal year before last, the share who gave again in last fiscal year." };
+        return { current: f.value == null ? null : Math.round(Number(f.value)), source: { key: "retention-window", params: w } };   // its label is prevYearLabel
       })() : null,
       trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
     },

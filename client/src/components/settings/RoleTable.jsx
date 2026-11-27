@@ -1,7 +1,8 @@
 // settings/RoleTable.jsx · POLISH-14 item 5. Settings → Team: what each role
 // can do, in one short table (shared/viewOnly.js ROLE_CAN, the server's gates).
 // A viewer's Export reads the org's Viewers can export switch, live.
-import { ROLES, ROLE_ACTIONS, ROLE_CAN, roleWord, viewerExportWord } from "../../../../shared/viewOnly.js";
+import { ROLES, roleWord } from "../../../../shared/viewOnly.js";
+import { ROLE_ACTIONS, ROLE_CAN, viewerExportWord } from "../../../../shared/roleCan.js";
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";

@@ -54,7 +54,7 @@ export function retentionSection({ DonorChip, MoreChip, Sparkline, driftData, fi
                 {/* POLISH-14 item 4: last fiscal year's whole year beside the year so far, so 23% is not read as a collapse. */}
                 {!retentionTooEarly&&!retentionThin&&stewardMetrics.retentionRate.lastYearFull&&stewardMetrics.retentionRate.lastYearFull.current!=null&&(
                   <div data-testid="home-retention-last-year" onClick={e=>e.stopPropagation()} style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                    Last fiscal year{stewardMetrics.retentionRate.lastYearFull.label?` (${stewardMetrics.retentionRate.lastYearFull.label})`:""}, the full year: <Figure variant="inline" kind="percent" value={stewardMetrics.retentionRate.lastYearFull.current} label="Retention last fiscal year" definition={stewardMetrics.retentionRate.lastYearFull.definition} source={stewardMetrics.retentionRate.lastYearFull.source} figureKey="home.retention.lastYear"/>
+                    Last fiscal year{stewardMetrics.retentionRate.prevYearLabel?` (${stewardMetrics.retentionRate.prevYearLabel})`:""}, the full year: <Figure variant="inline" kind="percent" value={stewardMetrics.retentionRate.lastYearFull.current} label="Retention last fiscal year" definition="Of the people who gave the fiscal year before last, the share who gave again in last fiscal year." source={stewardMetrics.retentionRate.lastYearFull.source} figureKey="home.retention.lastYear"/>
                   </div>
                 )}
                 {/* IMPORT-4: retention leaves out gifts with no date, and says so; the count opens them. */}

@@ -55,7 +55,7 @@ module.exports = function ledgerSources({ FigureParamError }) {
       },
     },
     // POLISH-14 item 3: Reports' All time and Finance's gifts on file are one
-    // figure (shared/numbers/allGifts.js): every gift, dated or not.
+    // figure (shared/numbers/allGifts.js): every gift to today, dated or not.
     "gifts-all": {
       label: "Every gift on file",
       measure: p => (p.measure === "count" ? "count" : "sum"),

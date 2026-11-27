@@ -33,7 +33,7 @@ async function ledgerSplit(query, orgId, fyFrom) {
     `SELECT s.status, COUNT(*) FILTER (WHERE s.counted)::int AS n, COALESCE(SUM(ROUND(s.amount * 100)), 0)::bigint AS cents FROM (
        SELECT g.amount, ${GIFT("g")} AS counted, ${STATUS("g")} AS status
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id = ? AND ${require("./allGifts").ALL("g", "d")}) s   -- POLISH-14: the one all-time rule
+        WHERE g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")}) s
       GROUP BY s.status`, [fyFrom, orgId]);
   const out = { posted: { n: 0, cents: 0 }, waiting: { n: 0, cents: 0 }, history: { n: 0, cents: 0 } };
   for (const r of rows) out[r.status] = { n: Number(r.n) || 0, cents: Number(r.cents) || 0 };

@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { T } from "../shared";
 import { Figure } from "../Figure";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 
 const inp = { padding: "5px 8px", border: "1px solid " + T.bg3, borderRadius: 6, fontSize: 12, fontFamily: "inherit" };
 const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
@@ -25,8 +26,8 @@ export function PagedReportHead({ out, onRange, onPage }) {
       </div>
       {out.summary && <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8 }}>{out.summary}</div>}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: T.ink3 }}>
-        <label>From <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={inp} aria-label="From" data-testid="paged-from" /></label>
-        <label>To <input type="date" value={to} onChange={e => setTo(e.target.value)} style={inp} aria-label="To" data-testid="paged-to" /></label>
+        <label>From <DateInput value={from} onChange={e => setFrom(e.target.value)} style={inp} aria-label="From" data-testid="paged-from" /></label>
+        <label>To <DateInput value={to} onChange={e => setTo(e.target.value)} style={inp} aria-label="To" data-testid="paged-to" /></label>
         <button type="button" style={btn} onClick={() => onRange(from, to)} disabled={!from || !to} data-testid="paged-apply">Show</button>
         {(p.from !== p.homeFrom || p.to !== p.today) && <button type="button" style={{ ...btn, border: "none", color: T.greenDk }} onClick={() => onRange(p.homeFrom, p.today)} data-testid="paged-home">Home's window</button>}
       </div>

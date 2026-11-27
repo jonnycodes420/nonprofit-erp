@@ -731,8 +731,11 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 
 ## POLISH-14 · all time, so far, and a backlog at real size (2026-11-27)
 
-- **All time is every gift on file, dated or not** (`shared/numbers/allGifts.js`). Reports' All time (Top donors,
-  the `gifts-all` source) and Finance's gifts on file (Posted + Waiting + History, the empty-ledger line) read it. A
+- **All time is every gift on file dated to today, or with no date** (`shared/numbers/allGifts.js`). Reports' All
+  time (Top donors, the `gifts-all` source) and Finance's gifts on file (the empty-ledger line) read it; a gift dated
+  after today counts from its day, as every span reads it. Finance's Posted + Waiting + History keep every money row
+  (a fund card and its rows foot on that), so they differ from All time only by a dated-ahead gift with no schedule,
+  which no writer makes (TRUTH-6 schedules them). A
   gift with no date is in All time, in Lifetime and in Finance's Waiting to post (it cannot post without a date), and
   in no year's total; each figure's sentence says so (`undatedWords`). Atlas's "all time" is still a date span
   (1900 to today) and leaves undated gifts out: the next brief's to decide.
