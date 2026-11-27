@@ -169,6 +169,9 @@ async function main() {
   // IMPORT-11: REAL_SHAPED_ONLY=I11 runs §I11 alone (tests/lib/import11Checks.js); CI runs everything.
   const i11 = () => require("./lib/import11Checks").import11({ ok, api, q, freshOrg, importJob, surfaces, XLSX, drainQueue });
   if (process.env.REAL_SHAPED_ONLY === "I11") { await i11(); await closeDb(); summary(); return; }
+  // NUMBERS-10 item 6: REAL_SHAPED_ONLY=N10D runs §N10D alone (tests/lib/numbers10DeleteChecks.js); CI runs everything.
+  const n10d = () => require("./lib/numbers10DeleteChecks").n10Delete({ ok, api, q, freshOrg, surfaces, drainQueue });
+  if (process.env.REAL_SHAPED_ONLY === "N10D") { await n10d(); await closeDb(); summary(); return; }
   const ORG = "org_hs1real";
   const tok = await freshOrg(ORG, "Real-shaped (test)");
   const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
@@ -580,6 +583,7 @@ async function main() {
   // §T TRASH-1: one meaning of delete, for people and everything with money on it.
   await trashMoney();
   await i11();
+  await n10d();   // NUMBERS-10 item 6
 
   await closeDb();
   summary();

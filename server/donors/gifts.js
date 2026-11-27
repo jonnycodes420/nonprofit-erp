@@ -560,6 +560,8 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     // "Call to say thank you"), its open thank-you voided the same way. One delete path.
     const stopped = await require("./giftThanks").stopJourneysOfGift(client, req.user.orgId, g.donor_id, req.params.id, actor(req));
     voidedTaskCount += stopped.tasks; stoppedJourneys = stopped.journeys;
+    // NUMBERS-10 item 6: a cancelled thank-you says so on the timeline; the Undo takes the line away.
+    if (snap) snap.cancelLineId = await require("./giftThanks").cancelLine(client, { orgId: req.user.orgId, g, who: actor(req), tasks: voidedTaskCount, journeys: stoppedJourneys, openSteps: stopped.openSteps || [] });
     if (withRefunds) refundsRemoved = (await PAIRS.removeRefundsOf(PAIRS.onClient(client), req.user.orgId, [req.params.id])).count;
     const guest = await require("../events/registrationEffects").reverseForGift(_fx, req.user.orgId, req.params.id, actor(req));   // UNDO-1 item 5
     await runTx(client, GDU.TIMELINE_SQL, [req.user.orgId, req.params.id]);   // POLISH-13 item 2: its own timeline line goes with it
@@ -634,6 +636,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   for (const i of instRows) (listBy.get(i.pledge_id) || listBy.set(i.pledge_id, []).get(i.pledge_id))
     .push({ seq: i.seq, dueDate: i.due_date ? String(i.due_date).slice(0, 10) : null, amount: round2(parseFloat(i.amount) || 0), paid: !!i.paid_gift_id });
   const pledgeToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK · DEFINE-1: overdue against the org's own day
+  const PD = require("./pledgeDelete"), paysBy = await PD.paymentsByPledge(query, req.user.orgId, rows.map(r => r.id));   // NUMBERS-10
   res.json(rows.map(r => {
     const paid = round2(parseFloat(r.paid_amount) || 0);
     const amount = round2(parseFloat(r.amount) || 0);
@@ -659,6 +662,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
       overdueNow: r.status === "open" ? PS.overdueOf(PS.scheduleOf(pl, payBy.get(r.id) || []), pledgeToday) : { overdue: false, since: null, days: 0, left: 0 },
       // the open-pledge figure opens Fundraising's own rows for this person
       openSource: { key: "pledges-open", params: { donor: r.donor_id } },
+      deleteRefusal: PD.deleteRefusal(r, paysBy.get(r.id)),   // NUMBERS-10 item 6: said before the confirm, never after it
     };
   }));
 }));
@@ -915,17 +919,10 @@ app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
   const [p] = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!p) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   if (!(await mayEditLogged(req, p))) return res.status(403).json(NOT_YOURS);
-  const [paid] = await query(
-    `SELECT (SELECT COUNT(*)::int FROM gifts WHERE pledge_id=? AND org_id=?)
-          + (SELECT COUNT(*)::int FROM pledge_installments WHERE pledge_id=? AND org_id=? AND paid_gift_id IS NOT NULL) AS n`,
-    [req.params.id, req.user.orgId, req.params.id, req.user.orgId]);
-  if (paid && paid.n > 0) {
-    // FRESH-3 item 5 (W-1126-Finance-02): a written-off pledge was told to "write it off instead".
-    const said = p.status === "written_off"
-      ? "This pledge has payments applied to it, so it stays on the record: the payments are real gifts. It is already written off, so nothing more is expected on it."
-      : "This pledge has payments applied to it, so it cannot be deleted. Write it off instead.";
-    return res.status(409).json({ error: "pledge_has_payments", message: said, sentence: said });
-  }
+  // NUMBERS-10 item 6: one rule (pledgeDelete.js), the same sentence the list gave the × before the confirm.
+  const PD = require("./pledgeDelete");
+  const said = PD.deleteRefusal(p, (await PD.paymentsByPledge(query, req.user.orgId, [p.id])).get(p.id));
+  if (said) return res.status(409).json({ error: "pledge_has_payments", message: said, sentence: said });
   const undoId = await trashRow("pledges", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" });
   // PLEDGES-2: the timeline says one "Pledge deleted" line (its "Pledged" line went with it).
