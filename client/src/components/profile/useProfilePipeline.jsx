@@ -242,6 +242,9 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
   const [addPick,setAddPick]=useState("");             // the one being considered
   const [addPreview,setAddPreview]=useState(null);     // its first step, for this person
   const [addErr,setAddErr]=useState("");
+  // ONE-MOVE-1 item 5 (declared above both reads, the TDZ rule): a journey started, stopped or stepped anywhere re-reads this person's panel, no reload
+  const [journeyStamp,setJourneyStamp]=useState(0);
+  useChanged(["task","person"],()=>setJourneyStamp(n=>n+1));   // a journey write names the journey, not always the person
   // WHY-1 Part 7 — the suggested journey, the "..." menu, and the inline stop.
   const [journeySuggest,setJourneySuggest]=useState(null);
   const [journeyMenu,setJourneyMenu]=useState(false);
@@ -256,9 +259,6 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
   // Re-read whenever the one in the card changes (a step done, a stop, an add).
   const [allJourneys,setAllJourneys]=useState([]);
   const [touchGap,setTouchGap]=useState(7);
-  // ONE-MOVE-1 item 5: a journey started, stopped or stepped anywhere re-reads this person's panel, no reload
-  const [journeyStamp,setJourneyStamp]=useState(0);
-  useChanged(["task","person"],()=>setJourneyStamp(n=>n+1));   // a journey write names the journey, not always the person
   useEffect(()=>{
     let live=true;
     if(!donor?.id)return undefined;

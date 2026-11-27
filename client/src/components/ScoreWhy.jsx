@@ -164,7 +164,7 @@ export function SuggestedAskLine({ ask, style }) {
   );
   return (
     <div data-testid="suggested-ask" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, ...style }}>
-      <strong style={{ color: T.ink }}>{ask.monthly ? "Suggested monthly ask:" : "Suggested one-time ask:"}</strong> {ask.sentence} <span style={{ color: T.ink3 }}>{ask.from === "move" ? "The same ask Home shows." : ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
+      <strong style={{ color: T.ink }}>{ask.monthly ? "Suggested monthly ask:" : "Suggested one-time ask:"}</strong> {ask.from === "move" ? String(ask.sentence || "").replace(/^Ask /, "") : ask.sentence} <span style={{ color: T.ink3 }}>{ask.from === "move" ? "The same ask Home shows." : ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
     </div>
   );
 }
