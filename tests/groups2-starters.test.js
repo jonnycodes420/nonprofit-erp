@@ -116,7 +116,8 @@ const figureCount = b => Number(b && (b.value ?? b.count ?? (b.figure && b.figur
   ok("§1 Home shows its gifts-not-yet-thanked figure with its start date", !!m, home.status);
   if (m) {
     const un = await q(`SELECT COUNT(DISTINCT g.donor_id)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-                         WHERE g.org_id=$1 AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false)=false AND g.date >= $2 AND COALESCE(g.acknowledgement_sent,false)=false`, [ORG, m[1]]);
+                         WHERE g.org_id=$1 AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false)=false AND g.date >= $2 AND COALESCE(g.acknowledgement_sent,false)=false
+                           AND (g.scheduled_on IS NULL OR g.scheduled_on <= $3)`, [ORG, m[1], civilDay()]);   // TRUTH-6 (IMPORT-11): a gift dated after today waits for no thanks until its day
     const rows = await api("GET", `/figures/unthanked/rows?since=${m[1]}`, T);
     ok("§1 Home's figure counts the gifts the starter's people hold", figureCount(rows.body) >= un[0].n, { home: figureCount(rows.body), people: un[0].n });
     ok("§1 Gifts waiting for a thank-you = the people behind Home's figure", (S.awaiting_thanks ? S.awaiting_thanks.count : 0) === un[0].n, { starter: S.awaiting_thanks, people: un[0].n });

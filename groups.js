@@ -419,7 +419,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   if (q.awaitingThanks === "1") {
     const since = await require("./routes/crm").reportHooks.thanksSince(orgId);
     where.push(`EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = donors.org_id AND gt.donor_id = donors.id AND gt.date >= ?
-                         AND COALESCE(gt.is_sample,false) = false AND ${require("./shared/numbers/thanks").AWAITING("gt")})`);
+                         AND COALESCE(gt.is_sample,false) = false AND ${require("./shared/numbers/thanks").AWAITING("gt")}
+                         AND ${require("./shared/numbers/scheduled").DUE("gt")})`);   // IMPORT-11: a gift dated after today waits for no thanks until its day
     params.push(since);
   }
   // No history yet: nothing on the timeline at all, logged, synced or imported.

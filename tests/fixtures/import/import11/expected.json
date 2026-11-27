@@ -1,0 +1,13 @@
+{
+  "people-and-gifts.xlsx": {
+    "people": 60,
+    "gifts": 136,
+    "giftCents": 800500,
+    "joinedOn": "Constituent ID",
+    "setAsideSheets": [
+      "Read Me",
+      "Budget lines"
+    ],
+    "totalRowSheet": "Gifts"
+  }
+}

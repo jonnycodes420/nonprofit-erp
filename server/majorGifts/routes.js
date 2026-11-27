@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
@@ -506,7 +507,7 @@ app.get("/portfolio/unassigned-prospects", requireAuth, wrap(async (req, res) =>
     sentence: PF.unassignedSentence({ count: c.n, thresholdCents }, money.formatCentsPlain),
     prospects: rows.map(r => ({
       donorId: r.id, name: r.name, email: r.email, kind: r.kind || "person",
-      lifetime: toDollars(toCents(r.total_giving) || 0), giftCount: Number(r.gift_count) || 0,
+      lifetime: toDollars(storedCentsOr0(r.total_giving)), giftCount: Number(r.gift_count) || 0,
       lastGiftDate: r.last_gift_date || null, stage: r.stage || r.suggested_stage || null,
     })),
   });
@@ -540,7 +541,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
       `SELECT donor_id, COALESCE(SUM(target_amount),0) AS amt, COUNT(*)::int AS n
          FROM opportunities WHERE org_id=? AND donor_id = ANY(?) AND proposal_stage = ANY(?::text[])
         GROUP BY donor_id`, [orgId, ids, P.OPEN_STAGE_KEYS]))
-      openAsk.set(r.donor_id, { cents: toCents(r.amt) || 0, count: r.n });
+      openAsk.set(r.donor_id, { cents: storedCentsOr0(r.amt), count: r.n });
     // The LAST LOGGED CONVERSATION, which is a fact on the interactions table —
     // one row per donor via DISTINCT ON, not a correlated subquery per person.
     for (const r of await query(
@@ -565,8 +566,8 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
     return {
       donorId: p.id, name: p.name, email: p.email, kind: p.kind || "person",
       stage: p.stage || p.suggested_stage || null, placed: !!p.stage,
-      lifetime: toDollars(toCents(p.total_giving) || 0),
-      lifetimeCents: toCents(p.total_giving) || 0,
+      lifetime: toDollars(storedCentsOr0(p.total_giving)),
+      lifetimeCents: storedCentsOr0(p.total_giving),
       openAskCents: ask.cents, openAskAmount: toDollars(ask.cents), openProposals: ask.count,
       daysSinceContact: days,
       contactPhrase: PF.contactPhrase(days), quiet: PF.isQuiet(days),
@@ -586,7 +587,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
     [orgId, officer.id, fyYear]);
   const prog = PF.targetProgress({
     targetCents: t && t.target_amount != null ? toCents(t.target_amount) : null,
-    committedCents: toCents(won.amt) || 0,
+    committedCents: storedCentsOr0(won.amt),
     fiscalLabel: await require("../shared/periodLabel").orgFyLabel(org),   // POLISH-6: shared/fiscalPeriod.js
   });
   const cap = PF.capState({ capCount: t ? t.count_cap : null, actualCount: ranked.length });
@@ -650,7 +651,7 @@ app.put("/portfolio/:officerId/target", requireAuth, requireCrm, checkWriteAcces
   const [row] = await query("SELECT * FROM portfolio_targets WHERE org_id=? AND user_id=? AND fiscal_year=?", [orgId, id, fyYear]);
   res.json({
     officer: { id: u.id, name: u.name }, fiscalYear: fyYear,
-    target: row.target_amount == null ? null : toDollars(toCents(row.target_amount) || 0),
+    target: row.target_amount == null ? null : toDollars(storedCentsOr0(row.target_amount)),
     countCap: row.count_cap == null ? null : Number(row.count_cap),
   });
 }));
@@ -725,19 +726,19 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
 
   const byStage = P.PROPOSAL_STAGES.map(s => {
     const r = pipeline.find(x => x.stage === s.key);
-    const askCents = r ? (toCents(r.amt) || 0) : 0;
+    const askCents = r ? (storedCentsOr0(r.amt)) : 0;
     return { stage: s.key, label: s.label, kind: s.kind, count: r ? r.n : 0,
              askCents, amount: toDollars(askCents),
              sentence: P.stageTileSentence({ stage: s.key, label: s.label, count: r ? r.n : 0, askCents }, money.formatCentsPlain) };
   });
   const openRows = pipeline.filter(r => P.OPEN_STAGE_KEYS.includes(r.stage));
-  const openCents = openRows.reduce((s, r) => s + (toCents(r.amt) || 0), 0);
+  const openCents = openRows.reduce((s, r) => s + (storedCentsOr0(r.amt)), 0);
   const weightedCents = openRows.reduce((s, r) => s + Math.round(Number(r.weighted_cents) || 0), 0);
   const withProb = openRows.reduce((s, r) => s + (Number(r.with_prob) || 0), 0);
   const openCount = openRows.reduce((s, r) => s + (Number(r.n) || 0), 0);
 
-  const askedCents = toCents(askedY[0].amt) || 0;
-  const committedCents = toCents(committedY[0].amt) || 0;
+  const askedCents = storedCentsOr0(askedY[0].amt);
+  const committedCents = storedCentsOr0(committedY[0].amt);
 
   const tile = (id, value) => ({
     id, label: MG.metric(id).label, value,
@@ -758,7 +759,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
                   unset: openCount - withProb,
                   sentence: P.weightedSentence({ cents: weightedCents, counted: withProb, unset: openCount - withProb,
                                                  openCount, askCents: openCents }, money.formatCentsPlain) },
-      dueThisQuarter: { ...tile("dueThisQuarter", dueQ[0].n), amount: toDollars(toCents(dueQ[0].amt) || 0) },
+      dueThisQuarter: { ...tile("dueThisQuarter", dueQ[0].n), amount: toDollars(storedCentsOr0(dueQ[0].amt)) },
       askedThisYear: { ...tile("askedThisYear", askedCents), amount: toDollars(askedCents), count: askedY[0].n },
       committedThisYear: { ...tile("committedThisYear", committedCents), amount: toDollars(committedCents), count: committedY[0].n },
     },

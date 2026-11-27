@@ -18,6 +18,7 @@ import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
 import { giftDeleteDialog } from "../../lib/giftDeleteWords";
 import { giftAmountProblem } from "../../lib/amountCheck";   // INPUT-1
+import { isFarOutside, askFarOutside } from "../../lib/farOutside";   // IMPORT-11
 import { confirmGiftDate } from "../../lib/giftDateCheck";   // INPUT-1: Jan 1, 1900 asks first   // THANKS-1 item 5: one delete dialog
 
 export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
@@ -98,9 +99,13 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     const was=giftsFull.find(g=>g.id===giftId);
     if(rcpt&&was&&giftEditForm.amount!==undefined&&Number(giftEditForm.amount)!==Number(was.amount)
       &&!(await askConfirm({title:"A receipt already went out",body:`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`,yes:"Change the amount"})))return;
+    if(giftAmountProblem(giftEditForm.amount)){setErr(giftAmountProblem(giftEditForm.amount));return;}   // IMPORT-11: over the cap, said first
     setGiftSaving(true);
     try{
-      const saved=await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify(giftBody(giftEditForm,{editing:true}))});
+      const put=confirmFarOutside=>apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify({...giftBody(giftEditForm,{editing:true}),confirmFarOutside})});
+      let saved;
+      try{saved=await put(undefined);}
+      catch(e){if(!isFarOutside(e))throw e;if(!(await askFarOutside(askConfirm,e))){setGiftSaving(false);return;}saved=await put(true);}   // IMPORT-11
       // POLISH-9: the screen she edited answers from the save itself, at once
       if(saved&&saved.figures&&setFigs)setFigs(saved.figures);
       if(saved&&saved.id&&setGiftsFull)setGiftsFull(gs=>gs.map(x=>x.id===saved.id?{...x,amount:parseFloat(saved.amount)||0,date:saved.date||x.date}:x));
@@ -163,20 +168,29 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     setGiftSaving(true);
     if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();
     // PLEDGES-2: a payment above what is left on the pledge asks first (the server's question, in its words).
+    let farOk;   // IMPORT-11: her "Record it" to a gift far outside the pattern
     const post=overBalance=>apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
-        ...giftBody(f),...extrasBody(f),overBalance,
+        ...giftBody(f),...extrasBody(f),overBalance,confirmFarOutside:farOk,
         pledgeId:f.pledgeId||undefined,idempotencyKey:addGiftIdemRef.current,
       })});
     try{
       let r;
       try{r=await post(undefined);}
-      catch(e){
-        if(!(e&&(e.code==="over_balance"||(e.body&&e.body.code==="over_balance"))))throw e;
-        const q=e.body||e,fm=v=>fmtFull(Number(v)||0);
-        const pick=await askConfirm({title:"This is more than is left on the pledge",body:q.sentence,
-          yes:`Record ${fm(q.extra)} as an extra gift`,...((q.choices||[]).includes("reduce")?{alt:`Reduce to ${fm(q.balance)}`}:{}),no:"Go back"});
-        if(!pick){setGiftSaving(false);return;}
-        r=await post(pick==="alt"?"reduce":"extra_gift");
+      catch(e0){
+        let e=e0;
+        if(isFarOutside(e)){
+          if(!(await askFarOutside(askConfirm,e))){setGiftSaving(false);return;}
+          farOk=true;
+          try{r=await post(undefined);e=null;}catch(e1){e=e1;}
+        }
+        if(e){
+          if(!(e.code==="over_balance"||(e.body&&e.body.code==="over_balance")))throw e;
+          const q=e.body||e,fm=v=>fmtFull(Number(v)||0);
+          const pick=await askConfirm({title:"This is more than is left on the pledge",body:q.sentence,
+            yes:`Record ${fm(q.extra)} as an extra gift`,...((q.choices||[]).includes("reduce")?{alt:`Reduce to ${fm(q.balance)}`}:{}),no:"Go back"});
+          if(!pick){setGiftSaving(false);return;}
+          r=await post(pick==="alt"?"reduce":"extra_gift");
+        }
       }
       addGiftIdemRef.current=null;
       track("gift_recorded",{via:"profile",pledge:!!f.pledgeId});

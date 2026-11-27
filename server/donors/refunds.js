@@ -56,6 +56,8 @@ function mount(ctx) {
     const g = await ownGift(req);
     if (!g) return res.status(404).json({ error: "Gift not found" });
     if (g.refund_of || !(toC(g.amount) > 0)) return res.status(409).json({ error: "not_a_gift", sentence: "Only a gift above $0 can be refunded." });
+    // IMPORT-11: a scheduled gift (dated after today) has not come in, so there is nothing to give back until its day
+    if (g.scheduled_on && String(g.scheduled_on) > orgToday(await orgTz(orgId))) return res.status(409).json({ error: "scheduled", sentence: "This gift is dated after today, so it has not come in yet. It can be refunded from its date." });   // ORG_TZ_SEAM_OK
     let cents;
     try { cents = parseMoneyOrThrow(b.amount, "amount"); } catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
     if (!(cents > 0)) return res.status(400).json({ error: "bad_amount", sentence: "A refund needs an amount above $0." });

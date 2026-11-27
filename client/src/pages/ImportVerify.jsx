@@ -7,6 +7,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../api";
+import { RowChecksCounted } from "../components/import/RowChecks";   // IMPORT-11
 
 const C = { ink: "#0F1A12", white: "#FFFFFF", cream: "#F0EDE6", emerald: "#0D5C3A", brass: "#C9A84C", muted: "#5a554f", line: "#ddd9d0" };
 const SERIF = "'DM Serif Display',Georgia,serif";
@@ -75,6 +76,7 @@ export default function ImportVerify() {
     <div style={card} data-testid="verify-money">
       <div style={{ fontSize: 22, fontFamily: SERIF }} data-testid="verify-money-sentence">{m.sentence}</div>
       <p style={{ fontSize: 12.5, color: C.muted, margin: "6px 0 0" }}>{d.sentences.money}</p>
+      {d.rowChecks && <div style={{ marginTop: 8 }}><RowChecksCounted rc={d.rowChecks} testid="verify-row-checks" /></div>}
       {m.gaps.length ? <ul style={{ margin: "12px 0 0", paddingLeft: 18 }} data-testid="verify-gaps">{m.gaps.map((g, i) => <li key={i} style={{ marginBottom: 4 }}>{g.sentence}</li>)}</ul> : null}
     </div>
 
