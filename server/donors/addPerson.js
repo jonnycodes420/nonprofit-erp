@@ -38,6 +38,18 @@ async function addPerson(ctx, req, b) {
   // start. Unknown keys are dropped by normalizeTypes, never stored.
   const types = personTypes === undefined ? ["donor"] : PT.normalizeTypes(personTypes);
 
+  // SAFE-EDIT-1 item 1: an email already on someone in this org is offered BEFORE the create
+  // ("Open them, or add a new person anyway?"). The form asks with askFirst; her "add anyway"
+  // sends it again without. Only the INTEGRITY-1 warning after the save existed before.
+  if (b.askFirst === true && email) {
+    const on = await require("../dataHealth/integrity").emailWarning(query, req.user.orgId, email, null);
+    if (on && on.others.length) {
+      if (req.audit && req.audit.skip) req.audit.skip("a question before a create: nothing changed");
+      const who = on.others[0];
+      return { status: 409, body: { error: "email_on_file", email: on.email, others: on.others,
+        sentence: `${on.email} is already on ${who.name || "a person with no name"}${on.others.length > 1 ? ` and ${on.others.length - 1} more` : ""}. Open them, or add a new person anyway?` } };
+    }
+  }
   const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
   if (orgForLimit.length) {
     const recordCheck = await checkPlanLimit(orgForLimit[0], "records");

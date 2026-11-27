@@ -21,6 +21,11 @@
 //      its undo, and says why.
 //   §8 FIX-60: a line's example names are the org's own matching rows, or
 //      none; no name is typed into the copy.
+//   §9 SAFE-EDIT-1 item 4: a restore from Settings, Trash re-checks (it failed
+//      the trigger constraint in the background, every time), and a guard: every
+//      word a caller passes to recheckSoon or runDataHealth is one the
+//      constraint allows and the page has words for. The guard is planted with
+//      a bad word in-suite and must catch it. Red on main: no "restore" run.
 //
 // HOW IT GOES RED ON THE BASE (1c0bf5f): Grow sorts by dollars alone (§1);
 // the spouses and the shared phone are pairs and nothing is a family, the
@@ -303,6 +308,42 @@ async function main() {
   const undo = await api("POST", `/imports/${encodeURIComponent(start.body.importId)}/reverse`, tok, {});
   const run2 = await waitRun("undo", run1 && run1.created_at);
   ok("§7 after the import is undone, it checks again", undo.status === 200 && run2 && run2.trigger === "undo" && new Date(run2.created_at) > new Date(run1.created_at), [undo.status, run2]);
+
+  // ── §9 SAFE-EDIT-1 · a restore re-checks, and every trigger is allowed ─────
+  {
+    const fs = require("fs"), path = require("path");
+    const ROOT = path.join(__dirname, "..");
+    const { TRIGGERS } = require("../server/dataHealth/triggers");
+    // every literal trigger a caller names: recheckSoon(x, "w") and runDataHealth(x, { trigger: "w" })
+    const callsIn = src => [...src.matchAll(/recheckSoon\(\s*[^,()]+,\s*["'`]([a-z_]+)["'`]/g), ...src.matchAll(/runDataHealth\(\s*[^,()]+,\s*\{\s*trigger:\s*["'`]([a-z_]+)["'`]/g)].map(m => m[1]);
+    const unknown = src => callsIn(src).filter(w => !TRIGGERS.includes(w));
+    const files = [];
+    const walk = d => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (["node_modules", "client", "tests", ".git", ".generated", "docs"].includes(e.name)) continue;
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f); else if (f.endsWith(".js")) files.push(f);
+    } };
+    walk(ROOT);
+    const found = files.flatMap(f => callsIn(fs.readFileSync(f, "utf8")).map(w => [path.relative(ROOT, f), w]));
+    const bad = found.filter(([, w]) => !TRIGGERS.includes(w));
+    ok("§9 the guard can fail: a planted recheckSoon(orgId, \"restored\") is caught", unknown(`x; recheckSoon(orgId, "restored"); runDataHealth(o, { trigger: "nightly" })`).join() === "restored");
+    ok("§9 every trigger a caller passes is in server/dataHealth/triggers.js (restore among them)",
+      found.length >= 8 && !bad.length && found.some(([, w]) => w === "restore"), { bad, n: found.length });
+    const [con] = await q(`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname='data_health_runs_trigger_check'`);
+    ok("§9 the table's constraint allows every one of them", con && TRIGGERS.every(w => con.def.includes(`'${w}'`)), con);
+    const page = fs.readFileSync(path.join(ROOT, "client/src/components/DataHealth.jsx"), "utf8");
+    const words = (page.match(/const RUN_WORDS = \{([\s\S]*?)\};/) || [])[1] || "";
+    ok("§9 Data health has words for every trigger (\"Checked …, after …\")", TRIGGERS.every(w => new RegExp(`\\b${w}:`).test(words)), TRIGGERS.filter(w => !new RegExp(`\\b${w}:`).test(words)));
+
+    await person("restore1", "Marisol Penhallow");
+    await api("POST", "/donors/bulk-delete", tok, { ids: [P("restore1")] });
+    const before = await lastRun();
+    await new Promise(res => setTimeout(res, 50));
+    const rs = await api("POST", "/trash/people/restore", tok, { ids: [P("restore1")] });
+    const run9 = await waitRun("restore", before && before.created_at);
+    ok("§9 a restore from Settings, Trash writes a Data health run that says why", rs.status === 200 && rs.body.restored === 1 && run9 && run9.trigger === "restore"
+      && (!before || new Date(run9.created_at) > new Date(before.created_at)), [rs.status, rs.body && rs.body.restored, before, run9]);
+  }
 
   await closeDb();
   summary();

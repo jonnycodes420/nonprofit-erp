@@ -69,6 +69,7 @@ Read-only SQL (paste into a console or `psql "$DATABASE_URL" -f <file>`):
 |---|---|
 | `ops/auto-mail-switches-readonly.sql` | No automatic donor mail went out past a switch that is off (last 25 hours) |
 | `ops/cross-org-import-readonly.sql` | No customer holds rows from a file previewed in another org |
+| `ops/safeedit1-empty-households-readonly.sql` | Households left with no live member from before SAFE-EDIT-1 (a household now goes to the trash with its last member), per org: the dry run REPAIR-1 applies |
 | `ops/import-receipts-readonly.sql` | Every import receipt foots against its gifts, to the cent |
 | `ops/import5-pledges-from-import-day-readonly.sql` | Pledges that were due from the day of their import (IMPORT-5) |
 | `ops/list-vs-home-readonly.sql` | The Donors list and Home count the same people |

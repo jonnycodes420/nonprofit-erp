@@ -1,6 +1,8 @@
 // components/profile/modals.jsx (PROFILE-3): the profile's older dialogs, moved verbatim
 // from DonorProfile.jsx (Log a touchpoint, Edit, the follow-up task, the gift link).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { newRequestKey } from "../../lib/requestKey";   // SAFE-EDIT-1 item 1
+import { useOpenFormDirty } from "../../lib/formDirty";   // SAFE-EDIT-1 item 2: Back or a rail link asks first
 import { orgTodayCivil, orgTodayPlus } from "../../lib/orgToday";
 import { greetingLine } from "../../../../shared/greeting.js";
 import { Modal, SC, STAGES, Spin, T, TpField, TpYesNo, activeMark } from "../shared";
@@ -33,10 +35,13 @@ function FollowUpTaskModal({donor,onSave,onClose}){
     setRecur(v?JSON.parse(v):null);
   };
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const reqKey=useRef(newRequestKey());   // SAFE-EDIT-1 item 1: a double-click makes one task
+  const releaseTask=useOpenFormDirty(true,{title,due,priority,recur});
   const save=async()=>{
-    if(!title.trim())return;setLoading(true);
+    if(!title.trim()||loading)return;setLoading(true);
     try{
-      const raw=await apiFetch("/tasks",{method:"POST",body:JSON.stringify({title,due,priority,type:"donor",donorId:donor.id,recur})});
+      const raw=await apiFetch("/tasks",{method:"POST",body:JSON.stringify({title,due,priority,type:"donor",donorId:donor.id,recur,requestKey:reqKey.current})});
+      reqKey.current=newRequestKey();releaseTask();
       onSave({id:raw.id,title:raw.title,due:raw.due||"",priority:raw.priority,type:raw.type,done:!!raw.done,donorId:donor.id});
     }catch(e){console.error(e);}
     setLoading(false);
@@ -121,6 +126,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
   // came from. A note that is not in that shape (a one-line conversation, a
   // calendar meeting, a stewardship touch) is edited as the plain note it is.
   const[plain,setPlain]=useState(null);
+  const releaseLog=useOpenFormDirty(true,{type,date,kt1,kt2,kt3,history,spouse,nextStep,answered,duration,objections,attendees,location,sentiment,asksMade,subject,summary,responded,eventName,attended,observations,otherNotes,plain,file:!!file});   // SAFE-EDIT-1 item 2
   const editMeta=editing?(()=>{try{return typeof editing.metadata==="string"?JSON.parse(editing.metadata||"{}"):(editing.metadata||{});}catch{return {};}})():{};
   const fromCalendar=!!editMeta.calendar_event_id;
   useEffect(()=>{
@@ -197,7 +203,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
         const body={note,type:plain!==null?editing.type:type};
         if(!fromCalendar)body.date=date;
         const row=await apiFetch(`/interactions/${editing.id}`,{method:"PUT",body:JSON.stringify(body)});
-        onSave(row);
+        releaseLog();onSave(row);
       }catch(e){alert(errorMessage(e,"That edit did not save."));}
       setLoading(false);
       return;
@@ -210,7 +216,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
       const metadata=type==="meeting"&&location.trim()?{location:location.trim()}:undefined;
       const saved=await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date,...(metadata?{metadata}:{})})});
       if(file&&saved&&saved.id){try{await uploadAttachment(saved.id,file);}catch(e){alert("The entry is saved. The file did not attach: "+errorMessage(e,"try Attach a file on the entry."));}}
-      onSave({id:saved&&saved.id,type:saveType,note,date,amount:0,metadata:metadata||null});
+      releaseLog();onSave({id:saved&&saved.id,type:saveType,note,date,amount:0,metadata:metadata||null});
     }catch(e){console.error(e);}
     setLoading(false);
   };
@@ -330,6 +336,7 @@ function EditDonorModal({donor,onSave,onClose}){
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState("");
   const set=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
+  const releaseEdit=useOpenFormDirty(true,form);   // SAFE-EDIT-1 item 2: Back or a rail link with changes asks first
 
   // FIX-56: Save waits for the full record (Donors.jsx opens this again when it lands).
   const ready=!!donor.fullRecord;
@@ -343,7 +350,7 @@ function EditDonorModal({donor,onSave,onClose}){
       const{bMonth,bDay,bYear,...rest}=form;
       const birthday=bMonth&&bDay?{month:Number(bMonth),day:Number(bDay),year:bYear?Number(bYear):null}:null;
       const res=await apiFetch(`/donors/${donor.id}`,{method:"PUT",body:JSON.stringify({...rest,tags,birthday})});
-      onSave(res);
+      releaseEdit();onSave(res);
     }catch(e){setErr(errorMessage(e, "Failed to save"));}
     setLoading(false);
   };

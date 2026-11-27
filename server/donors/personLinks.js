@@ -69,7 +69,7 @@ async function giveLinks(db, c, orgId, linksList) {
 // What goes with them, for the delete's confirm. Read only.
 async function whatGoesWith(query, orgId, ids) {
   const list = [...new Set((ids || []).map(String))];
-  if (!list.length) return { gifts: 0, links: 0, households: 0, openTasks: 0, receipts: 0 };
+  if (!list.length) return { gifts: 0, links: 0, households: 0, openTasks: 0, receipts: 0, openPledges: 0, openPledgeCents: 0 };
   const [r] = await query(
     `SELECT (SELECT COUNT(*) FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?))::int AS gifts,
             (SELECT COUNT(*) FROM donor_relationships dr WHERE dr.org_id = ? AND (dr.donor_id_a = ANY(?) OR dr.donor_id_b = ANY(?)))::int AS links,
@@ -78,7 +78,10 @@ async function whatGoesWith(query, orgId, ids) {
             (SELECT COUNT(*) FROM receipts rc WHERE rc.org_id = ? AND rc.donor_id = ANY(?) AND rc.voided_at IS NULL)::int AS receipts`,
     [orgId, list, orgId, list, list, orgId, list, orgId, list, orgId, list]);
   // the gifts stay rows and stay in every total that counts the trash; the person's lifetime is on the screen already
-  return { gifts: r.gifts, links: r.links, households: r.households, openTasks: r.open_tasks, receipts: r.receipts };
+  // SAFE-EDIT-1 item 6: and their open pledges, which leave every pledged total while they are in the trash
+  const pl = await require("../../shared/numbers/pledges").openPledgesOf(query, orgId, list);
+  return { gifts: r.gifts, links: r.links, households: r.households, openTasks: r.open_tasks, receipts: r.receipts,
+    openPledges: pl.count, openPledgeCents: pl.leftCents };
 }
 
 // TRASH-1 item 2 · THE RECEIPTS QUESTION, in the words the confirm shows.

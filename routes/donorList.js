@@ -8,7 +8,7 @@
 //   PUT    /donors/list-views/:id     LIST-6: Update one of your own views to the list as it stands
 //   DELETE /donors/list-views/:id     one of your own views
 //   GET    /donors/ids                every id the list's filter matches (select all)
-//   POST   /donors/bulk-tag           add one tag to the people picked
+//   POST   /donors/bulk-tag           add one tag to the people picked, or take it off (remove: true)
 //
 // A layout belongs to one person: another person's list never moves because
 // somebody reordered theirs. The rows themselves come from GET /donors with
@@ -177,30 +177,41 @@ app.get("/donors/ids", requireAuth, requireCrm, wrap(async (req, res) => {
              total: n == null ? null : (n > IDS_CAP ? null : n), capped: n == null ? undefined : n > IDS_CAP });
 }));
 
-// One tag, added to the people picked (never removed, never duplicated).
+// One tag, added to the people picked (never duplicated), or with `remove: true`
+// taken off them (SAFE-EDIT-1 item 5: bulk tagging had no remove and no undo).
+// The answer names exactly who changed (`changedIds`), so the toast's Undo is the
+// same call the other way round for those people only: an add is undone by a
+// remove from the people it tagged, a remove by putting it back on the people
+// it came off. A profile's tag chip × is this call for one person.
 app.post("/donors/bulk-tag", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { orgId } = req.user;
+  const remove = !!(req.body && req.body.remove === true);
   const tag = String((req.body && req.body.tag) || "").trim().slice(0, 60);
   const ids = Array.isArray(req.body && req.body.ids) ? [...new Set(req.body.ids.map(String))].slice(0, IDS_CAP) : [];
-  if (!tag) return res.status(400).json({ error: "tag_required", sentence: "Type the tag to add." });
+  if (!tag) return res.status(400).json({ error: "tag_required", sentence: remove ? "Type the tag to remove." : "Type the tag to add." });
   if (!ids.length) return res.status(400).json({ error: "ids_required", sentence: "Pick at least one person." });
   const rows = await query(`SELECT id, tags FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]);
+  const same = t => String(t).toLowerCase() === tag.toLowerCase();
   const changed = [];
   for (const r of rows) {
     let tags = [];
     try { tags = Array.isArray(r.tags) ? r.tags : JSON.parse(r.tags || "[]"); } catch { tags = []; }
     if (!Array.isArray(tags)) tags = [];
-    if (tags.some(t => String(t).toLowerCase() === tag.toLowerCase())) continue;
+    if (remove) { if (tags.some(same)) changed.push([r.id, JSON.stringify(tags.filter(t => !same(t)))]); continue; }
+    if (tags.some(same)) continue;
     changed.push([r.id, JSON.stringify([...tags, tag])]);
   }
   if (changed.length) {
     await run(`UPDATE donors SET tags = v.tags FROM (SELECT * FROM UNNEST(?::text[], ?::text[]) AS t(id, tags)) v
                 WHERE donors.id = v.id AND donors.org_id = ?`, [changed.map(c => c[0]), changed.map(c => c[1]), orgId]);
-    req.audit && req.audit.action && req.audit.action(`added the tag "${tag}" to ${changed.length} ${changed.length === 1 ? "person" : "people"}`);
-    // A tag can move someone into a group by rule.
+    req.audit && req.audit.action && req.audit.action(`${remove ? "removed" : "added"} the tag "${tag}" ${remove ? "from" : "to"} ${changed.length} ${changed.length === 1 ? "person" : "people"}`);
+    // A tag can move someone into (or out of) a group by rule.
     await require("../afterChange").afterChange(orgId, changed.map(c => c[0]), { door: "list_tag", recalc: false }).catch(() => {});
   }
-  res.json({ tagged: changed.length, already: rows.length - changed.length });
+  const n = changed.length, who = k => `${k.toLocaleString("en-US")} ${k === 1 ? "person" : "people"}`;
+  res.json({ ...(remove ? { removed: n } : { tagged: n }), already: rows.length - n, tag, changedIds: changed.map(c => c[0]),
+    sentence: remove ? (n ? `Removed "${tag}" from ${who(n)}.` : `Nobody picked had "${tag}".`)
+      : (n ? `Tagged ${who(n)} "${tag}".` : `Everyone picked already has "${tag}".`) });
 }));
 }
 

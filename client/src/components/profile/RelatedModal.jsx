@@ -11,6 +11,40 @@ import { linkedPeople } from "../../lib/linkedPeople";
 import { HouseholdShared } from "./HouseholdShared";   // HOUSEHOLD-1 item 3
 
 import { relationshipOptions, relationshipTypeLabel } from "../../lib/relationshipOptions";   // FLOWS-10 item 7
+import { askConfirm } from "../ConfirmDialog";
+import { offerUndo } from "../EditHistory";
+
+// SAFE-EDIT-1 item 3 · DELETE SAYS DELETE, AND ONE MEMBER CAN LEAVE. "Remove" beside the
+// household's name deleted the whole household with no question ("Deleted the household."),
+// and nobody could take one person out. Now the household's button is "Delete household" and
+// asks; each member has "Remove <name> from household"; both offer Undo, and the open dialog
+// reads the household again when Undo lands.
+async function deleteHousehold(household, refresh) {
+  const n = household.members.length;
+  if (!(await askConfirm({ title: `Delete ${household.name}?`, danger: true, yes: "Delete household", no: "Keep it",
+    body: `The ${n} ${n === 1 ? "person stays" : "people stay"}, with their own gifts; only the grouping goes. You can undo it for a minute, or from Recent changes.` }))) return;
+  const r = await apiFetch(`/households/${household.id}`, { method: "DELETE" });
+  await refresh();
+  offerUndo({ ...r, message: `Deleted ${household.name}. Its people are as they were.` }, "household", refresh);
+}
+async function removeMember(household, m, refresh) {
+  const before = household.members.map(x => x.id);
+  const rest = before.filter(id => id !== m.id);
+  const last = rest.length < 2;
+  if (last) {
+    const other = household.members.find(x => x.id !== m.id);
+    if (!(await askConfirm({ title: `Remove ${m.name} from ${household.name}?`, danger: true, yes: "Remove and delete household", no: "Keep them",
+      body: `That leaves ${other ? other.name : "one person"} on their own, so ${household.name} is deleted too. Everyone keeps their own gifts.` }))) return;
+    const r = await apiFetch(`/households/${household.id}`, { method: "DELETE" });
+    await refresh();
+    offerUndo({ ...r, message: `Removed ${m.name}; ${household.name} is deleted.` }, "household", refresh);
+    return;
+  }
+  await apiFetch(`/households/${household.id}`, { method: "PUT", body: JSON.stringify({ memberIds: rest }) });
+  await refresh();
+  offerUndo({ message: `Removed ${m.name} from ${household.name}.`, undoSeconds: 60,
+    undoAction: async () => { const u = await apiFetch(`/households/${household.id}`, { method: "PUT", body: JSON.stringify({ memberIds: before }) }); await refresh(); return u; } }, "household member", refresh);
+}
 function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relPickerPending,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
   // MENU-1 — the types as this record reads them ("Gives through" on a person, "Owned by" on a business).
   const DONOR_RELATIONSHIP_LABELS=relationshipLabelsFor(donor);
@@ -37,8 +71,8 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                     catch(e){alert(errorMessage(e,"The household could not be renamed."));}}}
                   style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Rename</button>}
                 {household
-                  ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
-                  :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
+                  ?!isReadOnly&&<button key="hh-delete" type="button" data-testid="dp-household-delete" onClick={()=>deleteHousehold(household,refreshSoftCredit).catch(e=>alert(errorMessage(e,"The household could not be deleted.")))} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>Delete household</button>
+                  :!isReadOnly&&<button key="hh-group" type="button" data-testid="dp-household-group" onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
               </div>
               {household&&(
                 <>
@@ -49,7 +83,7 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:5}}>
                     {household.members.map(m=>(
-                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                      <div key={m.id} data-testid="dp-hh-member" tabIndex={0} aria-label={m.name} onKeyDown={e=>{if(e.key==="Enter"&&e.target===e.currentTarget&&m.id!==donor.id&&onSelectRelatedDonor)onSelectRelatedDonor(m.id);}} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
                         {/* BUILD-94 Part 1 — a household is the one place a
                             row names several people at once; faces are what
                             tell them apart at a glance. */}
@@ -57,6 +91,8 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                         <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
                         {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800}}>Primary</span>}
                         <span style={{marginLeft:"auto",color:T.ink3}} onClick={e=>e.stopPropagation()}>{m.source?<Figure variant="cell" kind="money" value={m.total_giving} label={`${m.name}: lifetime giving`} source={m.source}/>:fmtFull(m.total_giving)}</span>
+                        {!isReadOnly&&<button type="button" data-testid="dp-hh-remove-member" onClick={e=>{e.stopPropagation();removeMember(household,m,refreshSoftCredit).catch(x=>alert(errorMessage(x,"They could not be removed from the household.")));}}
+                          style={{background:"none",border:"none",padding:"0 2px",color:T.ink3,fontSize:11,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Remove {m.name} from household</button>}
                       </div>
                     ))}
                   </div>

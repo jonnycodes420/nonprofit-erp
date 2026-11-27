@@ -48,7 +48,7 @@ const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const PAGE = 50;   // SWEEP-2: review lists come a page at a time
 // FIX-59: when Data health last ran, and what made it run.
 const RUN_WORDS = { import: "after your import", undo: "after an import was undone", merge: "after a merge", merge_undo: "after a merge was undone",
-  delete: "after people were deleted", nightly: "overnight", manual: "when you asked" };
+  delete: "after people were deleted", restore: "after people came back from the trash", nightly: "overnight", manual: "when you asked" };   // SAFE-EDIT-1: restore
 function checkedWords(run) {
   const at = new Date(run.created_at);
   if (isNaN(at)) return null;

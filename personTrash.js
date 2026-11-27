@@ -71,6 +71,9 @@ async function bringPeopleBack(orgId, ids, { client = null, exceptMerged = false
         `SELECT record_id, row_data -> '__links' AS links FROM deleted_records
           WHERE org_id = ? AND table_name = 'donors' AND record_id = ANY(?) AND restored_at IS NULL AND (row_data -> '__links') IS NOT NULL`,
         [orgId, back.map(r => r.id)]);
+      // SAFE-EDIT-1 item 3: a household that went to the trash with its last member comes back first, so they rejoin it
+      const homes = open.map(o => { const l = typeof o.links === "string" ? JSON.parse(o.links) : o.links; return l && l.household; });
+      await require("./server/donors/householdTrash").bringBack(db, c, orgId, homes);
       if (open.length) await require("./server/donors/personLinks").giveLinks(db, c, orgId,
         open.map(o => ({ personId: o.record_id, links: typeof o.links === "string" ? JSON.parse(o.links) : o.links })));
     }
@@ -108,6 +111,8 @@ async function trashPeople(orgId, ids, who, { client = null, why = { kind: "dele
     const gone = await db.queryTx(c, "UPDATE donors SET deleted_at = NOW() WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL RETURNING id", [orgId, list]);
     if (!gone.length) return [];
     const links = await require("./server/donors/personLinks").takeLinks(db, c, orgId, gone.map(g => g.id));
+    // SAFE-EDIT-1 item 3: a household left with nobody live in it goes to the trash with them
+    await require("./server/donors/householdTrash").emptied(db, c, orgId, [...links.values()].map(l => l && l.household), who);
     const voided = new Map();
     if (voidReceipts) {
       const note = `Voided when ${(who && who.name) || "Steward"} moved this person to the trash.`;

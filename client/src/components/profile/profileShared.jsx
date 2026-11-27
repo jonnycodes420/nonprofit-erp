@@ -7,7 +7,7 @@ import { TaskTitleButton, useProfileTaskSheet } from "./ProfileTaskSheet";   // 
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { useVolunteerStatus, seedVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerStatus";   // RULES-1 item 7
-import { Pill, T, fmtFull } from "../shared";
+import { T, fmtFull } from "../shared";
 import { civilDays } from "../../../../shared/firstThing.js";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { countLabel, plural } from "../../../../shared/countWords.js";
@@ -23,6 +23,7 @@ import { shownTags, shownNote } from "../../lib/internalLabels";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { relationshipTypeLabel } from "../../lib/relationshipOptions";   // FLOWS-10 item 7
 import { sortTasks } from "../../../../shared/nextStep.js";   // EDIT-2: open soonest first, undated last, then done newest first
+import { TagChip } from "./TagChip";   // SAFE-EDIT-1 item 5
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"
@@ -188,7 +189,7 @@ function HeaderChips({status,donor,isReadOnly}){
   const limit=narrow?3:HEADER_CHIP_LIMIT;
   return <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(groupChips,addCtl)=>{
     const st=statusTagItems(status).map(el=>({kind:"status",el}));
-    const rec=shownTags(donor.tags).map(t=>({kind:"record",el:<Pill key={"t:"+t} label={t}/>}));
+    const rec=shownTags(donor.tags).map(t=>({kind:"record",el:<TagChip key={"t:"+t} tag={t} donor={donor} isReadOnly={isReadOnly}/>}));   // SAFE-EDIT-1 item 5: a chip has its ×
     const items=[...st,...rec,...groupChips.map(el=>({kind:"group",el}))];
     const shown=all?items:items.slice(0,limit);
     const more=items.length-shown.length;
