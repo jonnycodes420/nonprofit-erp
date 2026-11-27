@@ -23,8 +23,11 @@ export function PagedReportHead({ out, onRange, onPage }) {
           <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }} data-testid="paged-count"><Figure variant="inline" kind="count" value={f.count.value} label="Gifts waiting to be thanked" definition={f.count.definition} source={f.count.source} /></div></div>}
         {f.total && <div><div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>Their total</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }} data-testid="paged-total"><Figure variant="inline" kind="money" value={f.total.value} label="Waiting to be thanked, total" definition={f.total.definition} source={f.total.source} /></div></div>}
+        {f.older && f.older.value > 0 && <div data-testid="paged-older"><div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>Older than the window</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink3 }}><Figure variant="inline" kind="count" value={f.older.value} label="Older than the window, not yet thanked" definition={f.older.definition} source={f.older.source} /></div></div>}
       </div>
       {out.summary && <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8 }}>{out.summary}</div>}
+      {out.olderWords && <div data-testid="paged-older-words" style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{out.olderWords}</div>}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: T.ink3 }}>
         <label>From <DateInput value={from} onChange={e => setFrom(e.target.value)} style={inp} aria-label="From" data-testid="paged-from" /></label>
         <label>To <DateInput value={to} onChange={e => setTo(e.target.value)} style={inp} aria-label="To" data-testid="paged-to" /></label>
