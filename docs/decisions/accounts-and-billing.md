@@ -415,3 +415,12 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - The web page never shows `legal/customer-agreement.md`'s paper signature block (`server/onboard/agreementBlock.js` `bodyOf`); the signed PDF draws it filled in (organization, her typed name and title, the date and time ET, "For Steward Software LLC: Jonathan Atkinson, signed on issue"). The agreement file and its version are unchanged.
 - The Price tile is `customerPrice.pick().tile`: an open quote whose price differs from the lead price is named beside it ("$299/mo deal value · $149/mo quote sent Nov 25, not signed") with **Use $149 as the deal value** (one POST, Undo is the value PATCH); a signed price says "signed Nov 26". ARR follows the lead price. The board card's subline is `pick().line`.
 - With no sales mailbox connected, Last touch and Now say email can't count, with the link to Sales settings, where the mailbox is first. A mailbox keeps mail from 90 days before it was connected (`email.BACKFILL_DAYS`). A `/book` booking with a time is a meeting touch; a Calendly booking made on Calendly's own page never reaches Steward.
+
+## POLISH-14 · viewers don't export unless an admin turns it on (2026-11-27)
+
+- A new org starts with **Viewers can export** off (`orgs.viewer_exports_off` defaults to true, set in
+  `server/db/ddl/builds/2026-11-27-polish14.js`, a catalog change: no org's row is written). Every org that existed
+  keeps its setting; `scripts/ops/polish14-viewer-exports.js` counts them and, on Jonathan's decision, turns it off.
+- Settings → Team shows **What each role can do** (`settings/RoleTable.jsx`): view, edit, trash, bulk edit, export,
+  send, per role, from `shared/viewOnly.js` `ROLE_CAN`, which says what the server's gates allow. A viewer's Export
+  cell reads the org's switch, live.

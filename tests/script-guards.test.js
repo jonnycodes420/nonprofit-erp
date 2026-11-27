@@ -210,6 +210,9 @@ const GUARDED_WRITERS = [
   // POLISH-12: turns orgs.top100_enabled on for orgs that already use the Top 100.
   // Dry run (reads only) by default; --apply writes through writerDbUrl.
   "polish12-top100-keep",
+  // POLISH-14: counts the orgs whose viewers still export by the old default; --apply
+  // (Jonathan's decision) turns it off for them. Dry run by default; --apply writes through writerDbUrl.
+  "polish14-viewer-exports",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",
