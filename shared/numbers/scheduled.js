@@ -47,13 +47,17 @@ function scheduledLabel(date, today = null) {
   return `Scheduled, ${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}${yr}`;
 }
 
+// "Jan 1, 2031", always with its year.
+const dayWords = d => { const x = String(d || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(x) ? `${MON[Number(x.slice(5, 7)) - 1]} ${Number(x.slice(8, 10))}, ${x.slice(0, 4)}` : "after today"; };
+const spanWords = (first, last) => !last || String(first).slice(0, 10) === String(last).slice(0, 10) ? `dated after today (${dayWords(first)})` : `dated after today (from ${dayWords(first)} to ${dayWords(last)})`;
+
 const SENTENCE = "A gift dated after today is scheduled: it is on file and listed as Scheduled, and it counts in no total, count, Lifetime or Last gift until its date.";
 
 // The scheduled gifts in a set of gift rows, as one line a report shows:
 // { n, cents, sentence } or null.
 async function scheduledLine(query, orgId, { donorId = null } = {}) {
   const rows = await query(
-    `SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, MIN(g.scheduled_on) AS next
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, MIN(g.scheduled_on)::text AS next, MAX(g.scheduled_on)::text AS last
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${SCHEDULED("g")}${donorId ? " AND g.donor_id = ?" : ""}`,
     donorId ? [orgId, donorId] : [orgId]);
@@ -62,7 +66,9 @@ async function scheduledLine(query, orgId, { donorId = null } = {}) {
   if (!n) return null;
   const usd = "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 });
   return { n, cents, next: r.next, label: "Scheduled",
-    sentence: `Scheduled: ${n} ${n === 1 ? "gift" : "gifts"}, ${usd}, dated after today (the next ${scheduledLabel(r.next).replace("Scheduled, ", "")}). ${n === 1 ? "It counts" : "They count"} on ${n === 1 ? "its" : "their"} date, not before.` };
+    // IMPORT-11: the real dates, with their years ("dated after today (Jan 1, 2031)"; "(from Mar 1, 2027 to Jan 1, 2031)"),
+    // never "the next Jan 1" for a gift five years out
+    sentence: `Scheduled: ${n} ${n === 1 ? "gift" : "gifts"}, ${usd}, ${spanWords(r.next, r.last)}. ${n === 1 ? "It counts" : "They count"} on ${n === 1 ? "its" : "their"} date, not before.` };
 }
 
 // The dollars each import run brought in as scheduled (dated after the day it
@@ -75,4 +81,4 @@ async function scheduledByImport(query, orgId, ids) {
   return new Map(rows.map(r => [r.import_id, Number(r.cents) || 0]));
 }
 
-module.exports = { scheduledByImport, ORG_TODAY, DUE, SCHEDULED, scheduledOn, isScheduled, scheduledLabel, scheduledLine, SENTENCE };
+module.exports = { spanWords, scheduledByImport, ORG_TODAY, DUE, SCHEDULED, scheduledOn, isScheduled, scheduledLabel, scheduledLine, SENTENCE };

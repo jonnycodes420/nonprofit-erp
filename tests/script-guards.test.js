@@ -310,6 +310,8 @@ const PROD_READONLY = [
   "integrity3-trash-rows",
   // ASKS-1: lists sheet imports that kept an auction sheet's columns as custom fields; SELECTs only, no --apply.
   "asks1-auction-sheets-readonly",
+  // IMPORT-11: counts gifts over $100,000,000 by org; one READ ONLY session, SELECT only, no --apply.
+  "import11-over-cap",
   // FLOWS-4: counts stale "Missed you" drafts, tasks on archived events, hours and meeting notes saved twice; SELECTs only, no --apply.
   "flows4-volunteer-rows",
   // FLOWS-3: counts people in Draft/Paused journeys and early dated first steps; SELECTs only, no --apply.

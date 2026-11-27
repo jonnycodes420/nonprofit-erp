@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { storedCentsOr0 } = require("../../money");   // IMPORT-11: a stored amount, read exactly; none is 0
 const express = require("express");
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
@@ -102,7 +103,7 @@ app.delete("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
 // integer cents, because the weighted total is computed in cents and a screen
 // that re-derives cents from a float is how a total ends up a penny out.
 function proposalRow(r, funds) {
-  const askCents = toCents(r.target_amount) || 0;
+  const askCents = storedCentsOr0(r.target_amount);
   return {
     id: r.id, donorId: r.donor_id, donorName: r.donor_name || undefined,
     purpose: r.name || "", askAmount: toDollars(askCents), askCents,
@@ -116,7 +117,7 @@ function proposalRow(r, funds) {
     declineReason: r.decline_reason || null, declinedOn: r.declined_on || null,
     commitKind: r.commit_kind || null,
     giftId: r.gift_id || null, pledgeId: r.pledge_id || null,
-    giftAmount: r.gift_amount == null ? null : toDollars(toCents(r.gift_amount) || 0),
+    giftAmount: r.gift_amount == null ? null : toDollars(storedCentsOr0(r.gift_amount)),
     createdAt: r.created_at, closedAt: r.closed_at,
     createdByName: r.created_by_name || "",
     // FIX-14 Part 3 — the profile's "Edited" marker reads these.
@@ -324,7 +325,7 @@ app.put("/proposals/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async 
   if (patch.stage !== undefined && patch.stage !== existing.proposal_stage) {
     put("proposal_stage", patch.stage);
     put("status", P.statusForStage(patch.stage));          // DERIVED, never sent
-    const askCents = patch.askCents !== undefined ? patch.askCents : (toCents(existing.target_amount) || 0);
+    const askCents = patch.askCents !== undefined ? patch.askCents : (storedCentsOr0(existing.target_amount));
 
     if (patch.stage === "declined") {
       put("decline_reason", req.body.declineReason);

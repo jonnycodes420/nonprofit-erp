@@ -74,7 +74,13 @@ async function heldFacts(query, orgId, importId, MONEY_CENTS, MONEY) {
       FROM gifts g JOIN donors d ON d.id = g.donor_id LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
      WHERE ${BATCH_PEOPLE("d")} AND g.import_id = d.created_import_id GROUP BY 1 ORDER BY 1`, P);
   const [all] = await query(`SELECT COUNT(*)::int AS n FROM donors d WHERE ${BATCH_PEOPLE("d")}`, P);
+  // IMPORT-11: the batch's gifts dated after today, which In Steward leaves out until their day (TRUTH-6)
+  const { SCHEDULED } = require("../../shared/numbers/scheduled");
+  const sched = await query(`SELECT g.date AS day, g.import_row AS line, ROUND(g.amount * 100)::bigint AS cents
+      FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE ${BATCH_PEOPLE("d")} AND g.import_id = d.created_import_id AND g.amount > 0 AND ${SCHEDULED("g")}
+     ORDER BY g.date`, P);
   return {
+    scheduled: { rows: sched.length, cents: sched.reduce((n, r) => n + Number(r.cents), 0), lines: sched.map(r => r.line).filter(x => x != null).slice(0, 50) },
     peopleAll: Number(all && all.n) || 0,
     people: Number(g && g.people) || 0, gifts: Number(g && g.gifts) || 0, cents: Number(g && g.cents) || 0,
     byYear: years.map(y => ({ year: Number(y.year), cents: Number(y.cents) })),
