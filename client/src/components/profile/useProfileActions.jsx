@@ -13,6 +13,7 @@ import { useTimelineExtras } from "../ProfileTimeline";
 import { timelineCounts, buildTimelineItems } from "../MeetingPanels";
 import { errorMessage } from "../../lib/domainError";
 import { usePeoplePicker } from "../../lib/people";
+import { useOpenFormDirty } from "../../lib/formDirty";   // SAFE-EDIT-1 item 2
 import { fmtFull } from "../shared";
 
 export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign, reassignId, setReassignLoading, initialAddGift, localInts, rel, loadRailRef, onStageChange }) {
@@ -127,6 +128,10 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
   // (PROFILE-3: pledges is declared above tlCounts, which puts them on the timeline)
   const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:orgTodayCivil(),notes:"",campaignId:""});
   const [addPledgeOpen,setAddPledgeOpen]=useState(false);
+  // SAFE-EDIT-1 item 2: a gift or pledge form with changes asks before Back or a rail link leaves it.
+  useOpenFormDirty(addGiftOpen,addGiftForm);
+  useOpenFormDirty(!!giftEditId,giftEditForm);
+  useOpenFormDirty(addPledgeOpen,pledgeForm);
   const [pledgeSaving,setPledgeSaving]=useState(false);
   const [pledgeResendBusyId,setPledgeResendBusyId]=useState(null);
   const [pledgeResentIds,setPledgeResentIds]=useState(()=>new Set());

@@ -20,6 +20,11 @@
 //   §6  a merge from 10 days ago splits back into two people in one household
 //       with every gift where it was; a merge past 30 days says it can't
 //   §7  the truth check (assertSurfacesAgree) with a household row on the list
+//   §8  SAFE-EDIT-1 (Duet m15): when every member is in the trash the household
+//       goes with them (not listed with 0 members), and Restore brings it back
+//       with both people in it; one person back is enough to bring it back
+//
+// SAFE-EDIT-1, red on main: the household stays listed with no live member (§8).
 //
 // HOW IT GOES RED (planted, see the HOUSEHOLD-1 report): main has no
 // household place (§1 400 "Pick at least one person"); summing only the lead
@@ -207,6 +212,31 @@ const rowsSum = r => ((r && r.body && r.body.rows) || []).reduce((n, x) => n + c
   const [oldM] = await q(`SELECT id FROM donor_merges WHERE org_id=$1 AND kept_id=$2`, [ORG, p1]);
   const refused = await api("POST", `/donors/${p1}/split-to-household`, t, { mergeId: oldM.id });
   ok("§6 and pressing it anyway changes nothing (409)", refused.status === 409, JSON.stringify(refused.body));
+
+  // ── §8 SAFE-EDIT-1 · the household goes with its last member ────────────────
+  { const a = await person(t, "Isolde Marchbanks", "isolde.m@hh1.test"), b = await person(t, "Leopold Marchbanks", "leo.m@hh1.test");
+    const hh = await api("POST", "/households", t, { memberIds: [a, b], primaryDonorId: a });
+    const hid = hh.body && hh.body.id;
+    const listed = async () => ((await api("GET", "/households", t)).body || []).find(h => h.id === hid) || null;
+    const del1 = await api("POST", "/donors/bulk-delete", t, { ids: [a] });
+    const one = await listed();
+    ok("§8 with one member still live the household stays, with that one person", hh.status === 201 && del1.status === 200 && one && one.member_count === 1, [hh.status, del1.status, one]);
+    const del2 = await api("DELETE", `/donors/${b}`, t);
+    const gone = await listed();
+    const [tr] = await q(`SELECT id, row_data->>'__emptied' AS emptied FROM deleted_records WHERE org_id=$1 AND table_name='households' AND record_id=$2 AND restored_at IS NULL`, [ORG, hid]);
+    ok("§8 once every member is in the trash the household is not listed with nobody in it: it is in the trash too",
+      del2.status === 200 && !gone && tr && tr.emptied === "true", [del2.status, gone, tr]);
+    const back1 = await api("POST", "/trash/people/restore", t, { ids: [b] });
+    const after1 = await listed();
+    const [rb] = await q(`SELECT household_id FROM donors WHERE id=$1`, [b]);
+    ok("§8 Restore brings the household back with them, and they are in it", back1.status === 200 && back1.body.restored === 1 && after1 && rb.household_id === hid,
+      [back1.status, back1.body, after1, rb]);
+    const back2 = await api("POST", "/trash/people/restore", t, { ids: [a] });
+    const view = (await api("GET", `/households/${hid}`, t)).body || {};
+    const [stillOpen] = await q(`SELECT COUNT(*)::int AS n FROM deleted_records WHERE org_id=$1 AND table_name='households' AND record_id=$2 AND restored_at IS NULL`, [ORG, hid]);
+    ok("§8 the second person rejoins it too: both people, the same household, its trash row closed",
+      back2.status === 200 && (view.members || []).map(m => m.id).sort().join() === [a, b].sort().join() && stillOpen.n === 0, [back2.status, (view.members || []).map(m => m.name), stillOpen]);
+  }
 
   // ── §7 the truth check, with a household row on the Top 100 ────────────────
   { const { assertSurfacesAgree } = require("./lib/surfacesAgree");

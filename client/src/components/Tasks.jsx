@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { newRequestKey } from "../lib/requestKey";   // SAFE-EDIT-1 item 1
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, PageTitle, EmptyState, Modal, interactive } from "./shared";
@@ -372,13 +373,15 @@ function QuickAdd({ onSaved, today }) {
     } catch (e) { setErr(errorMessage(e, "Steward could not read that.")); }
     setBusy(false);
   };
+  const reqKey = useRef(newRequestKey());   // SAFE-EDIT-1 item 1: one key per typed task, so a repeat makes one
   const save = async () => {
     if (!p || !String(p.title || "").trim() || busy) return;
     setBusy(true); setErr("");
     try {
       const row = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({
         title: p.title.trim(), due: p.due || "", dueTime: p.time || null, kind: p.kind, priority: p.priority,
-        recur: p.recur || null, donorId: p.donorId || undefined }) });
+        recur: p.recur || null, donorId: p.donorId || undefined, requestKey: reqKey.current }) });
+      reqKey.current = newRequestKey();
       setText(""); setP(null); await onSaved(row);
     } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
     setBusy(false);

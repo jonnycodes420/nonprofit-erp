@@ -3,6 +3,18 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **A create a double-click can repeat carries one request key (SAFE-EDIT-1, 27 Nov 2026).** A form sends
+  `requestKey` for as long as it is open (`client/src/lib/requestKey.js`) and its Save disables on the first click;
+  `server/shared/requestKey.js` (`onceByKey`, table `request_keys`) answers a repeat with the first row. On
+  `POST /donors` and `POST /tasks`; gifts and pledges keep their own `idempotency_key`. A new create route a person can
+  double-click gets one too. Add person asks about an email already on file before it creates (`askFirst`).
+- **Leaving an edit with changes asks, in Steward's dialog (SAFE-EDIT-1).** A form registers with
+  `lib/dirtyGuard.js` (`useOpenFormDirty`, `useDirtyGuard`, release on a successful save); `navigateTo` and Settings ask
+  through `leaveIfClean`. Never `window.confirm` for it.
+- **A household goes to the trash with its last member, and comes back with them (SAFE-EDIT-1).**
+  `server/donors/householdTrash.js`, from the one door out and back (`personTrash.js`). A household deleted by hand
+  stays deleted on a person's restore. "Delete household" asks; one member leaves with "Remove <name> from household".
+- **Data health's triggers are one list (SAFE-EDIT-1):** `server/dataHealth/triggers.js`; the CHECK is built from it.
 - **The People list is one engine (LIST-6, 23 Nov 2026).** Its filters are one object, read only from the address
   (`client/src/lib/listFilters.js`; the names are `appUrls.js DONOR_LIST_KEYS`), and Clear filters empties all of it
   (Owner, stage, tag, chips, search, Everyone/Donors/Contacts, the view). Every filter runs on the server
