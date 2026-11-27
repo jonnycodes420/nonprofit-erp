@@ -32,7 +32,7 @@ const WAITING = (g = "g", d = "d", since = "?") =>
 
 // SQL: gift `g` has a thank-you draft ready (not sent, not skipped).
 const DRAFTED = (g = "g") =>
-  `EXISTS (SELECT 1 FROM thank_you_drafts td WHERE td.org_id = ${g}.org_id AND td.gift_id = ${g}.id AND td.sent_at IS NULL AND td.skipped_at IS NULL)`;
+  `EXISTS (SELECT 1 FROM thank_you_drafts td WHERE td.org_id = ${g}.org_id AND (td.gift_id = ${g}.id OR ${g}.id = ANY(td.also_gift_ids)) AND td.sent_at IS NULL AND td.skipped_at IS NULL)`;   // ONE-MOVE-1: a gift folded into its day's draft is drafted
 
 // { n, cents, drafted, since } for one org.
 async function backlog(query, orgId, since) {

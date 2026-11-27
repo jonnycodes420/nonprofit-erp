@@ -156,9 +156,15 @@ export function ScoreWhyModal({ s, onClose }) {
 // "Largest gift $2,000, last three averaged $1,500 and rising: ask $2,500".
 export function SuggestedAskLine({ ask, style }) {
   if (!ask) return null;
+  // ONE-MOVE-1: the ask is the person's one move (the one Home shows); a Planned move asks no money
+  if (ask.noAsk) return (
+    <div data-testid="suggested-ask" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, ...style }}>
+      <strong style={{ color: T.ink }}>Suggested ask:</strong> {ask.sentence} <span style={{ color: T.ink3 }}>The same next move Home shows.</span>
+    </div>
+  );
   return (
     <div data-testid="suggested-ask" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, ...style }}>
-      <strong style={{ color: T.ink }}>{ask.monthly ? "Suggested monthly ask:" : "Suggested one-time ask:"}</strong> {ask.sentence} <span style={{ color: T.ink3 }}>{ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
+      <strong style={{ color: T.ink }}>{ask.monthly ? "Suggested monthly ask:" : "Suggested one-time ask:"}</strong> {ask.sentence} <span style={{ color: T.ink3 }}>{ask.from === "move" ? "The same ask Home shows." : ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
     </div>
   );
 }

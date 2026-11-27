@@ -18,8 +18,15 @@ async function nextMoveOf(query, orgId, donorId, asOf, opts = {}) {
   const r = got.result;
   let move = d.deceased === true ? null : I.nextMoveFor(r, d.id);
   if (move && move.item && move.item.pledgeId) {
-    const [live] = await query("SELECT status FROM pledges WHERE id=? AND org_id=?", [move.item.pledgeId, orgId]);
+    // ONE-MOVE-1: a pledge whose person is in the trash drives nobody's move (until the stored answer rebuilds)
+    const [live] = await query("SELECT p.status FROM pledges p JOIN donors pd ON pd.id = p.donor_id AND pd.org_id = p.org_id WHERE p.id=? AND p.org_id=? AND pd.deleted_at IS NULL", [move.item.pledgeId, orgId]);
     if (!live || live.status !== "open") move = null;
+  }
+  // ONE-MOVE-1 item 2: a move made from the household's giving says so on each member, and names only the living
+  if (move && move.item && (move.item.ids || []).length > 1) {
+    const ids = (await query("SELECT id FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL", [orgId, move.item.ids])).map(r => r.id);
+    if (!ids.includes(d.id)) move = null;
+    else if (ids.length > 1) move = { ...move, household: { ids, sentence: "A household move: it comes from the giving of everyone in the household, not only this person's." } };
   }
   // THANKS-1 item 4: with no move, the step the rules still give (thank the newest gift), or why none.
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;

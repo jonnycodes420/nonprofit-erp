@@ -99,7 +99,8 @@ async function fingerprint(orgId) {
   const [f] = await query(`SELECT
       (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,
       (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM pledges WHERE org_id=?) AS p,
-      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM donors WHERE org_id=?) AS d,
+      -- ONE-MOVE-1: a person moved to the trash (or back) changes the answer, whatever updated_at says
+      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') || ':' || COUNT(*) FILTER (WHERE deleted_at IS NOT NULL)::text FROM donors WHERE org_id=?) AS d,
       (SELECT COUNT(*)::text FROM insight_outcomes WHERE org_id=?) || ':' || (SELECT COUNT(*)::text FROM insight_reviews WHERE org_id=?)
         || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i,
       -- FLOWS-4 (W-1109-Atlas-11X): the settings Insights reads (Giving levels,

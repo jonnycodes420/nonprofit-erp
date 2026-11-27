@@ -657,6 +657,20 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she
   // has already sent or deliberately skipped.
+  // ONE-MOVE-1 item 3: one person's gifts on one day make ONE draft. A second gift that day joins
+  // the open draft (server/outreach/draftGifts.js), which is written again for the day's total.
+  if (!replace && reason === "gift" && giftId && thisGift && thisGift.date) {
+    const DG = require("../outreach/draftGifts");
+    const open = await DG.openDraftForDay(query, orgId, donorId, thisGift.date, giftId);
+    if (open) {
+      const ids = [...new Set([...DG.giftIdsOf(open), giftId])];
+      const [{ c }] = await query(`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS c FROM gifts WHERE org_id=? AND id = ANY(?)`, [orgId, ids]);
+      const day = draftMod.thankYouDraft({ donorName: d.name, giftCents: Number(c), fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift.date, ...facts, giftCountBefore: null, isFirstGift: null });
+      await query(`UPDATE thank_you_drafts SET body=?, also_gift_ids=? WHERE id=? AND org_id=? AND sent_at IS NULL AND skipped_at IS NULL`,
+        [day.body, ids.filter(x => x !== open.gift_id), open.id, orgId]);
+      return { id: open.id, voice: day.voice, folded: true };
+    }
+  }
   const conflict = replace
     ? `ON CONFLICT (org_id, gift_id) DO UPDATE SET body=EXCLUDED.body, voice=EXCLUDED.voice
         WHERE thank_you_drafts.sent_at IS NULL AND thank_you_drafts.skipped_at IS NULL`
