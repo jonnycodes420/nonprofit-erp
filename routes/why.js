@@ -994,6 +994,10 @@ async function askHandler(req, res) {
     if (came) { await logQuestion(orgId, typed, "event guests", came.answered); return res.json(came); }
     const ro = await readoutAnswer(orgId, typed);
     if (ro) { await logQuestion(orgId, typed, "readout", ro.answered); return res.json(ro); }
+    // POLISH-15 (W-1127-Atlas-02): "when is the next journey step due?", from the rows the Calendar draws.
+    const jd = await require("../server/ai/journeyDueAsk").journeyDueAnswer({ query, orgId, typed, scope, today: orgToday(await orgTz(orgId)),
+      vis: require("../server/auth/portfolio").visibleSql(req, "d") });
+    if (jd) { await logQuestion(orgId, typed, "journey due", true); return res.json(jd); }
     // WEALTH-1: "show me my 5s who haven't given this year", read by template (AI on or off).
     { const [fyOrg] = await query(`SELECT timezone, vocabulary_json FROM orgs WHERE id = ?`, [orgId]);
       const wp = require("../server/wealth/atlasWealth").planFor(typed, { fyStart: orgTime.orgFiscalYearStart(fyOrg || {}) });

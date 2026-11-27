@@ -14,18 +14,27 @@
 "use strict";
 const { COUNTED } = require("../../shared/numbers/giftCount");
 const { AWAITING } = require("../../shared/numbers/thanks");
+// POLISH-15 item 6: the gift has an open thank-you task (thankYouOnce.js stamps it with thanks_gift_id).
+const OPEN_THANK_TASK = g => `EXISTS (SELECT 1 FROM tasks tt WHERE tt.org_id = ${g}.org_id AND tt.thanks_gift_id = ${g}.id AND tt.done = 0 AND tt.voided_at IS NULL)`;
 
 async function afterMove(query, orgId, ids) {
   if (!ids || !ids.length) return null;
   const rows = await query(
-    `SELECT g.id, g.donor_id, gd.name AS giver, LEFT(g.date,10) AS date, ROUND(g.amount*100)::bigint AS cents, ${AWAITING("g")} AS awaiting
+    `SELECT g.id, g.donor_id, gd.name AS giver, LEFT(g.date,10) AS date, ROUND(g.amount*100)::bigint AS cents, ${AWAITING("g")} AS awaiting,
+            ${OPEN_THANK_TASK("g")} AS open_task
        FROM gifts g JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id AND gd.deleted_at IS NULL   -- ONE-MOVE-1: a trashed person's gifts drive no step
       WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND ${COUNTED("g")} AND g.date IS NOT NULL
       ORDER BY g.date DESC, g.created_at DESC, g.id DESC`, [orgId, ids]);
   if (!rows.length) return null;
   const last = rows[0];
+  // POLISH-15 item 6 (W-1127-Settings-01): the profile's rail lists the open thank-you task, which
+  // names the gift it was made for ("Thank Rufus · $325 just came in"), while this line named the
+  // newest gift ($25). With an open thank-you task for a gift that still waits, this line names
+  // that gift, so the two Next step lines are one step about one gift.
+  const pick = (last.awaiting === true && rows.find(r => r.awaiting === true && r.open_task === true)) || last;
   // ONE-MOVE-1 item 2: whose gift it is, so another member of the household is never thanked for it by name
-  return words({ giftId: last.id, giverId: last.donor_id, giver: last.giver || null, date: last.date, cents: Number(last.cents), nth: rows.length, awaiting: last.awaiting === true });
+  return words({ giftId: pick.id, giverId: pick.donor_id, giver: pick.giver || null, date: pick.date, cents: Number(pick.cents),
+    nth: pick === last ? rows.length : 0, awaiting: pick.awaiting === true });
 }
 
 // The words, server-side so Home's first look carries no extra JavaScript (perf-app's budget).

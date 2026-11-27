@@ -43,6 +43,7 @@ const PM = require("../server/donors/personMatch");   // LIST-2: who a search fo
 const routers = { r0: express.Router() };
 const PER_KIND = 5;      // shown in a group: three; one more says "see all"
 const SEE_ALL = 50;
+const WHOLE_WORD_MAX = 25;   // POLISH-15 item 1: the most people one surname lists in the top bar
 
 // A LIKE pattern from what somebody typed, with its own wildcards escaped.
 function likePattern(q) {
@@ -94,14 +95,14 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   // LIST-2: the one person rule (server/donors/personMatch.js): name, email,
   // phone, contact person, household and linked organization, accents folded.
   T.people = `SELECT id, name, email, phone, kind, person_types, total_giving, gift_count, imported_total, contact_name,
-              ${PM.PERSON_MATCH_REASON_SQL} AS match_reason
+              ${PM.PERSON_MATCH_REASON_SQL} AS match_reason, ${PM.NAME_RANK_SQL} AS name_rank
          FROM donors
         WHERE org_id = ? AND deleted_at IS NULL
           AND (${PM.PERSON_MATCH_SQL} OR mobile ILIKE ? ${E}
                ${digits.length >= 4 && !amt?.explicit ? "OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : ""})
         ORDER BY ${PM.RANK_ORDER_SQL}
-        LIMIT ${L}`;   // FLOWS-4: the exact name first, then starts-with, then contains, ties by recent activity (personMatch.js)
-  A.people = [...PM.personMatchReasonSql(fp).args, orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
+        LIMIT ${Math.max(L, WHOLE_WORD_MAX + 1)}`;   // FLOWS-4: the exact name first, then starts-with, then contains, ties by recent activity (personMatch.js)
+  A.people = [...PM.personMatchReasonSql(fp).args, ...PM.rankArgs(q), orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
         ...PM.rankArgs(q)];
   // "Rafael gift": the person, opened on their gifts.
   if (read.personGifts) {
@@ -303,8 +304,12 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   const r = {};
   for (const k of KINDS) {
     const rows = (row && row[k]) || [];
-    if (rows.length >= L) more[k] = true;
-    r[k] = rows.slice(0, L - 1);
+    // POLISH-15 item 1: every person whose name holds each word typed as a
+    // whole word (everyone with that surname) is sent, up to WHOLE_WORD_MAX,
+    // so "Ravensmere" lists every Ravensmere; the rest keep the usual cut.
+    const keep = k === "people" ? Math.max(L - 1, Math.min(WHOLE_WORD_MAX, rows.filter(d => d.name_rank <= PM.WHOLE_WORD_TIER).length)) : L - 1;
+    if (rows.length > keep) more[k] = true;
+    r[k] = rows.slice(0, keep);
   }
 
   const isOrg = k => k === "organisation" || k === "organization";
@@ -321,7 +326,9 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       // giving rule's (isDonor.js typesOnRead), never the stored roles; the chip reads these.
       person_types: require("../shared/numbers/isDonor").typesOnRead(d), totalGiving: Number(d.total_giving) || 0,
       // WALKB-1: why this person matched, in words ("household: The Marlowe Hart household").
-      why: PM.matchReasonWords(d.match_reason) });
+      why: PM.matchReasonWords(d.match_reason),
+      // POLISH-15 item 1: a whole-word name match (the top bar shows all of them).
+      wholeName: d.name_rank <= PM.WHOLE_WORD_TIER });
   }
   for (const h of r.households) {
     results.push({ kind: "household", id: h.id, title: h.name, members: h.members || 0,

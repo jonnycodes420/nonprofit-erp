@@ -47,6 +47,8 @@ function NoteLine({ n, onAct, onOpen, busy, onDismiss, onAnswer }) {
           : lower(n.line)}
       </span>
       {n.undoable && <button type="button" data-testid="atlas-note-undo" disabled={busy} onClick={() => onAct(`/atlas/actions/${n.id}/undo`)} style={small(false)}>Undo</button>}
+      {/* POLISH-15 item 5: a saved proposal takes back everything it wrote, by Atlas's own "Undo all of it" path. */}
+      {!n.undoable && n.undoAll && n.requestId && <button type="button" data-testid="atlas-note-undo-all" disabled={busy} onClick={() => onAct(`/atlas/${encodeURIComponent(n.requestId)}/undo`)} style={small(false)}>Undo all</button>}
       {n.waits && TAP[n.kind] && <button type="button" data-testid="atlas-note-tap" disabled={busy} onClick={() => onAct(`/atlas/actions/${n.id}/yes`)} style={small(true)}>{TAP[n.kind]}</button>}
       {n.waits && n.kind === "question" && onAnswer && <button type="button" data-testid="atlas-note-answer" disabled={busy} onClick={() => onAnswer(n)} style={small(true)}>Answer</button>}
       {letGoPath(n) && <button type="button" data-testid="atlas-note-letgo" aria-label={DISMISS_SAYS[n.kind] || "Dismiss"} title={DISMISS_SAYS[n.kind] || "Dismiss"} disabled={busy} onClick={() => onAct(letGoPath(n))}
@@ -157,7 +159,7 @@ export function AtlasBell({ onNavigate }) {
           {data.items.map(it => (
             <div key={it.id} data-testid="atlas-bell-item" data-kind={it.kind} data-waits={it.waits ? "1" : "0"} style={{ padding: "8px 0", borderTop: "1px solid " + T.bg2 }}>
               <NoteLine n={it} busy={busy} onAct={act} onOpen={go} onAnswer={answer} />
-              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>{new Date(it.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{it.state === "undone" ? " · undone" : it.state === "discarded" ? " · discarded" : ""}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>{new Date(it.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{it.state === "undone" || it.allUndone ? " · undone" : it.state === "discarded" ? " · discarded" : ""}{(it.undoable || it.undoAll) && it.undoUntil ? <span data-testid="atlas-bell-undo-until">{` · Undo available until ${new Date(it.undoUntil).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}</span> : null}</div>
             </div>))}
         </div>}
     </div>

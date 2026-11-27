@@ -211,6 +211,8 @@ async function resolveTarget(orgId, kind, heard, today, ahead = false) {
 async function logAction(req, a) {
   const id = newId("aa");
   const who = actor(req);
+  // POLISH-15: never a word or a definition twice in one answer (server/atlas/noRepeat.js).
+  a = { ...a, line: require("../server/atlas/noRepeat").tidyLine(a.line, req.atlasSaid || (req.atlasSaid = { defs: new Set() })) };
   await run(`INSERT INTO atlas_actions (id,org_id,request_id,card_id,run_id,kind,state,line,donor_id,place,place_id,link,waits,undoable,actor_id,actor_name,created_by,created_by_name,question)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, a.requestId || null, a.cardId || null, a.runId || null, a.kind, a.state, String(a.line).slice(0, 400),
@@ -266,8 +268,12 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const gate = await (gateP || agentGate(orgId));
   // TOP100-1: the Top 100's two asks are read here, on the server only, so the browser's bundle does not carry them.
   // POLISH-12: only for an org that has turned the Top 100 on; otherwise her words are read as anything else.
-  const t100 = require("../server/majorGifts/top100Atlas").readInCode(text);
-  if (t100 && await require("../server/majorGifts/top100Switch").top100On(query, orgId)) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
+  const T100 = require("../server/majorGifts/top100Atlas"), t100 = T100.readInCode(text);
+  // POLISH-15 (W-1127-Settings-03): off, any question that names the Top 100 is told so, and where to turn it on.
+  const t100Named = T100.namesTop100(text) || !!(t100 && t100.how === "plan" && /^(#|number\b)/i.test(t100.target));   // "#4" is a Top 100 rank
+  const t100On = (t100 || t100Named) ? await require("../server/majorGifts/top100Switch").top100On(query, orgId) : false;
+  if (t100 && t100On) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
+  if (!t100On && t100Named) return { ai: gate.ok ? "on" : "off", steps: [T100.offStep(text)], code: true };
   // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
   const inCode = AT_.readInCode(text);
   if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
@@ -1324,7 +1330,9 @@ app.get("/atlas/activity", requireAuth, wrap(async (req, res) => {
   const waitingRows = await query(`SELECT * FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
   const [settled, asking, mentioned] = await Promise.all([settledElsewhere(orgId, waitingRows), WT.openQuestions(query, orgId, actor(req).id),
     require("../server/mail/emailTogether").openMentions(query, orgId, actor(req).id)]);   // ATLAS-5: her open questions wait too; BUILDER-3: and comments that @mention her
-  const items = [...mentioned, ...asking.map(x => ({ ...x, by: atlasName() })), ...rows.map(r => actionOut(asSettled(r, settled.get(r.id))))];
+  // POLISH-15 item 5: each line's Undo only inside its window, and Undo all on a saved proposal (server/atlas/bellUndo.js).
+  const lines = await require("../server/atlas/bellUndo").withUndo(query, orgId, rows.map(r => actionOut(asSettled(r, settled.get(r.id)))), (await AS()).UNDO_DAYS);
+  const items = [...mentioned, ...asking.map(x => ({ ...x, by: atlasName() })), ...lines];
   res.json({ name: atlasName(), waiting: waitingRows.length - settled.size + asking.length + mentioned.length, items,
     changes: await require("../server/shared/changeMarks").changeMarks(query, orgId) });
 }));
@@ -1349,7 +1357,7 @@ app.get("/atlas/notes", requireAuth, wrap(async (req, res) => {
   const shown = rows.map(r => asSettled(r, settled.get(r.id)))
     // Home lists only what waits; a page keeps a settled line it has not shown yet.
     .filter(r => (place === "home" ? r.waits === true && r.state === "waiting" : r.seen_at == null || (r.waits === true && r.state === "waiting")));
-  res.json({ name: atlasName(), notes: shown.map(actionOut) });
+  res.json({ name: atlasName(), notes: await require("../server/atlas/bellUndo").withUndo(query, orgId, shown.map(actionOut), (await AS()).UNDO_DAYS) });   // POLISH-15 item 5
 }));
 app.post("/atlas/notes/seen", requireAuth, wrap(async (req, res) => {
   const ids = (Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(String).slice(0, 50);

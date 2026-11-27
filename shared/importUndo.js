@@ -28,11 +28,20 @@ function day(d, timeZone) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: timeZone || "UTC" });
 }
 
-// The one sentence. Open: "You can undo this import until Dec 3, 2026." Closed: "The window to undo
-// this import closed on Dec 3, 2026." `now` is a Date (the caller's clock).
-export function undoWords(until, { now = new Date(), timeZone } = {}) {
+// How long an import of `shape` can be undone, in words: "7 days", "30 days", "24 hours".
+export function windowWords(shape) {
+  const h = SHAPE_REVERSE_HOURS[shape] || DEPOSIT_REVERSE_HOURS;
+  return h % 24 === 0 && h > 24 ? `${h / 24} days` : `${h} hours`;
+}
+
+// The one sentence. POLISH-15 item 5 (W-1127-Settings-01, "no undo window length is stated"): it
+// names the date and, given the shape, the window's length. Open: "Undo available until Dec 3, 2026
+// (7 days from the import)." Closed: "Undo window closed Dec 3, 2026 (it was open 7 days)."
+// `now` is a Date (the caller's clock).
+export function undoWords(until, { now = new Date(), timeZone, shape } = {}) {
   if (!until) return "";
+  const len = shape ? windowWords(shape) : "";
   return new Date(until) > now
-    ? `You can undo this import until ${day(until, timeZone)}.`
-    : `The window to undo this import closed on ${day(until, timeZone)}.`;
+    ? `Undo available until ${day(until, timeZone)}${len ? ` (${len} from the import)` : ""}.`
+    : `Undo window closed ${day(until, timeZone)}${len ? ` (it was open ${len})` : ""}.`;
 }

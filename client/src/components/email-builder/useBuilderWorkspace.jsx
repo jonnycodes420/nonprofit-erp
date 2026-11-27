@@ -68,7 +68,12 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   const stale = useRef(false);
   const [rev, setRev] = useState(0);
   const force = useCallback(() => { typing.current = false; stale.current = false; setRev(r => r + 1); }, []);
-  const b = useEmailBuilder(initialBlocks, { meta, allowed, onChanged: o => { if (o && o.travel) force(); } });
+  // POLISH-15 item 2 (W-1127-Fundraising-02): Undo after typing in the email
+  // put the words back in the list, but the frame kept showing what was typed:
+  // the preview drawn for the undone list was the same page as before the
+  // typing, so the frame was never reloaded. An undo or redo always redraws it.
+  const reloadFrame = useRef(false);
+  const b = useEmailBuilder(initialBlocks, { meta, allowed, onChanged: o => { if (o && o.travel) { reloadFrame.current = true; force(); } } });
   const [preview, setPreview] = useState({ html: "", problems: [], loading: true, as: null, subject: "" });
   const [leftTab, setLeftTab] = useState("elements");
   const [rightTab, setRightTab] = useState("edit");
@@ -112,7 +117,11 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
     const n = ++seq.current;
     const t = setTimeout(() => {
       fetcher.current(stripKeys(b.latest.current))
-        .then(r => { if (n === seq.current) setPreview({ ...r, html: r.html || "", problems: r.problems || [], loading: false }); })
+        .then(r => {
+          if (n !== seq.current) return;
+          const again = reloadFrame.current; reloadFrame.current = false;
+          setPreview({ ...r, html: (r.html || "") + (again ? `<!--st-redraw ${n}-->` : ""), problems: r.problems || [], loading: false });
+        })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [(e && (e.sentence || e.message)) || "The preview could not be drawn."] })); });
     }, 300);
     return () => clearTimeout(t);
@@ -235,6 +244,8 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
     if (payload.move != null) {
       const k = keyAt(Number(payload.move));
       if (k && b.moveTo(k, at)) { b.setSelKey(k); force(); say("Moved. Undo puts it back."); }
+      // POLISH-15 item 2 (W-1127-Fundraising-02): a grip drag that changes nothing says so.
+      else if (k) say("It is already there. Hold the ⠿ grip and let go on the green line where it should go.");
       return;
     }
     if (payload.saved || payload.ready) { addFromBlocks(payload, at); return; }

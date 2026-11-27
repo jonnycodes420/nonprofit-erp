@@ -11,6 +11,7 @@ import { journeySpan, dayWord } from "../../../shared/journeyShape.js";   // POL
 import { JourneyDateFields } from "./JourneyDateFields";   // DATES-1
 import { JourneyBatches } from "./BulkJourney";   // DATES-1: undo a batch from the Donors list
 import { OlderTemplateNote } from "./OlderTemplateNote";   // POLISH-9
+import { JourneyPriorityField } from "./JourneyPriorityField";   // POLISH-15
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -330,18 +331,8 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
             )}
           </label>
         )}
-        <label style={{ display: "block" }}>
-          <span style={LBL}>Priority against other journeys</span>
-          <input data-testid={tid + "-priority"} type="number" min="0" max="1000" step="10" style={INP}
-            value={value.priority === undefined || value.priority === null ? "" : value.priority}
-            onChange={e => {
-              const d = parseInt(e.target.value, 10);
-              onChange({ priority: Number.isInteger(d) ? Math.min(1000, Math.max(0, d)) : null });
-            }} />
-          <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
-            The higher number goes first when somebody is in two.
-          </div>
-        </label>
+        <JourneyPriorityField value={value.priority} onChange={p => onChange({ priority: p })} testid={tid + "-priority"}
+          labelStyle={LBL} inputStyle={INP} />{/* POLISH-15: one range, on screen and on save */}
       </div>
       {/* JOURNEYS-3 — a person can be in several journeys; some pairs should not overlap. */}
       <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, fontSize: 13, color: T.ink, cursor: "pointer" }}>
