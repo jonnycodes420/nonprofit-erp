@@ -5,7 +5,8 @@
 //   its program officer, and every soft credit on an organization's gift: the person's Gives through, the
 //   organization's Given through it row for them and the `gives-through` figure's rows are one number, and it is
 //   the key: the soft credit's amount on each gift that carries one for them, else the whole gift when they are
-//   linked. Money is the organization's own gift above $0, not a credit row, not scheduled for a later day.
+//   linked. Only an organization's gifts (kind, or the organization person type): a gift of one person that
+//   credits another is the household's story, not this one. Money is the organization's own gift above $0, not a credit row, not scheduled for a later day.
 //
 //   First-time givers (W-1127-Volunteers-01). For each event: the people whose first gift ever (the earliest
 //   gift above $0, not a credit row, not refunded in full; on one day, the one recorded first) belongs to the
@@ -26,7 +27,7 @@ async function throughKey(q, orgId) {
   const rows = await q(
     `WITH og AS (
        SELECT g.id, g.donor_id AS org, ROUND(g.amount * 100)::bigint AS cents FROM gifts g
-         JOIN donors o ON o.id = g.donor_id AND o.org_id = g.org_id AND o.deleted_at IS NULL
+         JOIN donors o ON o.id = g.donor_id AND o.org_id = g.org_id AND o.deleted_at IS NULL AND ${ORG("o")}   -- Gives through is an organization's gifts
         WHERE g.org_id = $1 AND g.amount > 0 AND NOT ${credit("g")} AND (g.scheduled_on IS NULL OR g.scheduled_on <= TO_CHAR(NOW(), 'YYYY-MM-DD'))),
      links AS (
        SELECT DISTINCT donor_id_a AS person, donor_id_b AS org FROM donor_relationships WHERE org_id = $1 AND relationship_type = 'owner'
@@ -36,7 +37,6 @@ async function throughKey(q, orgId) {
          FROM gift_soft_credits sc JOIN og ON og.id = sc.gift_id WHERE sc.org_id = $1 AND sc.donor_id <> og.org
        UNION ALL
        SELECT l.person, og.org, og.id, og.cents FROM links l JOIN og ON og.org = l.org
-         JOIN donors o ON o.id = l.org AND o.org_id = $1 AND ${ORG("o")}
         WHERE l.person <> l.org AND NOT EXISTS (SELECT 1 FROM gift_soft_credits x WHERE x.org_id = $1 AND x.gift_id = og.id AND x.donor_id = l.person))
      SELECT c.person, c.org, SUM(c.cents)::bigint AS cents FROM credited c
        JOIN donors p ON p.id = c.person AND p.org_id = $1 AND p.deleted_at IS NULL
