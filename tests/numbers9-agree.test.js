@@ -147,6 +147,25 @@ async function pdfText(buf) {
   // ── §5 and §6 ───────────────────────────────────────────────────────────
   await require("./lib/numbers9/givesThrough").check(ctx);
   await require("./lib/numbers9/thanks").check(ctx);
+  // NUMBERS-10 items 2 and 4: on §6's fixture (plus a gift from before the window), Home, the thank-you card and
+  // the Acknowledgment backlog are one window, one count, one total; the report names the older gift as its own
+  // figure; the Gift History header foots (tests/lib/numbers10ThanksChecks.js).
+  {
+    const [{ d: since }] = await q(`SELECT MIN(created_at)::date::text AS d FROM donors WHERE org_id=$1`, [ORG]);
+    const early = await ctx.person("Odette Earlybird");
+    await ctx.give(early, { amount: 250, date: addDays(since, -30), confirmFarOutside: true });
+    const a = await assertSurfacesAgree(ORG, { token: tok, only: ["numbers10thanks"], soft: true, label: "N10" });
+    ok("N10 one thank-you backlog, its older figure, drafts and the Gift History header agree (numbers10ThanksChecks)", a.ok, a.diffs);
+    const rep = (await api("GET", "/saved-reports/std:ack-backlog/run", tok)).body || {};
+    const older = (rep.figures || {}).older || {};
+    const opened = older.source ? (await api("GET", `/figures/unthanked-before/rows?before=${older.source.params.before}&pageSize=200`, tok)).body || {} : {};
+    const rows = opened.rows || [];
+    ok("N10 the Acknowledgment backlog names the gifts before the window as \"Older than the window\" (Odette's $250 among them), a figure that opens its rows, never in its count",
+      older.value >= 1 && older.value === rows.length && older.cents === rows.reduce((n, r) => n + cents(r.amount), 0)
+      && rows.some(r => r.donorId === early && cents(r.amount) === 25000) && !(rep.rows || []).some(r => r._pid === early)
+      && /^Older than the window: \d+ gifts? \(\$[\d,.]+\) dated before /.test(rep.olderWords || ""),
+      { older, n: rows.length, words: rep.olderWords });
+  }
 
   await closeDb();
   summary();

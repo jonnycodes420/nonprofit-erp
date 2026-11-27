@@ -83,7 +83,9 @@ export function attachDnD(doc, live, { readOnly = false } = {}) {
     if (el === line) Object.assign(el.style, { display: "block", top: p.y + "px", left: (p.left + 8) + "px", width: Math.max(20, p.right - p.left - 16) + "px" });
     // The "+" sits in the margin left of the email, on the line, over no block (BUILDER-2B
     // item 1: a click on an image or a stat reaches it, never the "+"). With no margin, at the edge.
-    else Object.assign(el.style, { display: "block", top: p.y + "px", left: (p.left >= 34 ? p.left - 18 : p.left + 13) + "px" });
+    // POLISH-15 item 2: with no margin (the editor's frame is the email's own width) it sat at the
+    // far left edge, where nobody hovering between two blocks looked; now it is in the middle of the line.
+    else Object.assign(el.style, { display: "block", top: p.y + "px", left: (p.left >= 34 ? p.left - 18 : Math.round((p.left + p.right) / 2)) + "px" });
   };
   let dragging = false, plusAt = null;
 
@@ -115,11 +117,16 @@ export function attachDnD(doc, live, { readOnly = false } = {}) {
     if (dragging || e.target === plus) return;
     const p = placeAt(blockBoxes(doc), pageY(e));
     const x = e.clientX + (doc.defaultView ? doc.defaultView.scrollX : 0);
-    const near = p && Math.abs(pageY(e) - p.y) <= 6 && x > p.left - 34 && x < p.right;
+    // POLISH-15 item 2 (W-1127-Fundraising-02): "hover between blocks shows no plus". The band
+    // was 6 px either side of the line, thinner than the space a person sees between two
+    // blocks; now 14. It still shows only once the pointer rests, and a press anywhere else
+    // hides it, so a click passing over a block's edge reaches the block.
+    const band = 14;
+    const near = p && Math.abs(pageY(e) - p.y) <= band && x > p.left - 34 && x < p.right;
     if (!near) { hidePlus(); return; }
     if (plusAt && plusAt.at === p.at) return;
     clearTimeout(restTimer); plusAt = null; show(plus, null);
-    restTimer = setTimeout(() => { plusAt = p; show(plus, p); }, 350);
+    restTimer = setTimeout(() => { plusAt = p; show(plus, p); }, 250);
   });
   doc.addEventListener("mousedown", e => { if (e.target !== plus) hidePlus(); }, true);
   doc.addEventListener("mouseleave", hidePlus);

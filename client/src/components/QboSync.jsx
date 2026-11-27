@@ -26,6 +26,7 @@ import { displayDate } from "../../../shared/displayDate.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
 import QboChecklist from "./qbo/QboChecklist";   // HONEST-1 item 3
+import { countLabel } from "../../../shared/countWords.js";   // POLISH-15 item 6
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -232,8 +233,9 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
             {mapOpen ? "Close" : "Review the mapping"}</button>
         </div>
         {!mapOpen && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
-          {Object.values(m.funds || {}).filter(x => x.accountId).length} of {(d.funds || []).length} funds mapped,
-          {" "}{Object.values(m.campaigns || {}).filter(x => x.accountId).length} campaigns mapped.
+          {/* POLISH-15 item 6: counts through the one plural helper (shared/countWords.js), never "1 campaigns" */}
+          {Object.values(m.funds || {}).filter(x => x.accountId).length} of {countLabel((d.funds || []).length, "fund")} mapped,
+          {" "}{countLabel(Object.values(m.campaigns || {}).filter(x => x.accountId).length, "campaign")} mapped.
           {" "}          {m.depositAccount ? <>Money lands in {m.depositAccount.name || m.depositAccount.id}.</> : "No account for the money to land in is chosen yet."}
         </div>}
         {mapOpen && <div data-testid="qbo-mapping" style={{ marginTop: 6 }}>
@@ -280,7 +282,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
           <div style={h}>Pending</div>
           <span style={{ fontSize: 13.5, color: T.ink }}>
-            {p.count} {p.count === 1 ? "gift" : "gifts"}{", "}
+            {countLabel(p.count, "gift")}{", "}
             <Figure variant="inline" figureKey="qbo-pending" value={p.total.value} kind="money" label={p.total.label}
               definition={p.total.definition} source={p.total.source} />
           </span>

@@ -36,6 +36,7 @@ import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the win
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { usePreviewChoice, PreviewToggle, StagedNotice } from "./import/ImportPreview";   // ONBOARD-1: "Preview first"
+import { previewHeadline } from "../../../shared/importHeadline.js";   // NUMBERS-10: the headline foots the file
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
@@ -853,6 +854,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 </div>))}
             </details>
 
+            {(() => { const h = previewHeadline(u); return h && <div data-testid="sheet-headline" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{h.sentence}</div>; })()}
             <PreviewToggle choice={previewChoice} />
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {/* FIX-55: the button is this preview's, and waits while the preview catches up with an answer */}
@@ -861,7 +863,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 style={{ ...btn(true), opacity: u.ready && !rereading ? 1 : 0.45, cursor: u.ready && !rereading ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
                 {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
-              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${undoWords(undoUntil("sheet", new Date()))}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
+              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${undoWords(undoUntil("sheet", new Date()), { shape: "sheet" })}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}
@@ -870,7 +872,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
           <div style={box} data-testid="sheet-result">
             <div style={h3}>{undone ? "Undone" : "Imported"}</div>
             {/* IMPORT-8: once undone, Undo's own sentence (who stayed, and Remove them too) is the receipt */}
-            {!undone && <div style={{ fontSize: 15, fontWeight: 700 }}>{result.sentence}</div>}
+            {!undone && result.headline && <div data-testid="sheet-result-headline" style={{ fontSize: 15, fontWeight: 700 }}>{result.headline.sentence}</div>}
+            {!undone && <div style={result.headline ? { ...small, color: T.ink } : { fontSize: 15, fontWeight: 700 }}>{result.sentence}</div>}
             {!undone && result.staged && <StagedNotice staged={{ ...result.staged, verifyUrl: `/imports/${encodeURIComponent(result.importId)}/verify` }} />}
             {!undone && result.giftLine && <ImportGiftLine line={result.giftLine} importId={result.importId} style={{ marginTop: 4 }} />}
             {/* IMPORT-7: every row, per sheet, each count named; the file's line adds the sheets up */}
@@ -925,7 +928,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
               {result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} />
-                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{undoWords(undoUntil("sheet", committedAt.current || new Date()))}</div>}</div>}
+                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{undoWords(undoUntil("sheet", committedAt.current || new Date()), { shape: "sheet" })}</div>}</div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}

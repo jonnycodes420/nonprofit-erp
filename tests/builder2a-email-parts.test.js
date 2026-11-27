@@ -48,7 +48,11 @@ const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward
 // The hash of every starter rendered on main before this build (f4be415, with
 // BUILDER-1's renderer). A build that changes the starter render on purpose
 // updates this, and says why.
-const STARTERS_ON_MAIN = "87de91c719bc227f5e4f8bf067cafb4fe832c9c831ddcf0e105529e97ea385f0";
+// POLISH-15 item 2: the starters' html and text are byte-identical to main; only their
+// Checks grew, as every [bracketed blank] is now listed (impact_report's 90-character
+// story blank and grant_funder_update's were past the old 60). html+text, on main and here:
+// 074b88cae8712a865da68caae7583281a5e5191c82b2b82f497b3d870e5b75d3.
+const STARTERS_ON_MAIN = "cc92ec55a3f5faffdfa10ff7015b9056ae7d50f139364fb3e0f63bcf5143171d";
 
 async function wipe(org) {
   const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
@@ -155,6 +159,16 @@ const NEW_BLOCKS = {
       if (r2.html !== r.html) sameWithDefaults = false;
     }
     ok("§3 every starter renders byte-identical to main", h.digest("hex") === STARTERS_ON_MAIN);
+    // POLISH-15 item 2 (W-1127-Fundraising-02): "the Checks list does not flag bracketed blanks in
+    // an Event invite block". Its third blank is 68 characters, past the old 60, and only the
+    // first blank of a field was listed. RED ON MAIN: 2 of the 3 blanks, and 1 of the 2 below.
+    const RB = await import("../shared/emailReadyBlocks.js");
+    const invite = RB.READY_BLOCKS.find(x => x.key === "event_invite").blocks;
+    const ip = EB.renderEmail({ blocks: [{ type: "header" }, ...invite, { type: "footer" }], brand, fields: sets[0], links, mode: "preview" }).problems.filter(p => /fill in \[/.test(p));
+    const want = ["[the event's name]", "[The day, the time and the place.]", "[One or two sentences on what the evening holds and who will be there.]"];
+    ok("§3 Checks list every [bracketed blank] in the Event invite block, however long", want.every(w => ip.some(p => p.includes(w))) && ip.length === want.length, ip);
+    const two = EB.renderEmail({ blocks: [{ type: "richtext", blocks: [{ type: "p", text: "Join us on [the day] at [the place]." }] }], brand, fields: sets[0], links, mode: "preview" }).problems.filter(p => /fill in \[/.test(p));
+    ok("§3 and every blank in one paragraph, not only the first", two.length === 2, two);
     ok("§3 a style the block cannot take renders exactly as no style", sameWithDefaults);
   }
 

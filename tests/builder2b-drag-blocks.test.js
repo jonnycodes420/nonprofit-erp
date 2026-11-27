@@ -25,6 +25,10 @@
 //       selects that block: the outline, its name tag, the path line and the
 //       right pane, and nothing in the email changes. A click in text puts the
 //       caret there; a click on a photo or a stat selects it, never the "+".
+//   §7  POLISH-15: in WebKit (Safari) and Chromium, a click in the email selects its
+//       block, typing is an undo step, and Undo takes the typed words off the screen.
+//       Red on main (the same clicks, 27 Nov): WebKit selected nothing and kept Undo
+//       disabled; Chromium's Undo left the typed text showing.
 //   §6  the preview is light unless Dark mode is pressed, on a computer in dark
 //       mode too (both preview routes); a send still carries the dark block.
 //
@@ -343,6 +347,41 @@ const lintOf = async html => { const EB = await import("../shared/emailBlocks.js
       if (menu) await page.keyboard.press("Escape");
     }
     await browser.close();
+
+    // §7 · POLISH-15 item 2 (W-1127-Fundraising-02): in Safari's engine the frame answered
+    // nothing (it was sandboxed without allow-scripts, and WebKit runs no listener there,
+    // not even the editor's): a click selected nothing, typing never reached the list so
+    // Undo stayed disabled, the grip and the "+" were dead. And in every engine, Undo after
+    // typing put the words back in the list but left the typed text on screen.
+    // RED ON MAIN: WebKit's click selects nothing and Undo stays disabled; Chromium's Undo leaves the text.
+    for (const engine of ["webkit", "chromium"]) {
+      const pw = require(PW);
+      const br = await pw[engine].launch().catch(() => null);
+      if (!br) { ok(`§7 ${engine} launches`, false); continue; }
+      const c7 = await br.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+      await c7.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+        [TOK, JSON.stringify(a.user), JSON.stringify(a.org)]);
+      const p7 = await c7.newPage();
+      const t7 = (await api("POST", "/email-templates", TOK, { starterKey: "thank_you" })).body.template;
+      await p7.goto(`${APP}/app/communications?subtab=templates&template=${t7.id}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await p7.waitForFunction(s => { const f = document.querySelector(s); try { return f && f.contentDocument.querySelectorAll("tr[data-st-block]").length > 2; } catch { return false; } }, FRAME, { timeout: 30000 }).catch(() => {});
+      await p7.waitForTimeout(800);
+      await p7.frameLocator(FRAME).locator('tr[data-st-block="2"]').first().click();
+      await p7.waitForTimeout(300);
+      const selFor = await p7.evaluate(s => { const b = document.querySelector(s).contentDocument.querySelector(".st-box.sel"); return b ? b.getAttribute("data-st-for") : null; }, FRAME);
+      ok(`§7 ${engine}: a click in the email selects the block`, selFor === "2", selFor);
+      await p7.frameLocator(FRAME).locator('[data-st-rich="1"] p').first().click();
+      await p7.keyboard.press("End");
+      await p7.keyboard.type(" Quokka", { delay: 20 });
+      await p7.waitForTimeout(1400);
+      const undoOn = !(await p7.locator('[data-testid="editor-undo"]').isDisabled());
+      ok(`§7 ${engine}: typing in the email is an undo step`, undoOn);
+      if (undoOn) await p7.click('[data-testid="editor-undo"]');
+      await p7.waitForTimeout(1300);
+      const left = await p7.evaluate(s => document.querySelector(s).contentDocument.body.innerText.includes("Quokka"), FRAME);
+      ok(`§7 ${engine}: Undo takes the typed words off the screen too`, !left);
+      await br.close();
+    }
   }
 
   // ── §6 · the preview is light unless Dark mode is pressed ───────────────

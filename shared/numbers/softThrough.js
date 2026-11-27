@@ -16,11 +16,30 @@ const { MONEY } = require("./money");
 const ORG_SQL = o => `(LOWER(COALESCE(${o}.kind, '')) IN ('organisation', 'organization') OR jsonb_exists(COALESCE(${o}.person_types, '[]'::jsonb), 'organization'))`;   // jsonb_exists: a bare ? is a bind placeholder here
 
 // How a row was credited, in words for the rail.
+// NUMBERS-10 item 3: a program officer link credits too (`officer_link`).
 const HOW_WORDS = Object.freeze({
   soft_credit: "soft credit on its gifts",
   gives_through_link: "soft credit: linked as Owner, gives through it",
-  both: "soft credit: linked as Owner, and credited on its gifts",
+  officer_link: "soft credit: linked as its program officer, gives through it",
+  both: "soft credit: linked to it, and credited on its gifts",
 });
+// The rail's words for one organization's row, from every way it was credited (Postgres array of `how`).
+function howWordsOf(hows) {
+  const set = new Set((hows || []).filter(Boolean));
+  if (set.size <= 1) return HOW_WORDS[[...set][0]] || HOW_WORDS.soft_credit;
+  const links = [set.has("gives_through_link") && "as Owner", set.has("officer_link") && "as its program officer"].filter(Boolean);
+  return `soft credit: linked ${links.join(" and ")}${set.has("soft_credit") ? ", and credited on its gifts" : ""}`;
+}
+// The links that credit a person with an organization's gifts, person first: Owner (stored person first,
+// POLISH-4) and Program officer (stored organization first, GRANTS: donor_id_a = the funder). One row per
+// (person, organization, how). Works at and the other kinds credit nothing.
+const CREDIT_LINKS = () => `(
+    SELECT dr.org_id, dr.donor_id_a AS person_id, dr.donor_id_b AS through_id, 'gives_through_link'::text AS how
+      FROM donor_relationships dr WHERE dr.relationship_type = 'owner'
+    UNION
+    SELECT dr.org_id, dr.donor_id_b, dr.donor_id_a, 'officer_link'
+      FROM donor_relationships dr WHERE dr.relationship_type = 'program_officer'
+  )`;
 
 // NUMBERS-9 item 5 (W-1125-Finance-37, repeat). WHAT AN ORGANIZATION'S GIFTS CREDIT TO A PERSON: one
 // derived table, read by the person's Gives through, the organization's Given through it, its line and the
@@ -30,6 +49,9 @@ const HOW_WORDS = Object.freeze({
 //   gives_through_link   the person is linked to the organization as Owner ("gives through", HOUSEHOLD-1 and
 //                        POLISH-4: person first, donor_id_a) and holds no explicit soft credit on that gift:
 //                        the whole gift is credited to them, softly.
+//   officer_link         NUMBERS-10 item 3 (W-1125-Finance-37, third night): the same, for a person linked as the
+//                        organization's program officer (stored organization first). The fleet read a foundation's
+//                        $25,000 beside its officer's empty record; the gifts came through him, so he is credited.
 // Either way it is recognition, never money they gave: it is never added to their own lifetime.
 // `$1`-free: binds (org, org) once per use, in that order. Callers narrow it with WHERE on its columns.
 const CREDITED_THROUGH = () => `(
@@ -41,14 +63,15 @@ const CREDITED_THROUGH = () => `(
       JOIN donors p ON p.id = sc.donor_id AND p.org_id = sc.org_id AND p.deleted_at IS NULL
      WHERE sc.org_id = ? AND g.donor_id <> sc.donor_id AND ${MONEY("g")} AND g.amount > 0
     UNION ALL
-    SELECT dr.donor_id_a, g.donor_id, g.id, g.date, ROUND(g.amount * 100)::bigint, 'gives_through_link'
-      FROM donor_relationships dr
-      JOIN gifts g ON g.org_id = dr.org_id AND g.donor_id = dr.donor_id_b
-      JOIN donors o ON o.id = dr.donor_id_b AND o.org_id = dr.org_id AND o.deleted_at IS NULL
-      JOIN donors p ON p.id = dr.donor_id_a AND p.org_id = dr.org_id AND p.deleted_at IS NULL
-     WHERE dr.org_id = ? AND dr.relationship_type = 'owner' AND dr.donor_id_a <> dr.donor_id_b
+    SELECT lk.person_id, g.donor_id, g.id, g.date, ROUND(g.amount * 100)::bigint, lk.how
+      FROM (SELECT DISTINCT ON (l.org_id, l.person_id, l.through_id) l.* FROM ${CREDIT_LINKS()} l
+             ORDER BY l.org_id, l.person_id, l.through_id, l.how) lk   -- linked twice (Owner and officer): each gift once
+      JOIN gifts g ON g.org_id = lk.org_id AND g.donor_id = lk.through_id
+      JOIN donors o ON o.id = lk.through_id AND o.org_id = lk.org_id AND o.deleted_at IS NULL
+      JOIN donors p ON p.id = lk.person_id AND p.org_id = lk.org_id AND p.deleted_at IS NULL
+     WHERE lk.org_id = ? AND lk.person_id <> lk.through_id
        AND ${MONEY("g")} AND g.amount > 0 AND ${ORG_SQL("o")}
-       AND NOT EXISTS (SELECT 1 FROM gift_soft_credits x WHERE x.org_id = g.org_id AND x.gift_id = g.id AND x.donor_id = dr.donor_id_a)
+       AND NOT EXISTS (SELECT 1 FROM gift_soft_credits x WHERE x.org_id = g.org_id AND x.gift_id = g.id AND x.donor_id = lk.person_id)
   )`;
 
 // Per person: what they hold through `orgDonorId`'s gifts. Map id -> cents.
@@ -72,28 +95,28 @@ async function throughSummary(query, orgId, orgDonorId) {
 // NUMBERS-8 item 2, NUMBERS-9 item 5: the person's side. Every organization whose own gifts credit
 // `personId` (an explicit soft credit, or an Owner link), with what they hold through each: the same
 // rows as throughByPerson, so the person's line and the organization's row for them are one number.
-// `how` says which: "soft_credit", "gives_through_link", or "both".
+// `how` says which: "soft_credit", "gives_through_link", "officer_link", or "both".
 async function givesThroughOf(query, orgId, personId) {
   const rows = await query(
     `SELECT ct.through_id, o.name, COALESCE(SUM(ct.cents), 0)::bigint AS cents, COUNT(DISTINCT ct.gift_id)::int AS gifts,
-            CASE WHEN COUNT(DISTINCT ct.how) > 1 THEN 'both' ELSE MIN(ct.how) END AS how
+            CASE WHEN COUNT(DISTINCT ct.how) > 1 THEN 'both' ELSE MIN(ct.how) END AS how, ARRAY_AGG(DISTINCT ct.how) AS hows
        FROM ${CREDITED_THROUGH()} ct
        JOIN donors o ON o.id = ct.through_id AND o.org_id = ?
       WHERE ct.person_id = ? AND ${ORG_SQL("o")}   -- the person's side lists organizations (NUMBERS-8); a trust's own Through list reads any record
       GROUP BY ct.through_id, o.name
       ORDER BY cents DESC, o.name`, [orgId, orgId, orgId, personId]);
   return rows.map(r => ({ id: r.through_id, name: r.name, cents: Number(r.cents) || 0, gifts: Number(r.gifts) || 0, how: r.how,
-    howWords: HOW_WORDS[r.how] || HOW_WORDS.soft_credit,
+    howWords: howWordsOf(r.hows),
     source: { key: "gives-through", params: { donor: personId, through: r.through_id } } }));
 }
-const GIVEN_THROUGH_SENTENCE = "Given through it: the part of this organization's own gifts credited to each person, softly: a soft credit on a gift, or every gift when the person is linked as Owner (gives through it). Each is the same figure that person's Gives through shows, and none is added to this organization's lifetime.";
-const GIVES_THROUGH_SENTENCE = "Gives through: the part of each organization's own gifts credited to this person, softly: a soft credit on a gift, or every gift when they are linked as its Owner. It is the same figure the organization shows beside their name, and it is never added to their own lifetime.";
+const GIVEN_THROUGH_SENTENCE = "Given through it: the part of this organization's own gifts credited to each person, softly: a soft credit on a gift, or every gift when the person is linked as Owner or as its program officer (gives through it). Each is the same figure that person's Gives through shows, and none is added to this organization's lifetime.";
+const GIVES_THROUGH_SENTENCE = "Gives through: the part of each organization's own gifts credited to this person, softly: a soft credit on a gift, or every gift when they are linked as its Owner or its program officer. It is the same figure the organization shows beside their name, and it is never added to their own lifetime.";
 
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const summaryWords = (s, name = "this record") => (s.people
   ? `${usd(s.cents)} given through ${name}, by ${s.people} ${s.people === 1 ? "person" : "people"}`
   : `Nothing given through ${name} is soft-credited to anyone yet`);
 
-const SENTENCE = "Given through: the part of this record's own gifts credited to each person, softly: a soft credit on a gift, or every gift when the person is linked as Owner (gives through it). A person's lifetime giving is theirs, never added in here.";
+const SENTENCE = "Given through: the part of this record's own gifts credited to each person, softly: a soft credit on a gift, or every gift when the person is linked as Owner or as its program officer (gives through it). A person's lifetime giving is theirs, never added in here.";
 
-module.exports = { CREDITED_THROUGH, HOW_WORDS, throughByPerson, throughSummary, summaryWords, SENTENCE, givesThroughOf, GIVES_THROUGH_SENTENCE, GIVEN_THROUGH_SENTENCE };
+module.exports = { CREDITED_THROUGH, CREDIT_LINKS, HOW_WORDS, howWordsOf, throughByPerson, throughSummary, summaryWords, SENTENCE, givesThroughOf, GIVES_THROUGH_SENTENCE, GIVEN_THROUGH_SENTENCE };

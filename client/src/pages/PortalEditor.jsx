@@ -997,24 +997,40 @@ function FieldError({ errors, prefix }) {
 
 // A list of amounts in whole or decimal dollars. The text is local while she
 // types, so "2" on the way to "25" never becomes a refused $2 or a lost field.
+// POLISH-15 item 2 (W-1127-Fundraising-02): the boxes read in the order the
+// donor sees, smallest first. They are put in order when she leaves a box,
+// never while she types in one (a "1" on the way to "100" stays where it is),
+// and what is saved is that order too.
+const amountOf = (t, whole) => { const n = Number(String(t).replace(/[$,\s]/g, "")); return Number.isFinite(n) && n > 0 ? (whole ? Math.round(n) : Math.round(n * 100) / 100) : null; };
 function AmountList({ valueDollars, onChange, min = 0, max = 8, whole = false, testid }) {
   const [text, setText] = useState(() => (valueDollars || []).map(String));
   const key = (valueDollars || []).join(",");
   const lastSent = useRef(key);
-  useEffect(() => { if (key !== lastSent.current) { setText((valueDollars || []).map(String)); lastSent.current = key; } }, [key]);
+  const boxRef = useRef(null);
+  const typingIn = () => !!(boxRef.current && boxRef.current.contains(document.activeElement) && document.activeElement.tagName === "INPUT");
+  useEffect(() => { if (key !== lastSent.current && !typingIn()) { setText((valueDollars || []).map(String)); lastSent.current = key; } }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
   const push = (next) => {
     setText(next);
-    const nums = next.map(t => Number(String(t).replace(/[$,\s]/g, ""))).filter(n => Number.isFinite(n) && n > 0).map(n => whole ? Math.round(n) : Math.round(n * 100) / 100);
+    const nums = next.map(t => amountOf(t, whole)).filter(n => n != null).sort((x, y) => x - y);
     lastSent.current = nums.join(",");
     onChange(nums);
   };
+  // Leaving a box: the list reads in order, blanks kept at the end.
+  const tidy = () => setTimeout(() => {
+    if (typingIn()) return;
+    setText(cur => {
+      const filled = cur.filter(t => amountOf(t, whole) != null).sort((x, y) => amountOf(x, whole) - amountOf(y, whole));
+      const next = [...filled, ...cur.filter(t => amountOf(t, whole) == null)];
+      return next.join("\u0000") === cur.join("\u0000") ? cur : next;
+    });
+  }, 0);
   return (
-    <div data-testid={testid}>
+    <div data-testid={testid} ref={boxRef}>
       {text.map((t, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
           <span style={{ fontSize: 13, color: E.muted }}>$</span>
           <input style={{ ...inp, width: 110 }} inputMode="decimal" value={t} aria-label={`Amount ${i + 1}`}
-            onChange={e => push(text.map((x, j) => j === i ? e.target.value : x))} />
+            onChange={e => push(text.map((x, j) => j === i ? e.target.value : x))} onBlur={tidy} />
           {text.length > min && <button type="button" onClick={() => push(text.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: E.muted, fontSize: 12, cursor: "pointer" }}>Remove</button>}
         </div>
       ))}

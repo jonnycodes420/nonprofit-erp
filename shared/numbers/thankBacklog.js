@@ -23,12 +23,14 @@
 const { AWAITING } = require("./thanks");
 // IMPORT-11: a gift dated after today (TRUTH-6, scheduled.js) waits for no thanks until its day:
 // the rail read "No draft yet" for a gift that had not come in.
-const { DUE } = require("./scheduled");
+// NUMBERS-10: a gift dated after today with no scheduled_on (an older row, or one written straight to the
+// table) waits for no thanks either, so Home's tile and the backlog report, which ends today, give one count.
+const { DUE, ORG_TODAY } = require("./scheduled");
 
 // SQL: gift `g` of person `d` waits to be thanked; `since` is a bound placeholder for the start day.
 const WAITING = (g = "g", d = "d", since = "?") =>
   `(${AWAITING(g)} AND ${g}.is_sample IS NOT TRUE AND ${d}.is_sample IS NOT TRUE AND ${d}.deleted_at IS NULL
-    AND ${g}.date IS NOT NULL AND ${g}.date >= ${since} AND ${DUE(g)})`;
+    AND ${g}.date IS NOT NULL AND ${g}.date >= ${since} AND ${g}.date <= ${ORG_TODAY(g)} AND ${DUE(g)})`;
 
 // SQL: gift `g` has a thank-you draft ready (not sent, not skipped).
 const DRAFTED = (g = "g") =>
@@ -70,6 +72,19 @@ async function waitingBetween(query, orgId, from, to, { limit = null, offset = 0
       ORDER BY g.date ASC, d.name, g.id${limit ? ` LIMIT ${Number(limit) | 0} OFFSET ${Math.max(0, Number(offset) | 0)}` : ""}`, [orgId, from, to]);
 }
 
+// NUMBERS-10 item 2: the earliest day WAITING's `since` can take, for "older than the window" (figureSources
+// `unthanked-before`): a waiting gift of any date, before the window's first day.
+const EVER = "0001-01-01";
+
+// NUMBERS-10 item 2: the rows of "Older than the window" (figure source `unthanked-before`,
+// server/outreach/thanksSources.js): waiting gifts of any date before the window's first day.
+const OLDER_ROWS = (orgId, before) => ({
+  sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
+          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+         WHERE g.org_id = ? AND ${WAITING("g", "d")} AND g.date < ?`,
+  args: [orgId, EVER, before],
+});
+
 const SENTENCE = "Waiting to be thanked: every gift dated on or after the day you started with Steward with no thank-you logged. A refund, a gift refunded in full, sample data and a deleted person's gifts wait for no thanks. A drafted thank-you still waits until it is marked sent.";
 
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
@@ -84,4 +99,4 @@ function backlogWords(b, sinceWords) {
   return `${gifts(b.n)} (${usd(b.cents)}) ${b.n === 1 ? "is" : "are"} waiting to be thanked since ${sinceWords}; ${tail}.`;
 }
 
-module.exports = { waitingOlderThan, waitingBetween, WAITING, DRAFTED, backlog, backlogWords, SENTENCE };
+module.exports = { EVER, OLDER_ROWS, waitingOlderThan, waitingBetween, WAITING, DRAFTED, backlog, backlogWords, SENTENCE };

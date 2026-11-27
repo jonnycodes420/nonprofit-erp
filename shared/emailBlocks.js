@@ -180,9 +180,15 @@ function mergeUrl(raw, fields) {
 }
 // Square-bracket blanks ("[number]", "[name of program]") are deliberate
 // spaces the org fills; a send with one left in would print the brackets.
+// POLISH-15 item 2 (W-1127-Fundraising-02): every blank is named, however long.
+// The Event invite's "[One or two sentences on what the evening holds and who
+// will be there.]" is 68 characters, past the old 60, and only the first blank
+// in a field was ever listed, so Checks read clean with brackets still in.
 function blankCheck(raw, problems, where) {
-  const m = String(raw || "").match(/\[[^\]\n]{1,60}\]/);
-  if (m) problems.push(`${where}: fill in ${m[0]} before this is sent.`);
+  for (const m of String(raw || "").matchAll(/\[[^\][\n]{1,240}\]/g)) {
+    const line = `${where}: fill in ${m[0]} before this is sent.`;
+    if (!problems.includes(line)) problems.push(line);
+  }
 }
 
 function resolveSrc(src, links) {

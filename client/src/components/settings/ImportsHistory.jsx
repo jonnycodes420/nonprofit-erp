@@ -10,6 +10,7 @@ import ImportUndo from "../ImportUndo";
 import { fmtCount, fmtMoney } from "./importsWords";
 import { displayOrgDate, displayOrgDateShort } from "../../lib/orgDay";
 import { orgTodayCivil } from "../../lib/orgToday";   // POLISH-14 item 2: the org's day, with the year only when it isn't this year
+import { windowWords } from "../../../../shared/importUndo.js";   // POLISH-15 item 5: the window's length, from its one place
 
 export function ImportsHistory(){
   const [rows,setRows]=useState(null);
@@ -40,7 +41,7 @@ export function ImportsHistory(){
       <SectionLabel>Imports</SectionLabel>
       {moveReportId&&<MoveReport importId={moveReportId} onClose={()=>setMoveReportId(null)}/>}
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
-        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. Undo removes everything this import added.
+        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. Undo removes everything this import added. {/* POLISH-15 item 5 */}<span data-testid="imports-window-lengths">A gift file can be undone for {windowWords("gifts")} after it is imported, a spreadsheet for {windowWords("sheet")}, a bank deposit for {windowWords("deposit")}.</span>
       </div>
       {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
       {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
@@ -68,12 +69,12 @@ export function ImportsHistory(){
                         style={{background:"none",border:"none",padding:0,font:"inherit",color:T.greenDk,textDecoration:"underline",cursor:"pointer"}}>{r.archived?"Unarchive":"Archive"}</button></div>}
                     {/* FIX-52: a spreadsheet import still being written, or one rolled back */}
                     {(r.state==="in_progress"||r.state==="failed")&&<div data-testid="imports-state" style={{fontSize:11.5,color:r.state==="failed"?T.terra700:T.greenDk,marginTop:2}}>{r.sentence}</div>}
-                    {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone{r.reversedAt?` ${displayOrgDateShort(r.reversedAt, orgTodayCivil())}`:""}</div>}
+                    {r.state==="undone"&&<div data-testid="imports-undone" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone{r.reversedAt?` ${displayOrgDateShort(r.reversedAt, orgTodayCivil())}`:""}{r.undoWindow?` (undo was open for ${r.undoWindow} from the import).`:"."}</div>}
                     {/* POLISH-11 item 5: what Undo can still do, on the row itself */}
                     {r.state==="done"&&<div data-testid="imports-undo-window" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>
                       {r.undoSentence?r.undoSentence
-                        :r.canUndo&&r.undoUntil?`You can undo this import until ${displayOrgDateShort(r.undoUntil, orgTodayCivil())}.`
-                        :r.undoUntil?`The window to undo this import closed on ${displayOrgDateShort(r.undoUntil, orgTodayCivil())}.`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
+                        :r.canUndo&&r.undoUntil?`Undo available until ${displayOrgDateShort(r.undoUntil, orgTodayCivil())}.`
+                        :r.undoUntil?`Undo window closed ${displayOrgDateShort(r.undoUntil, orgTodayCivil())}.`:"This kind of file is not undone as a whole; open it to see what it changed."}</div>}
                     {/* BUILD-88a A.7 — a run made before funds and payment
                         methods were written says so, and says what to do. */}
                     {(r.notices||[]).map((n,i)=>(
@@ -165,15 +166,15 @@ export function ImportsHistory(){
                 {open.justUndone
                   ? <ImportUndo importId={open.id} />
                   : open.reversedAt
-                  ? <div data-testid="import-receipt-undone" style={{fontSize:12.5,color:open.undoneSentence?T.ink:T.ink3,fontWeight:open.undoneSentence?700:400}}>{open.undoneSentence||`Undone ${displayOrgDate(open.reversedAt)}.`}</div>
+                  ? <div data-testid="import-receipt-undone" style={{fontSize:12.5,color:open.undoneSentence?T.ink:T.ink3,fontWeight:open.undoneSentence?700:400}}>{open.undoneSentence||`Undone ${displayOrgDate(open.reversedAt)}.`}{open.undoWindow?` Undo was open for ${open.undoWindow} from the import.`:""}</div>
                   : open.canUndo
                     ? <>
                         <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null,justUndone:!!(r&&r.stayedCount)}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>
-                        {open.undoUntil&&<div data-testid="import-receipt-undo-until" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>{open.undoSentence||`You can undo this import until ${displayOrgDateShort(open.undoUntil, orgTodayCivil())}.`}</div>}
+                        {open.undoUntil&&<div data-testid="import-receipt-undo-until" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>{open.undoSentence||`Undo available until ${displayOrgDateShort(open.undoUntil, orgTodayCivil())}.`}</div>}
                       </>
                     : open.undoUntil
                       // POLISH-13 item 5: past its window the receipt says so, instead of no word at all
-                      ? <div data-testid="import-receipt-undo-closed" style={{fontSize:12.5,color:T.ink3}}>{open.undoSentence||`The window to undo this import closed on ${displayOrgDateShort(open.undoUntil, orgTodayCivil())}.`}</div>
+                      ? <div data-testid="import-receipt-undo-closed" style={{fontSize:12.5,color:T.ink3}}>{open.undoSentence||`Undo window closed ${displayOrgDateShort(open.undoUntil, orgTodayCivil())}.`}</div>
                       : null}
               </div>
             </div>

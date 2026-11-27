@@ -96,6 +96,9 @@ const GUARDED_WRITERS = [
   // FLOWS-10: puts the demo's chapel photo alt right, alt text only, org_b72demo only. Dry run by
   // default; --apply writes through writerDbUrl, and a remote target must also answer env "staging".
   "flows10-demo-alts",
+  // NUMBERS-10 item 1: moves covered-fee gifts' ledger rows written at the gift before the fee to the charge, one org.
+  // Dry run by default; --apply writes through writerDbUrl, one audit row. Never org_creo; the demo only on staging.
+  "numbers10-fee-rows",
   // FLOWS-14: removes refund rows whose gift is gone, one org. Dry run by default; --apply writes
   // through writerDbUrl, and a remote target must hold org_stagewalk and answer env "staging" on BASE.
   "flows14-orphan-refunds",
@@ -123,6 +126,10 @@ const GUARDED_WRITERS = [
   // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
   // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "undo1-reopen-journeys",
+  // NUMBERS-10: stops journeys whose gift is gone, writes the "Thank-you cancelled" timeline line a stopped one
+  // lacks, voids open tasks for a gift that is gone, one org. Dry run by default; --apply through writerDbUrl,
+  // one audit row. Never org_creo or the demo. Nothing sends.
+  "numbers10-orphan-thanks",
   // NAV-2: turns Auctions, Peer-to-peer, Memberships or Major Gifts on in the menu of each org that never
   // chose a setting for it and has data in it. Dry run by default; --apply writes through writerDbUrl,
   // one audit row per org. Never org_creo or the demo. Nothing sends.
@@ -296,6 +303,8 @@ const PROD_READONLY = [
   "numbers7-lapse-why",
   // NUMBERS-9: lists letters marked sent whose printed deductible was one gift's, not the total (ids and figures, no names); READ ONLY session, no --apply.
   "numbers9-letter-deductible",
+  // NUMBERS-10: lists open thank-you drafts that say a day's gifts as one gift (ids and amounts, no names); READ ONLY session, no --apply.
+  "numbers10-merged-drafts",
   // FLOWS-18: lists saved drafts and email templates still naming a field the block engine can't fill; SELECTs only, no --apply.
   "flows18-starter-tags",
   // FLOWS-15: lists saved Atlas answers whose count is money, and unsent campaigns that now leave never-givers out; READ ONLY session, no --apply.

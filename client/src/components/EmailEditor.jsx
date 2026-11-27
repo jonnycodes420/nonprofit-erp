@@ -36,6 +36,7 @@ import { PageBackground } from "./email-builder/Panes";
 import { Sec, paneInput, paneBtn, paneNote } from "./email-builder/controls";
 import { useTogether, Faces, CommentsPanel, SharePanel, ExportPanel, StylesTab } from "./email-builder/together";   // BUILDER-3
 import { subjectWarning } from "../lib/lengthWords";   // INPUT-1
+import { useDirtyGuard } from "../lib/dirtyGuard";   // POLISH-15
 // The builder's parts, under the names other screens already import.
 export { EmailFrame, insertChip, setAtPath } from "./email-builder/EmailFrame";
 export { withKeys, stripKeys } from "./email-builder/useEmailBuilder";
@@ -218,6 +219,9 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
 
   const dirty = name !== saved.name || subject !== (saved.subject || "") || preheader !== (saved.preheader || "")
     || JSON.stringify(stripKeys(blocks)) !== JSON.stringify(saved.blocks || []);
+  // POLISH-15 item 2 (W-1127-Fundraising-02): leaving by the side bar (or any link through
+  // App's navigateTo) asks "Leave without saving?" as Back does, instead of going silently.
+  const releaseGuard = useDirtyGuard(dirty && !isReadOnly);
 
   const save = async () => {
     setSaving(true); setNote(""); savingRef.current = true;
@@ -365,7 +369,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
     tell("The proposed words are in the email. Read them, then press Save to keep them.");
   };
 
-  const goBack = async () => { if (!dirty || await askConfirm({ title: "Leave without saving?", body: "Your changes to this email have not been saved.", yes: "Leave" })) onBack(); };
+  const goBack = async () => { if (!dirty || await askConfirm({ title: "Leave without saving?", body: "Your changes to this email have not been saved.", yes: "Leave without saving", no: "Keep editing", danger: true })) { releaseGuard(); onBack(); } };
   const problems = preview.problems || [];
   const foot = blocks.find(x => x.type === "footer");
 

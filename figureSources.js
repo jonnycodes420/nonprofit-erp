@@ -352,17 +352,8 @@ function pledgesDueSql(orgId, day, op) {
 // each (the figure sources and the sponsor thank-you read them). Takes
 // (orgId, eventId). SWEEP-4: a deleted person is in neither.
 // Each PERSON once: two gifts on their first day were two first-time givers.
-const EVENT_FIRST_TIME_SQL = `SELECT * FROM (
-              SELECT DISTINCT ON (d.id) d.id AS donor_id, d.name, g.amount::float AS amount, g.date
-                FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
-               WHERE g.org_id=? AND g.event_id=? AND g.amount > 0
-                 AND g.date = (SELECT MIN(x.date) FROM gifts x
-                                WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.amount > 0)
-                 AND NOT EXISTS (SELECT 1 FROM gifts y
-                                  WHERE y.org_id=g.org_id AND y.donor_id=g.donor_id
-                                    AND y.amount > 0 AND y.date < g.date)
-               ORDER BY d.id, g.amount DESC) ft
-             ORDER BY amount DESC, name`;
+// NUMBERS-10 item 5: a person's first gift ever, and it is this event's (shared/numbers/eventFirstGift.js).
+const { EVENT_FIRST_TIME_SQL } = require("./shared/numbers/eventFirstGift");
 const EVENT_SPONSORS_SQL = `SELECT a.id, a.donor_id, a.name, a.recognition, a.sponsor_pledge_id, l.name AS level_name, l.price::float AS price
                FROM event_attendees a JOIN event_levels l ON l.id=a.level_id
                LEFT JOIN donors sd ON sd.id=a.donor_id AND sd.org_id=a.org_id
@@ -2204,7 +2195,7 @@ const SOURCES = {
     label: "First-time givers",
     measure: () => "count",
     params: { event: "id:required" },
-    sentence: () => "Each person whose first gift ever was a gift for this event, once. A refund is not a first gift.",
+    sentence: () => require("./shared/numbers/eventFirstGift").SENTENCE,
     sql: (orgId, p) => ({
       sql: `SELECT ft.donor_id AS id, 'person' AS type, ft.donor_id, ft.name, LEFT(ft.date::text, 10) AS date, NULL::numeric AS amount,
                    'First gift: $' || TO_CHAR(ft.amount, 'FM999,999,990.00') AS detail

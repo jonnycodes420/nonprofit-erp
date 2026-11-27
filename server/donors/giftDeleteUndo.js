@@ -17,6 +17,8 @@
 //   · then the donor's totals, the pledge's paid and the one after-change step run, as on any
 //     gift write. A guest-list change the delete reversed stays as it is, and the answer says so.
 // A delete that also removed the gift's refunds has no Undo (its line is in the audit).
+// NUMBERS-10 item 6 (the brief's call, over THANKS-1's): when the delete cancels a thank-you, the timeline
+// gets one "Thank-you cancelled: …" line (giftThanks.js cancelLine), and this Undo takes it away again.
 "use strict";
 
 const WE = require("../effects/writeEffects");
@@ -159,6 +161,8 @@ function mount(app, ctx) {
       }
       for (const row of s.timeline || []) await db.run("INSERT INTO interactions SELECT * FROM jsonb_populate_record(NULL::interactions, ?::jsonb) ON CONFLICT DO NOTHING", [JSON.stringify(row)]);
       const keptThreads = await reopenWhatItStopped(db, orgId, s);
+      // NUMBERS-10 item 6: the line that said its thank-you was cancelled goes, as the thank-you comes back.
+      if (s.cancelLineId) await db.run("DELETE FROM interactions WHERE org_id = ? AND id = ?", [orgId, s.cancelLineId]);
       await WE.finish(db, orgId, KIND, giftId, who, "Undo");
       const kept = [keptThreads ? "A newer next step is open, so the one this gift started stays closed." : "",
         s.guestListChanged ? "The guest list stays as it is." : ""].filter(Boolean).join(" ");

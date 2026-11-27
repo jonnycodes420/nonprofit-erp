@@ -42,7 +42,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../main";
 import INCLUDED from "../../../../shared/included.json";
-import { Crumbs, FaqS, FinalCta, PriceBlock, Tick, A, rich } from "../lib";
+import { Crumbs, FaqS, FinalCta, PriceBlock, Steps, Tick, A, rich, HOW_IT_WORKS_ID } from "../lib";
 import { SRC_ALL } from "../data/research";
 import { RETENTION_GAP } from "../../../../shared/sources.js";
 
@@ -68,6 +68,13 @@ export function Pricing() {
       {authed && <p className="wrap price-authed"><button type="button" className="pill pill-soft" data-testid="pricing-change-plan" onClick={choose}><i></i>Change your plan in Settings</button></p>}
       <div className="wrap" style={{ paddingBottom: 72 }}><p className="gapline" data-testid="pricing-gap">The {RETENTION_GAP.withStrategy - RETENTION_GAP.without}-point retention gap is worth more than the subscription. <A href={GAP_HREF}>See the math with your own donor count</A>. <span className="srcnote" style={{ display: "block", marginTop: 8 }}>Gap: <A href={SRC_ALL[RETENTION_GAP.source][1]}>{SRC_ALL[RETENTION_GAP.source][0]}</A></span></p></div>
     </div>
+
+    {/* POLISH-15 item 4 (W-1127-Settings-02): the header's and footer's "How it
+        works" land here. They pointed at /pricing itself, so on this page they did nothing. */}
+    <Steps id={HOW_IT_WORKS_ID} eb="How it works" h="One call, <b>then it's yours.</b>" list={[
+      ["Book a call", "Bring your donor file and one question about it. You see the price, in writing, on the call."],
+      ["We move you in", "Setup is hands-on: we bring your data across, matched to the cent, and set Steward up with you."],
+      ["Month to month", "Your plan's first charge is thirty days after you sign. No contract, and Steward takes nothing from your gifts."]]} />
 
     <section className="pricing" style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">What's included</div>

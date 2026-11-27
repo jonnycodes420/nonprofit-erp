@@ -6,6 +6,7 @@ import { streamAI, apiFetch } from "../api";
 import { displayDate, civilYear } from "../../../shared/displayDate";
 import { driftBadgeLabel } from "../../../shared/driftWords";
 import { phoneDisplay, phoneHref } from "../../../shared/phone.js";
+import { pickerFieldFocused, escapeIsLocal } from "../lib/pickerFocus";   // POLISH-15 item 3
 
 // ── Design tokens (SINGLE SOURCE OF TRUTH — BUILD-12) ───────────────────────
 // This `T` object is the one place brand color is defined for the whole
@@ -980,7 +981,7 @@ export function Modal({
       "[autofocus],input:not([type=hidden]):not([disabled]),select,textarea,button:not([disabled]),[href],[tabindex]:not([tabindex='-1'])");
     (first || dialogRef.current)?.focus?.({ preventScroll: true });
 
-    const onKey = e => { if (e.key === "Escape") { e.stopPropagation(); onCloseRef.current?.(); } };
+    const onKey = e => { if (e.key === "Escape" && !escapeIsLocal(e.target)) { e.stopPropagation(); onCloseRef.current?.(); } };
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
@@ -1013,7 +1014,13 @@ export function Modal({
 
   return createPortal(
     <div className="modal-overlay modal-sheet-overlay" style={overlay}
-      onMouseDown={e => { if (dismissOnBackdrop && e.target === e.currentTarget) onClose?.(); }}>
+      onMouseDown={e => {
+        if (!dismissOnBackdrop || e.target !== e.currentTarget) return;
+        // POLISH-15 item 3: the first press outside while a picker field has the focus closes the picker only (lib/pickerFocus.js).
+        const f = pickerFieldFocused(dialogRef.current);
+        if (f) { e.preventDefault(); f.blur(); return; }
+        onClose?.();
+      }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={ariaLabel || title || undefined}
         tabIndex={-1} className={"modal-anim modal-sheet-inner " + className} style={dialog}>
         {/* A dialog whose header is more than a title and a line of prose

@@ -41,6 +41,7 @@ import { DARK_BRASS, SERIF, btnPrimary, btnOutline, input, dayKey, relDay, meeti
 import { shownNote } from "../lib/internalLabels";
 import { giftTypeLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import TimeInput from "./inputs/TimeInput";   // POLISH-15 item 3
 import { TouchIcon } from "./touchIcons";   // TOUCH-1
 import { touchLine } from "../../../shared/touchKinds.js";
 import { taskRowOf } from "../lib/taskRow";   // FLOWS-6
@@ -107,7 +108,7 @@ function TimeForm({ initialStart, initialMinutes = 60, onSubmit, submitLabel, bu
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Day
         <DateInput value={date} onChange={e => setDate(e.target.value)} required style={{ ...input, width: 160, padding: 8 }}/></label>
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Time
-        <input type="time" value={time} onChange={e => setTime(e.target.value)} required style={{ ...input, width: 120, padding: 8 }}/></label>
+        <TimeInput hours aria-label="Time" value={time} onChange={e => setTime(e.target.value)} required style={{ ...input, width: 150, padding: 8 }}/></label>
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Minutes
         <input type="number" min={15} step={15} value={mins} onChange={e => setMins(e.target.value)} style={{ ...input, width: 90, padding: 8 }}/></label>
       {extra}

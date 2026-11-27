@@ -126,7 +126,8 @@ export const EVENT_FIGURES = {
   registered: "Each party in which someone said they were coming or came, once. A household is one party; someone only invited, or who declined, is not counted.",
   attended: "Each party in which someone was marked as having come, or checked in at the door, once. A household is one party. Nobody is counted as attending until somebody says they did.",
   declined: "Each party on the event's list that said it would not come. Not counted as registered.",
-  firstTime: "People whose FIRST gift to you was this event. An event that brings new donors has done something a number on its own cannot show.",
+  // NUMBERS-10 item 5: the same words as the figure source (shared/numbers/eventFirstGift.js SENTENCE).
+  firstTime: "Each person whose first gift ever was for this event, once: the gift carries the event, or, with no event on it, the event's campaign (its name when it has no campaign). On a day with two gifts, the first is the one recorded first, so a gift earlier that day elsewhere means they were not new here. Giving in an old system before it counts as giving. A refund or a credit is not a gift.",
   sponsors: "Sponsorships sold, at any level. A sponsorship that has not been paid yet is a pledge and is counted here as sold.",
 };
 

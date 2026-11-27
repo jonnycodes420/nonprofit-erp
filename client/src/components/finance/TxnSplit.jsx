@@ -3,8 +3,10 @@
 // /finance/transactions answers one line per fund (server/finance/ledgerLines.js, the cut Fund
 // Balances reads). A split gift's lines sit under one line for the gift; a fund filter shows only
 // that fund's part. Under a fund filter, one line says what the lines net and the fund's balance.
+import { useState, useEffect } from "react";
 import { T, fmtFull } from "../shared";
 import { displayDate } from "../../../../shared/displayDate";
+import { apiFetch } from "../../api";
 
 // [{ head, t, lines } | { t, line }] in the order the table draws them.
 export function groupTxns(sortedTxns) {
@@ -40,13 +42,26 @@ export function SplitGiftRow({ v, onDelete }) {
 }
 
 export function FundFootRow({ fund, txns, year }) {
+  // NUMBERS-10 item 1 (W-1122-Finance-F7): the balance and the covered-fee words are the fund card's own
+  // (/finance/funds-detail, shared/numbers/fundCard.js), so the list, the card and its dialog are one figure.
+  const [card, setCard] = useState(null);
+  const id = fund && fund.id;
+  useEffect(() => {
+    let alive = true;
+    setCard(null);
+    if (id) apiFetch("/finance/funds-detail").then(r => { if (alive) setCard((r.funds || []).find(f => f.id === id) || null); }).catch(() => {});
+    return () => { alive = false; };
+  }, [id]);
   if (!fund) return null;
   // NUMBERS-8: the balance's own rule, income less expense (a row of another type is in no balance).
-  const net = txns.reduce((s, t) => s + (t.type === "income" ? 1 : t.type === "expense" ? -1 : 0) * Math.round(parseFloat(t.amount) * 100), 0) / 100;
+  const netCents = txns.reduce((s, t) => s + (t.type === "income" ? 1 : t.type === "expense" ? -1 : 0) * Math.round(parseFloat(t.amount) * 100), 0);
+  const balance = card ? card.balance : fund.balance;
+  const same = year === "all" && card && netCents === card.balanceCents;
   return (
     <tr data-testid="txn-fund-foot">
       <td colSpan={6} style={{ padding: "8px 14px", fontSize: 12, color: T.ink3 }}>
-        {fund.name}: these lines net {fmtFull(net)}{year === "all" ? "" : ` in ${year}`}. Its balance, every year, is {fmtFull(fund.balance)}.{year === "all" ? "" : " Choose All years to see every line behind it."}
+        {fund.name}: these lines net {fmtFull(netCents / 100)}{year === "all" ? "" : ` in ${year}`}. Its balance, every year, is {fmtFull(balance)}{same ? ", the same figure as its card." : "."}{year === "all" ? "" : " Choose All years to see every line behind it."}
+        {card && card.feeWords ? <span data-testid="txn-fund-fees">{card.feeWords}</span> : null}
       </td>
     </tr>
   );
