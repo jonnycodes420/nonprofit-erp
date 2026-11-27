@@ -63,7 +63,7 @@ export function thankYouSection({ TY_WORDS, cPad, cardWrap, onNavigate, onPanel,
                   style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{displayName(d.donorName)}</DonorLink>
                 <span style={{fontSize:13,color:T.ink2,fontVariantNumeric:"tabular-nums"}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
                 {d.giftDate&&<span style={{fontSize:12.5,color:T.ink3}}>{displayDateShort(d.giftDate,new Date())}</span>}
-                {/* ONE-MOVE-1: "opened" is a sent email's word; an unsent draft she has looked at is "read" */}{d.opened&&<span style={{fontSize:11.5,color:T.ink3}} title="You have read this draft. Nothing has been sent.">read</span>}
+                {/* ONE-MOVE-1: "opened" is a sent email's word; an unsent draft she has looked at is "read" */}{d.opened&&<span style={{fontSize:11.5,color:T.ink3}}>read</span>}
               </div>
               <button onClick={()=>tyOpen===d.id?setTyOpen(null):tyOpenDraft(d)} data-testid="ty-open" aria-expanded={tyOpen===d.id}
                 style={{flexShrink:0,background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>

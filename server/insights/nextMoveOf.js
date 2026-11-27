@@ -31,6 +31,9 @@ async function nextMoveOf(query, orgId, donorId, asOf, opts = {}) {
   // THANKS-1 item 4: with no move, the step the rules still give (thank the newest gift), or why none.
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;
   const after = !move && d.deceased !== true ? await require("./afterMove").afterMove(query, orgId, unit ? unit.ids : [d.id]) : null;
+  // ONE-MOVE-1 item 2: another household member's gift is named as theirs, never thanked in this person's name
+  if (after && after.giverId && after.giverId !== d.id) after.household = { line: `Household: thank ${after.giver || "them"} for the ${after.amount} gift on ${after.day}.`,
+    note: `The gift is ${after.giver || "another household member"}'s. It shows here because you are in one household.` };
   return { got, result: r, move, after, unit, deceased: d.deceased === true };
 }
 
