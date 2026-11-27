@@ -207,17 +207,18 @@ async function main() {
   // POLISH-13 item 5 (W-1119-Atlas-13): the receipt and the row say the date in words, from the one
   // setting (shared/importUndo.js), and past its window an import says so (main: no sentence at all).
   const IU = await import("../shared/importUndo.js");
-  const wantOpen = IU.undoWords(IU.undoUntil("sheet", rc.committedAt || rc.committed_at || testNow()), { now: testNow() });
-  ok("§3b the receipt and its row say \"You can undo this import until <date>.\"",
-    /^You can undo this import until [A-Z][a-z]{2} \d{1,2}, \d{4}\.$/.test(rc.undoSentence || "") && row5.undoSentence === rc.undoSentence
-      && rc.undoSentence === IU.undoWords(rc.undoUntil, { now: testNow() }), JSON.stringify([rc.undoSentence, row5.undoSentence, wantOpen]));
+  const wantOpen = IU.undoWords(IU.undoUntil("sheet", rc.committedAt || rc.committed_at || testNow()), { now: testNow(), shape: "sheet" });
+  // POLISH-15 item 5: the words are "Undo available until <date> (<length> from the import)."
+  ok("§3b the receipt and its row say \"Undo available until <date> (30 days from the import).\"",
+    /^Undo available until [A-Z][a-z]{2} \d{1,2}, \d{4} \(30 days from the import\)\.$/.test(rc.undoSentence || "") && row5.undoSentence === rc.undoSentence
+      && rc.undoSentence === IU.undoWords(rc.undoUntil, { now: testNow(), shape: "sheet" }), JSON.stringify([rc.undoSentence, row5.undoSentence, wantOpen]));
   const [{ c: was }] = await q(`SELECT committed_at AS c FROM imports WHERE id=$1`, [RUN]);
   await q(`UPDATE imports SET committed_at = committed_at - INTERVAL '31 days' WHERE id=$1`, [RUN]);
   const old5 = (await api("GET", `/imports/${RUN}`, tok)).body.import || {};
   const oldRow = ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === RUN) || {};
   await q(`UPDATE imports SET committed_at = $2 WHERE id=$1`, [RUN, was]);
   ok("§3b past its window the receipt and the row say the window closed, and offer no Undo",
-    old5.canUndo === false && /^The window to undo this import closed on [A-Z][a-z]{2} \d{1,2}, \d{4}\.$/.test(old5.undoSentence || "") && oldRow.undoSentence === old5.undoSentence,
+    old5.canUndo === false && /^Undo window closed [A-Z][a-z]{2} \d{1,2}, \d{4} \(it was open 30 days\)\.$/.test(old5.undoSentence || "") && oldRow.undoSentence === old5.undoSentence,
     JSON.stringify([old5.canUndo, old5.undoSentence, oldRow.undoSentence]));
 
   // §4 stage follows role

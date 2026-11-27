@@ -1330,7 +1330,9 @@ app.get("/atlas/activity", requireAuth, wrap(async (req, res) => {
   const waitingRows = await query(`SELECT * FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
   const [settled, asking, mentioned] = await Promise.all([settledElsewhere(orgId, waitingRows), WT.openQuestions(query, orgId, actor(req).id),
     require("../server/mail/emailTogether").openMentions(query, orgId, actor(req).id)]);   // ATLAS-5: her open questions wait too; BUILDER-3: and comments that @mention her
-  const items = [...mentioned, ...asking.map(x => ({ ...x, by: atlasName() })), ...rows.map(r => actionOut(asSettled(r, settled.get(r.id))))];
+  // POLISH-15 item 5: each line's Undo only inside its window, and Undo all on a saved proposal (server/atlas/bellUndo.js).
+  const lines = await require("../server/atlas/bellUndo").withUndo(query, orgId, rows.map(r => actionOut(asSettled(r, settled.get(r.id)))), (await AS()).UNDO_DAYS);
+  const items = [...mentioned, ...asking.map(x => ({ ...x, by: atlasName() })), ...lines];
   res.json({ name: atlasName(), waiting: waitingRows.length - settled.size + asking.length + mentioned.length, items,
     changes: await require("../server/shared/changeMarks").changeMarks(query, orgId) });
 }));
@@ -1355,7 +1357,7 @@ app.get("/atlas/notes", requireAuth, wrap(async (req, res) => {
   const shown = rows.map(r => asSettled(r, settled.get(r.id)))
     // Home lists only what waits; a page keeps a settled line it has not shown yet.
     .filter(r => (place === "home" ? r.waits === true && r.state === "waiting" : r.seen_at == null || (r.waits === true && r.state === "waiting")));
-  res.json({ name: atlasName(), notes: shown.map(actionOut) });
+  res.json({ name: atlasName(), notes: await require("../server/atlas/bellUndo").withUndo(query, orgId, shown.map(actionOut), (await AS()).UNDO_DAYS) });   // POLISH-15 item 5
 }));
 app.post("/atlas/notes/seen", requireAuth, wrap(async (req, res) => {
   const ids = (Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(String).slice(0, 50);

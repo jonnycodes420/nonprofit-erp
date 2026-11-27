@@ -861,7 +861,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 style={{ ...btn(true), opacity: u.ready && !rereading ? 1 : 0.45, cursor: u.ready && !rereading ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
                 {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
-              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${undoWords(undoUntil("sheet", new Date()))}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
+              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${undoWords(undoUntil("sheet", new Date()), { shape: "sheet" })}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}
@@ -925,7 +925,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
               {result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} />
-                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{undoWords(undoUntil("sheet", committedAt.current || new Date()))}</div>}</div>}
+                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{undoWords(undoUntil("sheet", committedAt.current || new Date()), { shape: "sheet" })}</div>}</div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}

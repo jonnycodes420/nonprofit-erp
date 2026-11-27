@@ -28,6 +28,7 @@ import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send,
 import { PrivacyLine, usePrivacy } from "./PrivacyPanel";
 import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
 import { FLOW_WORD, bucketOf, isBrass, FlowSentence, FileRow, UnavailableLine } from "./connections/flowParts";   // HONEST-1
+import { useStatementUpload, lastFileLine } from "./connections/statementUpload";   // POLISH-15 item 5
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -1033,6 +1034,8 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
   const [nonce, setNonce] = useState(0);
+  // POLISH-15 item 5: Statement imports' Upload opens the file import itself, and the card reads again after.
+  const stmt = useStatementUpload(() => apiFetch("/connections").then(setD).catch(() => {}));
 
   const loadHooks = () => apiFetch("/webhooks").then(setHooks).catch(() => setHooks(null));
   useEffect(() => {
@@ -1102,7 +1105,8 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
       if (c.kind === "own_stripe") button = { kind: "connect", label: stripeLoading ? "Opening…" : "Connect", adminOnly: true, writes: true, onClick: () => onConnectStripe && onConnectStripe() };
       else if (c.oauthProvider) button = { kind: "connect", label: busy === "connect:" + c.id ? "Opening…" : "Connect", adminOnly: true, writes: true,
         disabled: oauthNotReady(c), title: oauthNotReady(c) ? oauth[c.oauthProvider].sentence : "", onClick: () => startOauth(c) };
-      else if (isFile || c.kind === "statements") button = { kind: "import", label: "Import a file", opens: true, adminOnly: true, onClick: () => toggle(key), detail: () => giving(null) };
+      else if (c.kind === "statements") button = { kind: "import", label: stmt.opening ? "Opening…" : "Upload", adminOnly: true, onClick: stmt.open };   // POLISH-15 item 5
+      else if (isFile) button = { kind: "import", label: "Import a file", opens: true, adminOnly: true, onClick: () => toggle(key), detail: () => giving(null) };
       else if (isSource) button = { kind: "connect", label: "Connect", opens: true, adminOnly: true, writes: true, onClick: () => toggle(key, c.provider), detail: () => giving(c.provider) };
     } else if (status !== "unavailable") {
       // HONEST-1: the button is the flow's one step when it names one ("Turn on giving pages", "Map them").
@@ -1111,6 +1115,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
       button = { kind: fix ? "fix" : "manage", label: stepLabel && status !== "working" ? stepLabel : fix ? "Fix" : "Manage", opens: true,
         onClick: () => (status === "attention" && c.kind === "own_stripe" && stripe && stripe.checked && onConnectStripe) ? onConnectStripe() : toggle(key),
         detail: c.kind === "statements" ? () => giving(null) : detail };
+      if (c.kind === "statements") button = { ...button, label: stmt.opening ? "Opening…" : "Upload", opens: false, onClick: stmt.open, detail: null };   // POLISH-15 item 5
     }
     if (status === "not_connected" && oauthNotReady(c)) reason = oauth[c.oauthProvider].sentence;
     // FIX-22: a provider Steward is holding back (Xero) has no Connect at all.
@@ -1120,7 +1125,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     if (c.provider === "square" && (status === "not_connected" || status === "unavailable") && oauthNotReady(c)) continue;
     cards.push({ key, section: isFile || c.kind === "statements" ? "files" : sectionOf(c), provider: c.provider, flow: status === "attention" ? null : c.flow,
       icon: c.kind === "own_stripe" ? "stripe" : c.kind === "source" || c.kind === "statements" ? key : c.kind,
-      name: c.label, line: c.subtitle, status, reason: reason || (isFile && c.flow && c.connected ? c.flow.sentence : ""),
+      name: c.label, line: c.subtitle, status, reason: reason || (c.kind === "statements" ? lastFileLine(c) : "") || (isFile && c.flow && c.connected ? c.flow.sentence : ""),
       synced: sinceWord(c.lastSyncedAt || c.lastSentAt || c.lastGiftDate), button });
   }
   // DONORBOX HAS NO ADAPTER (LANDING-3). It is listed because people ask for
@@ -1217,6 +1222,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   return (
     <div data-testid="connections-page" style={{ display: "flex", flexDirection: "column", gap: 26 }}>
       <style>{PAGE_CSS}</style>
+      {stmt.node}
       <div data-testid="connections-summary" style={{ fontSize: 15, color: T.ink, lineHeight: 1.6 }}>
         <button type="button" data-testid="summary-connected" aria-pressed={filter === "working"} style={sumBtn(false)}
           onClick={() => setFilter(f => f === "working" ? "" : "working")}>{nConn} working</button>

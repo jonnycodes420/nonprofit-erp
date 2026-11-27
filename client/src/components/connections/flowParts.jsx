@@ -37,11 +37,14 @@ export function FileRow({ card, onUpload, canPress }) {
       background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "12px 16px", minWidth: 0 }}>
       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{card.name}</div>
-        <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{card.reason || card.line}</div>
+        <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{card.line}</div>
+        {/* POLISH-15 item 5: a file row's own fact (Statement imports: its last file) under what it is */}
+        {card.reason && <div data-testid="file-row-last" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>{card.reason}</div>}
       </div>
       {canPress && <button type="button" data-testid="file-upload" onClick={onUpload}
         style={{ background: T.white, color: T.ink, border: "1px solid " + T.ink, borderRadius: 9, padding: "7px 14px",
-          fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>Upload</button>}
+          fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+        aria-busy={card.button && card.button.label === "Opening…" ? "true" : undefined}>{(card.button && card.button.label === "Opening…") ? "Opening…" : "Upload"}</button>}
     </div>);
 }
 

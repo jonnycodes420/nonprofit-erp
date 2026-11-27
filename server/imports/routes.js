@@ -1239,7 +1239,10 @@ function importUndoWindow(r, tz) {
   const until = require("../../shared/importUndo.js").undoUntil(r.shape, r.committed_at);
   const now = new Date();
   // POLISH-13 item 5: and the one sentence every screen prints ("You can undo this import until Dec 3, 2026.").
-  return { canUndo: !r.reversed_at && until > now, undoUntil: until.toISOString(), undoSentence: r.reversed_at ? "" : require("../../shared/importUndo.js").undoWords(until, { now, timeZone: tz || undefined }) };
+  // POLISH-15 item 5: the sentence names the window's length too, and an undone row keeps that length to say.
+  const IU = require("../../shared/importUndo.js");
+  return { canUndo: !r.reversed_at && until > now, undoUntil: until.toISOString(), undoWindow: IU.windowWords(r.shape),
+    undoSentence: r.reversed_at ? "" : IU.undoWords(until, { now, timeZone: tz || undefined, shape: r.shape }) };
 }
 
 // LIVE-1 — every journey an import's gift started: its open step's thread is
