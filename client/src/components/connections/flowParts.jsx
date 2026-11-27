@@ -73,16 +73,18 @@ export function UnavailableLine({ card, canPress }) {
 export function FlowWord({ kind = null, provider = null, fallback = "", style, testid = "flow-word" }) {
   const [card, setCard] = useState(undefined);
   useEffect(() => { apiFetch("/connections").then(r => setCard((r.cards || []).find(c => (kind ? c.kind === kind : c.provider === provider)) || null)).catch(() => setCard(null)); }, [kind, provider]);
-  const word = card && card.flow ? card.flow.label : fallback;
+  // HONEST-3 item 1: the card's one badge (server/connections/checks.js), the same words as Settings.
+  const word = card && card.badge ? card.badge.words : card && card.flow ? card.flow.label : fallback;
   if (!word) return null;
-  return <span data-testid={testid} data-state={card && card.flow ? card.flow.state : ""} title={card && card.flow ? card.flow.sentence : undefined} style={style}>{word}</span>;
+  return <span data-testid={testid} data-state={card && card.badge ? card.badge.state : card && card.flow ? card.flow.state : ""} title={card && card.flow ? card.flow.sentence : undefined} style={style}>{word}</span>;
 }
 
 // Home and Finance: the connections a person has to act on, from the same GET /connections the
 // Settings page reads. `providers` limits it (Finance shows QuickBooks only); `states` says which.
 export function ConnectionLines({ onNavigate, providers = null, states = ["needs_you"], testid = "home-connection-line" }) {
   const [cards, setCards] = useState(null);
-  useEffect(() => { apiFetch("/connections").then(r => setCards(r.cards || [])).catch(() => setCards([])); }, []);
+  const [reach, setReach] = useState(null);   // HONEST-3 item 2: "Steward isn't emailing anyone about this …"
+  useEffect(() => { apiFetch("/connections").then(r => { setCards(r.cards || []); setReach(r.alertReach || null); }).catch(() => setCards([])); }, []);
   if (!cards) return null;
   const list = cards.filter(c => c.flow && states.includes(c.flow.state) && (!providers || providers.includes(c.provider)));
   if (!list.length) return null;
@@ -94,7 +96,10 @@ export function ConnectionLines({ onNavigate, providers = null, states = ["needs
         style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap", padding: "10px 14px", borderRadius: 10,
           background: T.white, border: "1px solid " + (brass ? T.gold600 : T.bg2), margin: "8px 0" }}>
         <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: brass ? T.gold600 : T.ink, flexShrink: 0 }} />
-        <FlowSentence flow={c.flow} style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13.5, color: brass ? T.gold700 : T.ink, lineHeight: 1.5 }} />
+        <span style={{ flex: "1 1 260px", minWidth: 0 }}>
+          <FlowSentence flow={c.flow} style={{ fontSize: 13.5, color: brass ? T.gold700 : T.ink, lineHeight: 1.5 }} />
+          {brass && reach && <span data-testid={testid + "-reach"} style={{ display: "block", fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 2 }}>{reach}</span>}
+        </span>
         {step && onNavigate && <button type="button" data-testid={testid + "-step"}
           onClick={() => onNavigate("settings", { section: step.section, focus: step.focus })}
           style={{ background: T.white, color: T.ink, border: "1px solid " + T.ink, borderRadius: 9, padding: "6px 12px",

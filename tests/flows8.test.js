@@ -50,7 +50,7 @@ const short = iso => `${MON[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}`;
     meta.takesGifts === false && /^Connect Stripe to take gifts on this page\./.test(meta.notTakingWhy || ""), { takesGifts: meta.takesGifts, why: meta.notTakingWhy });
   const pub = await api("GET", `/org/${f.org}/giving-page/${f.pageSlug}/public`, null);
   ok("§35 its public address stays the polite not-open-yet page for donors",
-    pub.status === 404 && pub.body && pub.body.notOpen === true && /isn't open yet\. Please check back soon\./.test(pub.body.error || ""), pub.body);
+    pub.status === 404 && pub.body && pub.body.notOpen === true && /isn't published yet\. Please check back later\./.test(pub.body.error || ""), pub.body);
 
   // ── §11X an empty Top 100 offers a start ─────────────────────────────────
   const sug = await api("GET", "/top100/suggested?limit=25", tok);

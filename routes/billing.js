@@ -270,6 +270,7 @@ app.post("/auth/register", registerLimiter, legacyRegisterGate, wrap(async (req,
   const hash = bcrypt.hashSync(password, 12);
   await run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, normalizedEmail, hash, name || email, "admin"]);
+  await require("../server/connections/alertReach").newOrgAlertDefaults(run, userId);   // HONEST-3 item 2
   // BUILD-36 A1: new org → instant_gift_thanks ON by default.
   await provisionNewOrgWorkflows(orgId).catch(e => console.error("[org] provision workflows:", e.message));
 
@@ -482,6 +483,7 @@ app.post("/auth/register-org", registerLimiter, legacyRegisterGate, wrap(async (
     "INSERT INTO users (id, org_id, email, password_hash, name, role, welcomed_at) VALUES (?,?,?,?,?,?,NULL)",
     [userId, orgId, normalizedEmail, hash, userName, "admin"]
   );
+  await require("../server/connections/alertReach").newOrgAlertDefaults(run, userId);   // HONEST-3 item 2
 
   let stripeCustomerId = null;
   if (billingStripe) {

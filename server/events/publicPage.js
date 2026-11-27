@@ -96,16 +96,28 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   // The staff editor's preview (eventPageHtml editable) still draws the page.
   // EVENTS-4: ...or until it has a free ticket, which needs no payments.
   const [payOrg] = await query("SELECT name, mission FROM orgs WHERE id=?", [e.org_id]);
+  // HONEST-3 item 4: the demo's event is drawn whole (name, date, place, tickets) as an example that
+  // sells nothing: checkout below still refuses without Stripe.
+  const EXP = require("../give/examplePage");
+  if (!(await FT.pageState(query, e.org_id, e.id)).open && await EXP.isDemo(query, e.org_id)) {
+    const html = await eventPageHtml(e, req.query || {});
+    const note = `<div class="card" data-testid="event-example" role="note"><p style="margin:0">${PPG.escapeHtml(EXP.EXAMPLE_EVENT)}</p></div>`;
+    const at = html.indexOf('<div class="card"');
+    return res.send(at < 0 ? html : html.slice(0, at) + note + html.slice(at));
+  }
   if (!(await FT.pageState(query, e.org_id, e.id)).open) {
     const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
     const who = String(brand.displayName || "").trim() || payOrg?.name || "This organization";
     // HONEST-2 item 2 (W-1126-Integrations-04): whose event, what they do, and "Opens soon", never a bare notice.
     const mission = require("../give/notOpenBrand").missionLine(payOrg && payOrg.mission);
-    return res.status(404).send(evPage({ title: "Opens soon", brand, body:
-      `<div class="card" data-testid="event-not-open"><p class="muted" style="margin:0 0 6px;font-weight:700">${PPG.escapeHtml(who)}</p>${mission ? `<p data-testid="event-not-open-mission">${PPG.escapeHtml(mission)}</p>` : ""}<h1>Opens soon</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't open yet. Please check back soon.</p></div>` }));
+    return res.status(404).send(evPage({ title: EXP.NOT_PUBLISHED, brand, body:
+      `<div class="card" data-testid="event-not-open"><p class="muted" style="margin:0 0 6px;font-weight:700">${PPG.escapeHtml(who)}</p>${mission ? `<p data-testid="event-not-open-mission">${PPG.escapeHtml(mission)}</p>` : ""}<h1>${EXP.NOT_PUBLISHED}</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't published yet. Please check back later.</p></div>` }));
   }
   res.send(await eventPageHtml(e, req.query || {}));
 }));
+
+// HONEST-3 item 5: /event/<org>/<event> opens the event's page; an unknown org says so.
+require("../public/shortLinks").mount(app, { wrap, query, donateLimiter, evPage });
 
 // ── EVENTS-2 · THE ATTENDEE'S SIDE ────────────────────────────────────────
 // Where Stripe sends somebody after they pay. It writes NOTHING: the webhook

@@ -61,7 +61,7 @@
       ]
     },
     {
-      "source": "/((?!portal-api/|account-api/|network-api/|portal-assets/|person-photos/|grant-documents/|interaction-files/|unsubscribe$|v/|watch/|survey/|e/|auction/|ticket/|you/|volunteer/|volunteer-with/|billing/cancel/|recurring/).*)",
+      "source": "/((?!portal-api/|account-api/|network-api/|portal-assets/|person-photos/|grant-documents/|interaction-files/|unsubscribe$|v/|watch/|survey/|e/|event/|auction/|ticket/|you/|volunteer/|volunteer-with/|billing/cancel/|recurring/).*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
@@ -70,7 +70,7 @@
       ]
     },
     {
-      "source": "/((?!portal-api/|account-api/|network-api/|portal-assets/|person-photos/|grant-documents/|interaction-files/|unsubscribe$|v/|watch/|survey/|e/|auction/|ticket/|you/|volunteer/|volunteer-with/|billing/cancel/|recurring/).*)",
+      "source": "/((?!portal-api/|account-api/|network-api/|portal-assets/|person-photos/|grant-documents/|interaction-files/|unsubscribe$|v/|watch/|survey/|e/|event/|auction/|ticket/|you/|volunteer/|volunteer-with/|billing/cancel/|recurring/).*)",
       "has": [
         {
           "type": "header",
@@ -130,6 +130,10 @@
     {
       "source": "/survey/:path*",
       "destination": "https://nonprofit-erp-production.up.railway.app/survey/:path*"
+    },
+    {
+      "source": "/event/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/event/:path*"
     },
     {
       "source": "/e/:path*",

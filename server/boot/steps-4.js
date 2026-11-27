@@ -1115,6 +1115,7 @@ require("../../routes/jobs").mount({
   runDailyTaskRemindersForOrg, runDigestsForOrg, runSavedReportScheduleForOrg,
   runStepRemindersForOrg, runThreadNudgesForOrg, runWeeklyEmailForOrg, snapshotMetricsForOrg, syncGmail, threadNudgeDayOk,
   weekBounds,
+  orgTz, orgToday,   // HONEST-3: the daily connection check (it read "orgTz is not a function" without these)
 });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 806

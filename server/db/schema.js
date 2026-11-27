@@ -126,6 +126,9 @@ async function initSchema() {
   // SCALE-5: smart moves' kept mark and nightly sweep days (server/smartMoves/marks.js). Never fails boot.
   await require("../smartMoves/marks").ensureSmartMoveTables(pool)
     .catch(err => console.error("[smart-move] tables not built (server continues):", err.message));
+  // HONEST-3: the daily connection check's runs (server/connections/checks.js). Never fails boot.
+  await require("../connections/checks").ensureCheckTable(pool)
+    .catch(err => console.error("[connection-checks] table not built (server continues):", err.message));
   // SCALE-5: a new or returned job row NOTIFYs the worker (server/jobs/wake.js). Never fails boot.
   await require("../jobs/wake").ensureWakeTrigger(pool)
     .catch(err => console.error("[jobs] wake trigger not built (the worker polls instead):", err.message));

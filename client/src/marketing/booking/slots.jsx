@@ -11,7 +11,7 @@
 //
 // No script is loaded from the provider (the site's CSP allows only hashed inline scripts): the
 // slots are its plain inline iframe, allowed by vercel.json's frame-src.
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { BOOKING_URL } from "./config";
 
@@ -41,11 +41,32 @@ function useBooked(onBooked) {
   }, [onBooked]);
 }
 
+// HONEST-3 item 6 (W-1127-Integrations-05): "the calendar iframe sat on 'Loading available times...' for
+// more than 30 seconds". The direct link and the email come first, before the frame; the frame loads
+// lazily; and if the calendar hasn't said it is ready within 5 seconds, the page says so and points to
+// the link. The provider posts a message when its calendar is drawn; the frame's own load is not that.
+export const SLOW_MS = 5000;
+export const DIRECT_WORDS = "Open the calendar in a new tab";
+export const EMAIL_LINE = "Or email jonathan@stewardapp.dev and he will find a time with you.";
+export function DirectLine({ href }) {
+  return <p className="srcnote" data-book-direct style={{ margin: "0 0 10px" }}>
+    <a href={href} target="_blank" rel="noreferrer" data-book-direct-link>{DIRECT_WORDS}</a>. {EMAIL_LINE}</p>;
+}
 function Frame({ src, title }) {
+  const [ready, setReady] = useState(false);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const on = e => { if (e.origin === BOOKING.origin && e.data && typeof e.data.event === "string" && /^calendly\./.test(e.data.event)) setReady(true); };
+    window.addEventListener("message", on);
+    const t = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => { window.removeEventListener("message", on); clearTimeout(t); };
+  }, [src]);
   return (
-    <div className="slots" data-slot-picker={BOOKING.provider}>
-      <iframe title={title} src={src} style={{ width: "100%", minHeight: 640, border: 0, borderRadius: 10, background: "var(--white)" }} />
-      <p className="srcnote" style={{ marginTop: 10 }}>Calendar not loading? <a href={src} target="_blank" rel="noreferrer">Open it in a new tab</a>, or email jonathan@stewardapp.dev.</p>
+    <div className="slots" data-slot-picker={BOOKING.provider} data-ready={ready ? "1" : "0"}>
+      <DirectLine href={src} />
+      {slow && !ready && <p className="srcnote" role="status" data-book-slow style={{ margin: "0 0 10px", fontWeight: 600 }}>
+        The calendar is slow to load. <a href={src} target="_blank" rel="noreferrer">{DIRECT_WORDS}</a> instead, or email jonathan@stewardapp.dev.</p>}
+      <iframe title={title} src={src} loading="lazy" style={{ width: "100%", minHeight: 640, border: 0, borderRadius: 10, background: "var(--white)" }} />
     </div>
   );
 }

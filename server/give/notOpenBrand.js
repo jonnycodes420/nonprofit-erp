@@ -25,7 +25,8 @@ async function notOpenBrandFull(query, org, giveThemePayload) {
   let mission = org && org.mission;
   if (mission === undefined && org && org.id) mission = ((await query("SELECT mission FROM orgs WHERE id=?", [org.id]).catch(() => []))[0] || {}).mission;
   out.brand.mission = missionLine(mission);
-  out.brand.opensSoon = OPENS_SOON;
+  // HONEST-3 item 4: a page with no opening date doesn't promise one. "Opens soon" is gone.
+  out.brand.heading = require("./examplePage").NOT_PUBLISHED;
   return out;
 }
 

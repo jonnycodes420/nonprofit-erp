@@ -714,9 +714,13 @@ app.get("/volunteer/:slug", donateLimiter, wrap(async (req, res, next) => {
   // registered on another router; this must not swallow them.
   if (["join", "log", "me", "kiosk", "checkin"].includes(req.params.slug)) return next();
   const o = await publicOpportunity(null, req.params.slug);
-  if (!o) return res.status(404).send(publicPage({ title: "Not found",
-    brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this opportunity has been taken down. Ask the organization for its current link.</p></div>` }));
+  // HONEST-3 item 5: no opportunity by that name, but an org: its volunteer page. Neither: say so.
+  if (!o) {
+    const SL = require("../server/public/shortLinks");
+    const to = await SL.volunteerTarget(query, req.params.slug);
+    if (to) return res.redirect(302, to);
+    return res.status(404).send(publicPage({ title: SL.NOT_FOUND_TITLE, brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" }, body: SL.notFoundBody() }));
+  }
   const brand = await brandOf(o.org_id);
   const today = orgToday(await orgTz(o.org_id));                   // ORG_TZ_SEAM_OK
   const slots = await query(
