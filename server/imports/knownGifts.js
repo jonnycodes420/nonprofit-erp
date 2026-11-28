@@ -98,10 +98,12 @@ async function applyKnownGifts({ query }, { orgId, u, idOf, answers = {} }) {
   const lone = u.aside.filter(a => a.refundUnmatched && idOf(a.personKey));
   if (lone.length) {
     const donors = [...new Set(lone.map(a => idOf(a.personKey)))];
-    const gs = await query(`SELECT g.id, g.donor_id, g.external_id, g.amount::text AS amount, g.date::text AS date,
-                              g.amount + COALESCE((SELECT SUM(r.amount) FROM gifts r WHERE r.org_id = g.org_id AND r.refund_of = g.id), 0) AS left_amount
+    const gs = await query(`SELECT g.id, g.donor_id, g.external_id, g.amount::text AS amount, g.date::text AS date
                               FROM gifts g WHERE g.org_id=? AND g.donor_id = ANY(?::text[]) AND g.amount > 0 AND g.refund_of IS NULL
                                AND COALESCE(g.refunded_in_full, false) = false`, [orgId, donors]);
+    // what each gift has left: its amount less the refunds already against it (one row per refund, added here)
+    const back = gs.length ? await query(`SELECT refund_of, amount::text AS amount FROM gifts WHERE org_id=? AND refund_of = ANY(?::text[])`, [orgId, gs.map(x => x.id)]) : [];
+    for (const x of gs) x.left_amount = (toCents(x.amount) + back.filter(r => r.refund_of === x.id).reduce((n, r) => n + toCents(r.amount), 0)) / 100;
     const keys = lone.map(a => "sheet:" + a.rowId);
     const done = new Set((await query(`SELECT idempotency_key FROM gifts WHERE org_id=? AND idempotency_key = ANY(?::text[])`, [orgId, keys])).map(r => r.idempotency_key));
     const left = new Map(gs.map(x => [x.id, toCents(x.left_amount)]));
