@@ -753,6 +753,8 @@ async function writePlan({ req, body, importId, who, report }) {
   const Rm = await R();
   if (!u.ready) return { status: 409, body: { error: "questions_open", message: `${u.questions.length} ${u.questions.length === 1 ? "question needs" : "questions need"} an answer first.`, questions: u.questions } };
   if (!u.gifts.length && !u.pledges.length && !u.people.length) return { status: 400, body: { error: "nothing", message: "Nothing in this file is a person or a gift." } };
+  // IMPORT-12: a refund is a gift row of its own, negative, written with the gifts and pointed at its gift after
+  u.gifts = [...u.gifts, ...require("../server/imports/giftExtrasWrite").refundsToWrite(u)];
   const [already] = await query("SELECT id FROM imports WHERE id=? AND org_id=?", [importId, orgId]);
   if (already) return { status: 409, body: { error: "run_exists", message: "That import has already been recorded." } };
   const a = body.answers || {};
@@ -799,7 +801,9 @@ async function writePlan({ req, body, importId, who, report }) {
         // IMPORT-5 (7d): a note on the row said the phone is wrong, or the mail came back
         !!(p.phoneBad && (i === 0 ? p.phone : null)), p.phoneBad && i === 0 && p.phone ? badWhy(p.phoneBad, body.fileName) : null,
         !!(p.addressBad && p.address), p.addressBad && p.address ? badWhy(p.addressBad, body.fileName) : null, p.addressBad && p.address ? new Date().toISOString() : null,
-        p.aboutThem || null]);
+        p.aboutThem || null,
+        // IMPORT-12: a person exported twice under two IDs answers to both (TRANS-1 reads every id)
+        i === 0 && p.otherIds && p.otherIds.length ? JSON.stringify([p.externalId, ...p.otherIds].filter(Boolean)) : null]);
       ids.push(id);
     }
     personId.set(p.key, ids[0]);
@@ -808,9 +812,9 @@ async function writePlan({ req, body, importId, who, report }) {
   }
   const DCOLS = ["id", "org_id", "name", "email", "phone", "address", "address2", "city", "state", "zip", "country", "external_donor_id", "kind", "spouse_name",
     "stage", "status", "tags", "person_types", "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased", "created_by", "created_by_name", "created_import_id",
-    "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at", "about_them"];
+    "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at", "about_them", "external_donor_ids"];
   for (let k = 0; k < newRows.length; k += JOB_BATCH) {
-    await insertRows(`INSERT INTO donors (${DCOLS.join(",")})`, DCOLS, newRows.slice(k, k + JOB_BATCH), { person_types: "::jsonb" });
+    await insertRows(`INSERT INTO donors (${DCOLS.join(",")})`, DCOLS, newRows.slice(k, k + JOB_BATCH), { person_types: "::jsonb", external_donor_ids: "::jsonb" });
     done = Math.min(k + JOB_BATCH, newRows.length);
     await report(`Writing people ${done.toLocaleString("en-US")} of ${memberCount.toLocaleString("en-US")}`, done, total, true);
   }
@@ -999,6 +1003,7 @@ async function writePlan({ req, body, importId, who, report }) {
       // ASKS-1: an auction purchase: type "auction", the item and what it was worth
       ...(g.auction && g.auction.fmvCents != null ? { type: "auction", quidProQuoValue: g.auction.fmvCents / 100, quidProQuoDesc: g.auction.item } : {}),
     };
+    if (g.kind === "refund") Object.assign(args, { type: "refund", giftType: null, alreadyThanked: true });   // IMPORT-12
     if (g.kind === "installment") {
       const pid = pledgeIdByRow.get(g.installmentOf);
       if (!pid) { duplicates++; continue; }   // its pledge was already here, and so is this payment
@@ -1007,12 +1012,14 @@ async function writePlan({ req, body, importId, who, report }) {
     giftArgs.push(args); giftOf.push(g);
   }
   const auctionWritten = [];   // ASKS-1
+  const giftIdByRow = new Map();   // IMPORT-12: the plan's row → the gift written for it
   for (let k = 0; k < giftArgs.length; k += GIFT_BATCH) {
     const out = await recordGifts(giftArgs.slice(k, k + GIFT_BATCH));
     const paid = [];
     out.forEach((r, n) => {
       const g = giftOf[k + n], args = giftArgs[k + n];
       if (r.duplicate) { duplicates++; if (g.kind !== "installment") { duplicateCents += g.cents; dupLines.add(`${g.sheet}:${g.line}`); } return; }
+      giftIdByRow.set(g.rowId, r.giftId);
       if (args.installmentId) {
         paid.push([r.giftId, args.installmentId, args.pledgeId]);
         installmentGifts++; installmentCents += g.cents;
@@ -1027,6 +1034,9 @@ async function writePlan({ req, body, importId, who, report }) {
     const n = Math.min(k + GIFT_BATCH, giftArgs.length);
     await report(`Writing gifts ${n.toLocaleString("en-US")} of ${giftArgs.length.toLocaleString("en-US")}`, memberCount + u.pledges.length + n, total, true);
   }
+  // IMPORT-12: refunds onto their gifts, soft credits, tributes, anonymous, pledge payments (server/imports/giftExtrasWrite.js)
+  summary.giftExtras = await require("../server/imports/giftExtrasWrite").writeGiftExtras({ query, run, recalcPledgePayment },
+    { orgId, who, u, giftIdByRow, pledgeIdByRow, personId });
   // ASKS-1: the items the auction gifts bought, placed in the event's auction
   if (auctionWritten.length) summary.auction = await require("../server/events/auctionImport").placeAuctionItems(
     { query, run, newId, randomHex: require("../server/shared/newId").randomHex }, orgId, { eventId, importId, who, written: auctionWritten });
