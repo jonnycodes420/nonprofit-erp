@@ -41,9 +41,9 @@ export function MajorPlanned({ cards, planned, onNavigate, openProfile, onSeePla
         <Head title="Major gifts" link="Open the pipeline" onLink={toMg} />
         <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginTop: 12 }}>
           <div><button type="button" style={{ ...NAME, ...BIG, fontWeight: 400 }} onClick={toMg} title={mj.open.definition || undefined} data-testid="home-major-open" data-cents={mj.open.cents}>{money(mj.open.cents)}</button>
-            <div style={DEF}>in open asks{mj.open.people != null ? ` across ${plural(mj.open.people, "person", "people")}` : ""}</div></div>
+            <div style={DEF}>{mj.open.cents > 0 ? `in open asks${mj.open.people ? ` across ${plural(mj.open.people, "person", "people")}` : ""}` : "no open asks yet"}</div></div>
           <div><button type="button" style={{ ...NAME, ...BIG, fontWeight: 400 }} onClick={toMg} title={mj.yes.definition || undefined} data-testid="home-major-yes" data-cents={mj.yes.cents}>{money(mj.yes.cents)}</button>
-            <div style={DEF}>said yes this year, {plural(mj.yes.gifts, "gift", "gifts")}</div></div>
+            <div style={DEF}>{mj.yes.gifts > 0 ? `said yes this year, ${plural(mj.yes.gifts, "gift", "gifts")}` : "nobody has said yes yet this year"}</div></div>
         </div>
         {mj.stages.length > 0 && <div style={{ marginTop: 14 }}>
           <div aria-hidden style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2 }}>
