@@ -347,7 +347,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
     const fm = await until(([w]) => Number((((document.querySelector('[data-testid="fr-pledges"]') || {}).textContent || "").match(/\$[\d,]+/) || ["0"])[0].replace(/[^0-9]/g, "")) === w, [want]);
     await check("§5a Atlas records a $300 pledge payment: Fundraising's still-to-come drops by $300", fm, { before: fr0, after: await text('[data-testid="fr-pledges"]') });
   });
-  await open(`/dashboard`);
+  await open(`/dashboard?moves=all`);   // HOME-7: the deck is See all
   await noReload("§5b", async () => {
     await page.locator('[data-testid="home-moves"]').first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(800);
