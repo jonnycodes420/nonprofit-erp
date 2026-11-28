@@ -92,7 +92,7 @@ async function major(req, query, orgId, today) {
   // The three whose next step is soonest or most overdue: an open step on an assigned person with a stage.
   const next = await query(
     `SELECT t.donor_id, d.name, d.stage, t.next_step_label AS step, LEFT(t.due_date, 10) AS due,
-            (SELECT SUM(o.target_amount) FROM opportunities o WHERE o.org_id = d.org_id AND o.donor_id = d.id AND o.status = 'open') AS ask
+            (SELECT MAX(o.target_amount) FROM opportunities o WHERE o.org_id = d.org_id AND o.donor_id = d.id AND o.status = 'open') AS ask
        FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL AND d.assigned_to IS NOT NULL AND d.stage = ANY(?)
         AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)

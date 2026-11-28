@@ -7,6 +7,8 @@
 // read: GET /home/cards (server/reports/homeCards.js) and the five's drift list
 // (server/insights/driftPeople.js). No second rule anywhere.
 import { useEffect, useState } from "react";
+import { Breakdown } from "./homeParts";
+import { DonorLink } from "../RecordLink";
 import { T } from "../shared";
 import { Figure } from "../Figure";
 import { fmtWhole } from "../../lib/money";
@@ -14,7 +16,7 @@ import { displayDateShort } from "../../../../shared/displayDate.js";
 
 const TABS = [["thread", "The Thread"], ["thanks", "Thank-yous"], ["gifts", "Recent gifts"], ["drift", "Drift"]];
 const LI = { display: "flex", gap: 12, alignItems: "center", padding: "12px 0", borderTop: "1px solid " + T.bg2, fontSize: 14 };
-const NAME = { background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 14, color: T.ink, fontWeight: 700, cursor: "pointer", textAlign: "left" };
+const NAME = { fontSize: 14, color: T.ink, fontWeight: 700, textDecoration: "none" };
 const LNK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" };
 const DEF = { fontSize: 12.5, lineHeight: 1.45, color: T.ink3, margin: "2px 0 6px" };
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -37,13 +39,13 @@ function when(x, today) {
   return { words: days > 0 && days < 7 ? dayOf(due) : displayDateShort(due, new Date()) };
 }
 
-export function HomePanel({ userId, today, threads, threadOpen, finishRow, onSeeThread, cards, drift, thankYouDrafts, onNavigate, openProfile, isReadOnly }) {
+export function HomePanel({ userId, today, threads, threadOpen, finishRow, onSeeThread, onPlan, cards, drift, thankYouDrafts, onNavigate, openProfile, isReadOnly }) {
   const [tab, setTab] = useState(() => { try { const k = localStorage.getItem(tabKey(userId)); return TABS.some(t => t[0] === k) ? k : "thread"; } catch { return "thread"; } });
   const pick = k => { setTab(k); try { localStorage.setItem(tabKey(userId), k); } catch { /* private mode */ } };
   useEffect(() => { const on = e => pick(e.detail); window.addEventListener("steward:home-tab", on); return () => window.removeEventListener("steward:home-tab", on); }, []);
   const ty = cards && cards.thankYous, rg = cards && cards.recentGifts;
   const counts = { thread: threadOpen, thanks: ty ? ty.n : null, gifts: rg ? rg.gifts : null, drift: drift ? drift.count : null };
-  const who = (id, name) => <button type="button" style={NAME} onClick={() => openProfile(id)}>{name}</button>;
+  const who = (id, name) => <DonorLink id={id} onOpen={() => openProfile(id)} className="attn-donor-name" style={NAME}>{name}</DonorLink>;
 
   const body = () => {
     if (tab === "thread") {
@@ -58,7 +60,10 @@ export function HomePanel({ userId, today, threads, threadOpen, finishRow, onSee
             {!isReadOnly && <button type="button" data-testid="panel-thread-done" style={LNK} onClick={() => finishRow(x)}>Done</button>}
           </div>
         ); })}
-        {threadOpen > 0 && <div style={{ paddingTop: 12 }}><button type="button" data-testid="panel-thread-all" style={LNK} onClick={onSeeThread}>See all {threadOpen.toLocaleString("en-US")} in the Thread</button></div>}
+        <div style={{ paddingTop: 12, display: "flex", gap: 20, flexWrap: "wrap" }}>
+          {threadOpen > 0 && <button type="button" data-testid="panel-thread-all" style={LNK} onClick={onSeeThread}>See all {threadOpen.toLocaleString("en-US")} in the Thread</button>}
+          {!isReadOnly && onPlan && <button type="button" data-testid="home-plan-followup" style={LNK} onClick={onPlan}>Plan a follow-up</button>}
+        </div>
       </>;
     }
     if (tab === "thanks") return ty ? <>
@@ -118,9 +123,10 @@ function DriftRows({ people, who }) {
 }
 
 // The bottom row: four recent gifts and three drifting people, the tabs' own reads.
-export function HomeBottomRow({ cards, drift, openProfile }) {
+export function HomeBottomRow({ cards, drift, openProfile, onNavigate }) {
   const rg = cards && cards.recentGifts;
-  const who = (id, name) => <button type="button" style={NAME} onClick={() => openProfile(id)}>{name}</button>;
+  const [all, setAll] = useState(false);   // "All gifts": the gifts of the last 7 days, the rows behind the tab's count
+  const who = (id, name) => <DonorLink id={id} onOpen={() => openProfile(id)} className="attn-donor-name" style={NAME}>{name}</DonorLink>;
   const head = (title, n, link, onLink) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
       <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.ink }}>{title}</h3>
@@ -130,13 +136,14 @@ export function HomeBottomRow({ cards, drift, openProfile }) {
   return (
     <div className="home-pair" data-testid="home-bottom-row">
       {rg && <section className="home-card" data-testid="home-gifts-card">
-        {head("Recent gifts", rg.gifts, "All gifts", () => openHomeTab("gifts"))}
+        {head("Recent gifts", rg.gifts, "All gifts", () => setAll(true))}
+        <Breakdown open={all} onClose={() => setAll(false)} title="Gifts in the last 7 days" explanation={rg.definition} source={rg.source} onSelectDonor={r => { setAll(false); openProfile(r.donorId); }} />
         <p style={DEF}>{rg.definition}</p>
         <GiftRows rows={(rg.rows || []).slice(0, 4)} who={who} />
         {!rg.gifts && <div style={{ ...LI, color: T.ink2 }}>No gifts in the last 7 days.</div>}
       </section>}
       {drift && <section className="home-card" data-testid="home-drift-card">
-        {head("Drift", drift.count, `All ${(drift.count || 0).toLocaleString("en-US")}`, () => openHomeTab("drift"))}
+        {head("Drift", drift.count, `All ${(drift.count || 0).toLocaleString("en-US")}`, () => onNavigate && onNavigate("donors", { view: "drift" }))}
         <p style={DEF}>People whose giving pattern changed, with the reason beside each.</p>
         <DriftRows people={(drift.people || []).slice(0, 3)} who={who} />
         {!drift.count && <div style={{ ...LI, color: T.ink2 }}>Nobody is past their own giving rhythm.</div>}

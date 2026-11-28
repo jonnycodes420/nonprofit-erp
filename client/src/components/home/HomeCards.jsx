@@ -8,8 +8,8 @@
 // Connections. Each figure opens its rows and says its sentence.
 import { T, STAGES } from "../shared";
 import { Figure } from "../Figure";
+import { DonorLink } from "../RecordLink";
 import { fmtWhole } from "../../lib/money";
-import { openHomeTab } from "./HomePanel";
 
 const DEF = { fontSize: 12.5, lineHeight: 1.45, color: T.ink3, margin: "4px 0 0" };
 const LNK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", textAlign: "left" };
@@ -55,7 +55,7 @@ export function MajorPlanned({ cards, planned, onNavigate, openProfile, onSeePla
         </div>}
         <div style={{ marginTop: 10 }}>
           {mj.next.map(p => (
-            <div key={p.donorId} style={LI}><button type="button" style={NAME} onClick={() => openProfile(p.donorId)}>{p.name}</button>
+            <div key={p.donorId} style={LI}><DonorLink id={p.donorId} onOpen={() => openProfile(p.donorId)} className="attn-donor-name" style={{ ...NAME, textDecoration: "none" }}>{p.name}</DonorLink>
               <div style={{ fontSize: 13, color: T.ink2, marginTop: 2 }}>{[stageWord(p.stage), p.askCents ? money(p.askCents) : null, p.step, p.late ? `${p.late === 1 ? "1 day" : p.late + " days"} late` : null].filter(Boolean).join(" · ")}</div></div>
           ))}
         </div>
@@ -71,7 +71,7 @@ export function MajorPlanned({ cards, planned, onNavigate, openProfile, onSeePla
         <p style={{ ...DEF, marginTop: 10 }}>{planned.definition}</p>
         <div style={{ marginTop: 6 }}>
           {planned.top.map(p => (
-            <div key={p.donorId} style={LI}><button type="button" style={NAME} onClick={() => openProfile(p.donorId)}>{p.name}</button>
+            <div key={p.donorId} style={LI}><DonorLink id={p.donorId} onOpen={() => openProfile(p.donorId)} className="attn-donor-name" style={{ ...NAME, textDecoration: "none" }}>{p.name}</DonorLink>
               <div style={{ fontSize: 13, color: T.ink2, marginTop: 2 }}>{p.sign}</div></div>
           ))}
         </div>
@@ -102,7 +102,7 @@ export function RailCards({ cards, owners, OwnersCard, onNavigate, openProfile, 
         : meetings.map(m => (
           <div key={m.id} style={{ display: "flex", gap: 10, padding: "6px 0", fontSize: 13.5 }}>
             <span style={{ flex: "0 0 52px", color: T.ink2, fontVariantNumeric: "tabular-nums" }}>{m.startsAt ? timeOf(m.startsAt) : ""}</span>
-            <span style={{ flex: 1, minWidth: 0 }}>{m.people.length ? <>{m.title ? m.title.replace(m.people[0].name, "").trim() || "Meeting with" : "Meeting with"} <button type="button" style={{ ...NAME, fontSize: 13.5 }} onClick={() => openProfile(m.people[0].id)}>{m.people[0].name}</button>
+            <span style={{ flex: 1, minWidth: 0 }}>{m.people.length ? <>{m.title ? m.title.replace(m.people[0].name, "").trim() || "Meeting with" : "Meeting with"} <DonorLink id={m.people[0].id} onOpen={() => openProfile(m.people[0].id)} className="attn-donor-name" style={{ ...NAME, fontSize: 13.5, textDecoration: "none" }}>{m.people[0].name}</DonorLink>
               <div style={{ color: T.ink3, fontSize: 12.5, marginTop: 2 }}>Gave {money(m.people[0].cents)} this year. Open their page before you go.</div></> : m.title}</span>
           </div>
         ))}
@@ -121,7 +121,7 @@ export function RailCards({ cards, owners, OwnersCard, onNavigate, openProfile, 
       <div style={EYEBROW}>Thank-yous</div>
       <div><span style={BIG}><Figure variant="inline" value={ty.n} label="Gifts waiting to be thanked" definition={ty.definition} source={ty.source} figureKey="home-thanks-rail" why={false} /></span> <span style={{ fontSize: 13.5, color: T.ink2 }}>{ty.n === 1 ? "gift waiting" : "gifts waiting"}</span></div>
       <p style={DEF}>{ty.sentence}</p>
-      {ty.n > 0 && <button type="button" style={{ ...LNK, marginTop: 6 }} onClick={() => openHomeTab("thanks")}>Open the drafts</button>}
+      {ty.n > 0 && <button type="button" style={{ ...LNK, marginTop: 6 }} onClick={() => onNavigate && onNavigate("fundraising", { frSection: "acknowledgments" })}>Open the thank-yous</button>}
     </div>}
     {rt && rt.rate != null && <div data-testid="home-retention" style={RAIL}>
       <div style={EYEBROW}>Retention</div>

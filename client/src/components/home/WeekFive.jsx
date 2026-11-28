@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, takeParked } from "../../api";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { T } from "../shared";
+import { DonorLink } from "../RecordLink";
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const B1 = { background: T.greenDk, color: T.white, border: "1px solid " + T.greenDk, borderRadius: 8, padding: "10px 16px", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", minHeight: 44 };
@@ -115,7 +116,7 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
                   <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", minWidth: 0 }}>
-                    <button type="button" data-testid="five-name" style={{ ...NAME, fontFamily: SERIF, fontWeight: 400, fontSize: 24 }} onClick={() => person(r.donorId)}>{r.name}</button>
+                    <DonorLink id={r.donorId} onOpen={() => person(r.donorId)} data-testid="five-name" className="attn-donor-name" style={{ ...NAME, fontFamily: SERIF, fontWeight: 400, fontSize: 24, textDecoration: "none" }}>{r.name}</DonorLink>
                     <span style={PILL}>{r.pill}</span>
                   </div>
                   {fig(r)}
@@ -139,7 +140,7 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
               <span style={RANK}>{rank}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-                  <button type="button" style={{ ...NAME, fontSize: 15 }} onClick={() => person(r.donorId)}>{r.name}</button><span style={PILL}>{r.pill}</span>
+                  <DonorLink id={r.donorId} onOpen={() => person(r.donorId)} className="attn-donor-name" style={{ ...NAME, fontSize: 15, textDecoration: "none" }}>{r.name}</DonorLink><span style={PILL}>{r.pill}</span>
                 </div>
                 <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.what}</div>
               </div>
@@ -153,7 +154,7 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
             <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 6 }}>Done this week</div>
             {done.map(r => (
               <div key={r.donorId} style={{ fontSize: 14, color: T.ink, lineHeight: 1.7 }}>
-                <span aria-hidden style={{ color: T.greenDk }}>✓ </span><button type="button" style={{ ...NAME, fontWeight: 600 }} onClick={() => person(r.donorId)}>{r.name}</button> · {r.outcome}
+                <span aria-hidden style={{ color: T.greenDk }}>✓ </span><DonorLink id={r.donorId} onOpen={() => person(r.donorId)} className="attn-donor-name" style={{ ...NAME, fontWeight: 600, textDecoration: "none" }}>{r.name}</DonorLink> · {r.outcome}
               </div>
             ))}
           </div>

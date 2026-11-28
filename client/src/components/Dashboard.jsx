@@ -1383,7 +1383,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // so the stack renders straight into it.
       // HOME-7: Home's work is the five (in the header), the panel and the cards; the old stack stays the board's.
       if(holdUnderDeck) return null;
-      return surface==="home"&&!editMode&&!scopedHome?HW.homeWork({ auth, today:railReads.cards&&railReads.cards.today||null, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }):cardsBlock;
+      return surface==="home"&&!editMode&&!scopedHome?HW.homeWork({ setPlanFor, auth, today:railReads.cards&&railReads.cards.today||null, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }):cardsBlock;
       })()}
       </div>{/* /home-shell-main */}
       {surface==="home"&&todayRail}
