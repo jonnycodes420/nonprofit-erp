@@ -194,6 +194,20 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   const unheard = await plant("components/Communications.jsx", 'useLiveRead("comms.overview"', 'useLiveReadNot("comms.overview"');
   ok("§E …and a surface that stops listening fails it (Overview's Recent sends)", unheard.length === 1 && /comms\.overview .* no longer listens/.test(unheard[0]), unheard);
 
+  // ── §E2 · FRESH-5 item 2: EVERY WRITE THROUGH api.js, EVERY READ THAT SHOWS THROUGH liveRead ──
+  const RW = require("../scripts/ci/raw-write-scan");
+  const rawNow = RW.problems();
+  ok("§E2 no write in client/src is a bare fetch() outside api.js, the allowed files aside (scripts/ci/raw-write-scan.js)", rawNow.length === 0, rawNow);
+  const rawPlant = RW.problems({ "components/profile/PlantedNote.jsx": 'export const saveNote = (id, line) => fetch(API + `/donors/${id}/conversations`, { method: "POST", body: JSON.stringify({ line }) });' });
+  ok("§E2 …a planted raw POST (a note saved with fetch) fails it", rawPlant.some(x => /PlantedNote\.jsx/.test(x)), rawPlant);
+  const readsNow = SC.readsProblems();
+  ok("§E2 no component reads the server into a copy loaded once, beyond the allowed and the baseline (tests/lib/readsOutsideLive.json)", readsNow.length === 0, readsNow);
+  const listPlant = SC.readsProblems({ "components/profile/PlantedTasks.jsx": 'export default function T({ id }) { const [rows, setRows] = useState([]); useEffect(() => { apiFetch(`/donors/${id}/tasks`).then(setRows); }, [id]); return rows.length; }' });
+  ok("§E2 …a planted useState list read once fails it", listPlant.some(x => /PlantedTasks\.jsx/.test(x)), listPlant);
+  const hubSrc = fs.readFileSync(path.join(__dirname, "../client/src/components/VolunteersHub.jsx"), "utf8");
+  const deafHub = SC.readsProblems({ "components/VolunteersHub.jsx": hubSrc.replace(/\buseLive(Read|Rev)?\(/g, "useNothing(").replace(/\buseChang(ed|eRev)\(/g, "useNothing(") });
+  ok("§E2 …and Volunteers with its subscriptions taken out fails it", deafHub.some(x => /VolunteersHub\.jsx/.test(x)), deafHub);
+
   // ── §F · ATLAS: A FOLLOW-UP SAYS WHEN ITS ROWS ARE OLDER THAN A GIFT ──────
   const ask = async (text, follows) => { const r = await api("POST", "/atlas", tok, { text, ...(follows ? { followsId: follows.id } : {}) });
     return { status: r.status, id: r.body && r.body.request && r.body.request.id, said: JSON.stringify(r.body || {}) }; };
@@ -791,6 +805,38 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     ok("§K …and taken out with ✕, none of its parts is left in the saved template", JSON.stringify(tp.saved2) === JSON.stringify(tp.before), tp);
     await q(`UPDATE orgs SET name='Stale Two Heron Society' WHERE id=$1`, [ORG]);
     await ctxK.close();
+  }
+
+  // ── §N · FRESH-5 item 5: THE FLEET'S CLICKS FRESH-4 DIDN'T REACH, ON SCREEN IN 1.5 S, NO RELOAD ──
+  {
+    const F5 = require("./lib/fresh5Walk");
+    const tagN = "n" + String(today).replace(/-/g, "").slice(-4);
+    await person("f5ada", "Ada Pellinore");
+    const { dayOffset } = require("./clock");
+    await api("POST", `/donors/${P("f5ada")}/gifts`, tok, { amount: 80, date: today, type: "one-time", payment_method: "check" });
+    const callN = await api("POST", `/donors/${P("f5ada")}/conversations`, tok, { touchKind: "call", outcome: "reached", line: `Walk call ${tagN}`, date: today, nextStep: { skipped: true } });
+    const pledgeN = await api("POST", `/donors/${P("f5ada")}/pledges`, tok, { amount: 1875, dueDate: dayOffset(90) });
+    await person("f5eps", "Epsilon Varga");
+    await api("POST", `/donors/${P("f5eps")}/gifts`, tok, { amount: 150, date: dayOffset(-700), type: "one-time", payment_method: "check" });
+    await api("POST", "/pipeline/run-auto-lapse", tok, {});   // Steward places him in Lapsed, as the nightly sweep does
+    const [eps] = await q(`SELECT stage FROM donors WHERE id=$1`, [P("f5eps")]);
+    await person("f5kit", "Kit Halloran");
+    await q(`UPDATE donors SET person_types='["volunteer"]'::jsonb WHERE id=$1`, [P("f5kit")]);
+    await api("POST", `/donors/${P("f5kit")}/volunteer-hours`, tok, { date: dayOffset(-3), hours: 2, notes: "seed" });
+    ok("§N the fixture: a call, a pledge and a Lapsed person (auto-lapse) are on file", callN.status === 201 && pledgeN.status === 201 && eps && eps.stage === "lapsed", { call: callN.status, pledge: pledgeN.status, eps });
+    const file = path.join(require("os").tmpdir(), `walk-file-${process.pid}.txt`);
+    fs.writeFileSync(file, "FRESH-5 walk file\n");
+    const lgN = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
+    const ctxN = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    await ctxN.addInitScript(([tk, u, o]) => { localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [lgN.body.token, JSON.stringify(lgN.body.user), JSON.stringify(lgN.body.org)]);
+    const pageN = await ctxN.newPage();
+    const [yy, mm, dd] = today.split("-");
+    const steps = await F5.walk(pageN, { app: APP, todayUs: `${mm}/${dd}/${yy}`, file, tag: tagN,
+      people: { prof: P("f5ada"), profName: "Ada Pellinore", lapsedName: "Epsilon Varga", volName: "Kit Halloran" } });
+    for (const st of steps) ok(`§N ${st.label}, within ${F5.SEEN_MS} ms, no reload`, st.ok, st);
+    await ctxN.close();
+    try { fs.unlinkSync(file); } catch { /* gone */ }
   }
 
   await browser.close();

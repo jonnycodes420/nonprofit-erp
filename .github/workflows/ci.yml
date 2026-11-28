@@ -154,6 +154,12 @@ jobs:
       - name: Delete through removal guard
         run: node scripts/ci/delete-scan.js --self-test && node scripts/ci/delete-scan.js
 
+      # FRESH-5 · every write in the app goes through api.js, so it announces what it changed and
+      # every screen on view re-reads; a fetch() with a non-GET method elsewhere fails unless its
+      # file is allowed with the reason no app screen shows what it wrote. Two seconds.
+      - name: Raw write guard
+        run: node scripts/ci/raw-write-scan.js --self-test && node scripts/ci/raw-write-scan.js
+
       # RULES-1 · every SUM over volunteer_shifts.hours counts through SERVED
       # (shared/numbers/served.js) or is allowlisted with its reason. The
       # self-test plants a bare sum and watches it caught. Two seconds.

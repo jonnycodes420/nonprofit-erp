@@ -3,7 +3,7 @@
 // reads the kit: two colours from the safe palette, the signature block, the
 // address and the tax language. The logo is the existing logo upload.
 import { useState, useEffect, useRef } from "react";
-import { apiFetch, API, getToken } from "../api";
+import { apiFetch, apiWriteFile } from "../api";
 import { useChanged } from "../lib/changes";   // FLOWS-13 item 1: the letterhead follows a saved logo or name
 import { pickPeople, usePeoplePicker } from "../lib/people";
 import { T } from "./shared";
@@ -151,8 +151,8 @@ export function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved
     setMsg("");
     try {
       if (t.channel === "letter") {
-        const r = await fetch(`${API}/templates/${t.kind}/letter.pdf`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" }, body: JSON.stringify({ donorId: who }) });
-        if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.sentence || "The letter could not be made."); return; }
+        const r = await apiWriteFile(`/templates/${t.kind}/letter.pdf`, { body: JSON.stringify({ donorId: who }) }).catch(e => { setMsg(e.sentence || "The letter could not be made."); return null; });   // FRESH-5: through api.js
+        if (!r) return;
         const url = URL.createObjectURL(await r.blob()), a = document.createElement("a");
         a.href = url; a.download = `${t.kind}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         setMsg("The letter is downloaded, ready to print.");

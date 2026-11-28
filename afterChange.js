@@ -214,6 +214,10 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
   if (!deps || !orgId || !ids.length) return result;
   const started = Date.now();
   if (recalc) await recalcDonorSummaryBatch(deps.query, ids, orgId);
+  // FRESH-5 item 3: a stage Steward set to Lapsed that the change outlived goes before the answer, so the
+  // Donors list's Stage and the profile's Current agree on the re-read (it waited for the queue, 4 s on
+  // staging, and for an edited or restored gift it never went). The handler runs it again; it is a no-op then.
+  if (!history && deps.unlapseHeldByPledge) await deps.unlapseHeldByPledge(orgId, ids).catch(e => console.error("[after-change] unlapse:", e.message));
   const OUTBOX = require("./server/shared/outbox");
   const id = await OUTBOX.write(orgId, "donor.changed", { door, history, runTag, startsJourneys: typeof fire === "function" }, { donorIds: ids });
   await OUTBOX.relay([id]).catch(e => console.error("[after-change] relay (the sweep will):", e.message));

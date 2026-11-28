@@ -907,6 +907,8 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   // A changed amount, or a write-off being lifted, re-derives open/fulfilled and
   // the surplus from the gifts actually linked to this pledge.
   const recomputed = await recalcPledgePayment(req.params.id, req.user.orgId);
+  // FRESH-5: the one after-change step, as the pledge's create runs it (its scores, its Suggested ask, its stage).
+  if (p.donor_id) await require("../../afterChange").afterChange(req.user.orgId, [p.donor_id], { door: "pledge", recalc: false }).catch(e => console.error("[pledge-edit] after-change:", e.message));
   const rows = await query("SELECT * FROM pledges WHERE id=?", [req.params.id]);
   res.json({ ...rows[0], ...(recomputed || {}) });
 }));
