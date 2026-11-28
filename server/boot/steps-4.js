@@ -907,7 +907,7 @@ require("../../routes/homeBundle").mount({ requireAuth, testMode, wrap });
 require("../../routes/homeLead").mount({ ...GRANTS1_CTX, meetingBrief: require("../../routes/finance").meetingBrief });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 784
-require("../../routes/insights").mount({ ...GRANTS1_CTX, queryTx, runTx, recalcDonorSummary });
+require("../../routes/insights").mount({ ...GRANTS1_CTX, queryTx, runTx, recalcDonorSummary, computeRetentionRate });   // HOME-7: the rail's Retention card
 // SPLIT-2 end
 // SPLIT-2 server.js piece 785
 require("../../routes/homeCalls").mount({

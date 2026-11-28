@@ -3,9 +3,9 @@ import { AskHero } from "../AskRail";
 import { openTellSteward } from "../TellStewardOpen";
 import { Suspense, lazy } from "react";
 import { retryImport } from "../../lib/lazyRetry";
-import { MOVES_WAIT, HomeMoves } from "./homeParts";
+import { MOVES_WAIT, HomeWeekView } from "./homeParts";
 
-export function homeHead({ scoped, onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr }) {
+export function homeHead({ scoped, onMovesSettled, onWeekData, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr }) {
   // ACCESS-3: someone who sees only their own people gets their own header.
   if (scoped && surface === "home") return scopedHead({ agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, resetLayout, saveEdit, threadScope, todayLongStr });
   return (
@@ -64,9 +64,10 @@ export function homeHead({ scoped, onMovesSettled, agentDaily, cancelEdit, data,
             ):(<>
               {/* ONBOARD-3: this week's thank-yous and notes, one printable page. */}
               <a href="/print/notes?print=1" target="_blank" rel="noopener" data-testid="home-print-notes" style={{color:T.greenDk,fontSize:12,fontWeight:700,textDecoration:"none"}}>Print this week's notes</a>
-              <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
+              {/* HOME-7: Home is the five, the panel and the cards, in one order; the board keeps Edit */}
+              {surface!=="home"&&<button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
                 disabled={layout===undefined}
-                style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
+                style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>}
             </>)}
           </div>
         )}
@@ -117,8 +118,9 @@ export function homeHead({ scoped, onMovesSettled, agentDaily, cancelEdit, data,
       {surface==="home"&&!editMode&&(
         <div style={{padding:0,marginTop:6}}>
           {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
-          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet} importAbove={!!setupFirst} onSettled={onMovesSettled}
-            sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/></Suspense>
+          {/* HOME-7: this week's five; the moves deck is its See all */}
+          <Suspense fallback={MOVES_WAIT}><HomeWeekView onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet} importAbove={!!setupFirst} onSettled={onMovesSettled} onData={onWeekData}
+            sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly}/></Suspense>
         </div>
       )}
       </>

@@ -292,7 +292,7 @@ const person = (id, name, f = {}) => q(
       const post = answered(/\/donors\/[^/]+\/gifts$/, "POST");
       await page.locator('[data-testid="dp-add-gift-save"]').click({ timeout: 8000 });
       const a = await post;
-      await go(`/dashboard`);
+      await go(`/dashboard?moves=all`);
       const samples = [];
       const screen = () => page.evaluate(() => {
         const d = document.querySelector('[data-testid="home-moves"]');

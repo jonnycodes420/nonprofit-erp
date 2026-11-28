@@ -79,7 +79,7 @@ async function greetingFirst(browser, demoAuth, { ok, api, APP }) {
     });
     ok(`§home-4 Home ${what} at ${vp.width}: the rail draws whole, Today says no zero, at most three calls, To confirm is one line`,
        h.rail === 1 && h.oldTiles === 0 && !!h.today && !/(^|\s)0\s/.test(h.today) && h.calls <= 3 && (!h.callsAll || /^See all [\d,]+$/.test(h.callsAll))
-       && !!h.confirm && !/\n/.test(h.confirm) && h.confirm.length < 80, h);
+       && (!h.confirm || (!/\n/.test(h.confirm) && h.confirm.length < 80)), h);   // HOME-7: the rail is Today, Year-end, Thank-yous, Retention, Your givers, Connections
     ok(`§home-4 Home ${what} at ${vp.width}: chips hide at zero, no Drift section, no empty Thread, no loose links, no zero tabs`,
        h.chips.every(c => !/(^|\s)0\s/.test(c)) && h.oldLinks === 0 && h.drift === 0 && h.threadEmpty === 0 && h.zeroTabs === 0 && h.setupLine === 0 && (h.never === 0 || h.say > 0), h);
     if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card pointing to the first step (POLISH-4: never Import a third time), with sample data, no tabs, no pace`,

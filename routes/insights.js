@@ -105,6 +105,18 @@ async function deckWithDrift(req, deck, asOf) {
     drift: { high: Number(c.driftingHigh) || 0, medium: Number(c.driftingMedium) || 0, count: people.length, people } };
 }
 
+// HOME-7: this week's five (server/insights/weekFive.js) read the whole deck, Drift and the event
+// guests in, the same deck the four tabs show behind "See all", and the units' last 12 months.
+async function deckFor(req) {
+  const asOf = await asOfFor(req);
+  const got = await D.insightsFor(req.user.orgId, asOf, { explicitDay: explicitDay(req) });
+  if (got.preparing) return { asOf, preparing: true };
+  const deck = require("../server/insights/actionWhy").fillWhy(await deckWithDrift(req, got.result.deck, asOf));
+  return { asOf, deck, units: got.result.units || [], stale: got.stale };
+}
+require("../server/insights/weekFive").mount(app, { query, run, wrap, requireAuth, checkWriteAccess, actor, deckFor });
+require("../server/reports/homeCards").mount(app, { query, wrap, requireAuth, orgTz, orgToday, orgTime: ctx.orgTime, computeRetentionRate: ctx.computeRetentionRate });   // HOME-7: Home's panel, cards and rail
+
 app.get("/insights", requireAuth, wrap(async (req, res) => {
   const asOf = await asOfFor(req);
   const got = await D.insightsFor(req.user.orgId, asOf, { explicitDay: explicitDay(req) });

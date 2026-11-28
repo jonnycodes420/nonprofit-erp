@@ -1242,6 +1242,12 @@ async function homeSaysNothingWrong(browser) {
       });
       const said = [];
       for (const line of r.text.split("\n")) for (const [re, w] of SAYS) if (re.test(line)) said.push(`${w}: ${line.trim().slice(0, 90)}`);
+      // HOME-7: the four tabs are See all under this week's five (/dashboard?moves=all), not Home's first look
+      if (width === 1440 && deck) {
+        await page.goto(APP + "/app/dashboard?moves=all", { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
+        await page.waitForSelector('[data-testid^="moves-tab-"]', { timeout: 15000 }).catch(() => {});
+        r.stakes = await page.evaluate(() => { const o = {}; for (const b of document.querySelectorAll('[data-testid^="moves-tab-"]')) o[b.getAttribute("data-testid").slice(10)] = (b.querySelector(".moves-stake") || {}).textContent || ""; return o; });
+      }
       const where = `Home (${what}, ${width})`;
       ok(`§sweep1 ${where} draws its screen`, r.text.trim().length > 80, r.text.slice(0, 80));
       ok(`§sweep1 ${where} says nothing the bar names`, said.length === 0, said.slice(0, 4));
@@ -1791,7 +1797,7 @@ async function donorScreensSayNothingWrong(browser) {
     ok("§fix60 /app/events?eventId=<id> opens that event", !!evId && opened, { evId, url: page.url() });
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
     trouble = [];
-    await page.goto(`${APP}/dashboard`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(`${APP}/dashboard?moves=all`, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.locator('[data-testid="moves-chip-ladder"]').click({ timeout: 20000 }).catch(() => {});
     const draft = page.locator('[role=dialog] button', { hasText: /^Draft a / }).first();
     await draft.waitFor({ timeout: 15000 }).catch(() => {});

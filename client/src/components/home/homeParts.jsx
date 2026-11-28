@@ -31,6 +31,14 @@ export function HomeMoves(p) {
   const q = { ...p, reserve, onDeckHeight: rememberDeckHeight };
   return Now ? <Now {...q}/> : <HomeMovesLater {...q}/>;
 }
+// HOME-7: this week's five (home/WeekFive.jsx), in the deck's chunk, with the deck as its See all.
+const HomeWeekLater = lazy(() => startHomeCode().then(m => ({ default: m.HomeWeek })));
+export function HomeWeekView(p) {
+  const [Now] = useState(() => movesIn && movesIn.HomeWeek);
+  const [reserve] = useState(reservedDeckHeight);
+  const q = { ...p, deckProps: { reserve, onDeckHeight: rememberDeckHeight } };
+  return Now ? <Now {...q}/> : <HomeWeekLater {...q}/>;
+}
 // MOPUP-2: on a phone the stand-in is as tall as the deck it becomes (lib/movesGate.js).
 export const MovesWait = () => <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14,boxSizing:"border-box",minHeight:reservedDeckHeight()||undefined}}>Reading your donors…</section>;
 export const MOVES_WAIT = <MovesWait/>;

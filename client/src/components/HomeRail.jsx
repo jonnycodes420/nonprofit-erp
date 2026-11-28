@@ -27,17 +27,19 @@ export function useRailReads() {
   // PERF-3: what the boot has parked is drawn from the first frame (the rail
   // used to draw a second time, a long task after Home's first paint); what
   // it has not is read below as before.
-  const [first] = useState(() => ({ calls: takeParked("/home/calls"), goal: takeParked("/home/annual-goal"), owners: takeParked("/home/owners"), clock: takeParked("/thank-yous/clock"), mail: mailTypesNow() }));
+  const [first] = useState(() => ({ cards: takeParked("/home/cards"), calls: takeParked("/home/calls"), goal: takeParked("/home/annual-goal"), owners: takeParked("/home/owners"), clock: takeParked("/thank-yous/clock"), mail: mailTypesNow() }));
   const [calls, setCalls] = useState(first.calls === undefined ? undefined : first.calls || null);
   const [goal, setGoal] = useState(first.goal === undefined ? undefined : first.goal && first.goal.goal ? first.goal.goal : null);
   const [clock, setClock] = useState(first.clock === undefined ? undefined : first.clock || null);
   const [mail, setMail] = useState(first.mail);
   const [owners, setOwners] = useState(first.owners === undefined ? undefined : first.owners || null);   // SWEEP-1
+  const [cards, setCards] = useState(first.cards === undefined ? undefined : first.cards || null);   // HOME-7: the panel, the cards and the rail
   useEffect(() => {
     let alive = true;
     const loadClock = () => apiFetch("/thank-yous/clock").then(r => { if (alive) setClock(r || null); }).catch(() => { if (alive) setClock(null); });
     if (first.calls === undefined) apiFetch("/home/calls").then(r => { if (alive) setCalls(r || null); }).catch(() => { if (alive) setCalls(null); });
     if (first.goal === undefined) apiFetch("/home/annual-goal").then(r => { if (alive) setGoal(r && r.goal ? r.goal : null); }).catch(() => { if (alive) setGoal(null); });
+    if (first.cards === undefined) apiFetch("/home/cards").then(r => { if (alive) setCards(r || null); }).catch(() => { if (alive) setCards(null); });
     if (first.owners === undefined) apiFetch("/home/owners").then(r => { if (alive) setOwners(r || null); }).catch(() => { if (alive) setOwners(null); });
     if (first.clock === undefined) loadClock();
     if (!first.mail) Promise.resolve(reloadMailTypes()).finally(() => { if (alive) setMail(true); });
@@ -45,7 +47,9 @@ export function useRailReads() {
     window.addEventListener("steward:capture-changed", loadClock);
     return () => { alive = false; window.removeEventListener("steward:capture-changed", loadClock); };
   }, []);
-  return { calls, goal, clock, owners, ready: calls !== undefined && goal !== undefined && clock !== undefined && owners !== undefined && mail };
+  // HOME-7: a write anywhere re-reads the cards (FRESH-4's rule: a read after a write is never older than it).
+  useEffect(() => { const on = () => apiFetch("/home/cards").then(r => setCards(r || null)).catch(() => {}); window.addEventListener("steward:home-cards", on); return () => window.removeEventListener("steward:home-cards", on); }, []);
+  return { calls, goal, clock, owners, cards, ready: calls !== undefined && goal !== undefined && clock !== undefined && owners !== undefined && cards !== undefined && mail };
 }
 
 // SWEEP-1 · nobody owns a donor yet (every import starts that way): her 25
@@ -68,10 +72,10 @@ export function OwnersCard({ owners, onNavigate }) {
     catch (e) { setMsg(e.message || "That didn't work. Nothing was changed."); }
     finally { setBusy(false); }
   };
-  const n = owners.top, all = owners.unowned;
+  const n = owners.top;
   return (
     <div data-testid="home-owners" style={card}>
-      <div style={eyebrow}>Owners</div>
+      <div style={eyebrow}>Your givers</div>
       {done ? <>
         <div data-testid="home-owners-done" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
           Your {done.n === 1 ? "largest giver is" : `${done.n.toLocaleString("en-US")} largest givers are`} yours now. {mail && mail.on ? "Home, the calls and your morning email start with them." : "Home and the calls start with them."}</div>
@@ -80,8 +84,9 @@ export function OwnersCard({ owners, onNavigate }) {
           <button type="button" style={link} onClick={() => onNavigate && onNavigate("donors")}>Choose owners for the rest</button>
         </div>
       </> : <>
+        {/* HOME-7: the offer, without the count of everyone nobody owns */}
         <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
-          {all.toLocaleString("en-US")} {all === 1 ? "giver has" : "givers have"} no owner yet. Take your {n === 1 ? "largest one" : `${n.toLocaleString("en-US")} largest`} yourself, and Home starts with them.</div>
+          Take your {n === 1 ? "largest giver" : `${n.toLocaleString("en-US")} largest givers`} as your own, and your five start with them.</div>
         <button type="button" data-testid="home-owners-assign" style={{ ...link, marginTop: 8 }} disabled={busy} onClick={go}>
           {n === 1 ? "Make them mine" : `Make my top ${n.toLocaleString("en-US")} mine`}</button>
       </>}

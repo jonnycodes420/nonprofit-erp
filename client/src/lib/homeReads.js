@@ -16,7 +16,8 @@ export const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/jou
 // Home, and never starts a read of its own after Home has painted.
 export const RAIL_READS=["/org/setup-status","/tasks/counts?scope=mine","/threads?scope=mine","/recurring/health",
   "/home/calls","/home/annual-goal","/thank-yous/clock","/mail-types","/mail-types/status","/donors/birthdays-near",
-  "/mailbox","/calendar/today","/calendar/to-log","/home/owners"];   // SWEEP-1: the owners card
+  "/mailbox","/calendar/today","/calendar/to-log","/home/owners",   // SWEEP-1: the owners card
+  "/home/cards"];   // HOME-7: the panel, the two cards and the rail (server/reports/homeCards.js)
 // (HOME-4: the board's two breakdowns are not among them; Home reads them when a panel opens.)
 export const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
   `/dashboard/home?scope=${scope}`,"/thank-yous"];
@@ -45,7 +46,7 @@ export const bundlePath=paths=>"/home/bundle?"+paths.map(p=>"p="+encodeURICompon
 // bundle that names it, as api.js prefetch drops a read already asked for.
 export function bootBundles(home){
   const lists=[BOOT_READS,home?[...SHELL_READS,"/atlas/notes?place=home"]:SHELL_READS];
-  if(home) lists.push(["/insights?view=deck"],RAIL_READS,[...HOME_FIRST_READS,...HOME_SCOPED_FIRST]);
+  if(home) lists.push(["/home/five"],RAIL_READS,[...HOME_FIRST_READS,...HOME_SCOPED_FIRST]);
   const asked=new Set();
   return lists.map(l=>[...new Set(l)].filter(p=>!asked.has(p)&&asked.add(p)));
 }

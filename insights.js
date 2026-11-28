@@ -1110,7 +1110,8 @@ function buildDeck(cards) {
         name: it.name, lead: it.lead, ids: it.ids, cents: it.cents, value: c.kind === "planned" ? -1 : it.cents, n: order++,
         what: it.what || "", why: c.words.why, say: how.say || null, who: how.who || null, channel: how.channel || null,
         when: how.when ? how.when.words : null, whenFrom: how.when ? how.when.from : null,
-        ask: how.ask ? { words: how.ask.words, rule: how.ask.rule } : null,
+        // HOME-7: the ask in cents (a range's top), so the week's five can rank a major move by its ask
+        ask: how.ask ? { words: how.ask.words, rule: how.ask.rule, cents: how.ask.cents != null ? how.ask.cents : (Array.isArray(how.ask.range) ? how.ask.range[1] : null) } : null,
         // FLOWS-6 (W-1110-Donors-03X): the button's one-line why (server/insights/actionWhy.js)
         action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind, why: ACTION_WHY.actionWhy(c.kind, act, it) },
         group: { kind: c.kind, title: c.title, count: c.items.length, cents: c.cents },

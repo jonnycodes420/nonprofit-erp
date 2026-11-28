@@ -274,7 +274,8 @@ const DECK_SIZES = [0, 1, 8], DECK_SIZE_RUNS = 3, DECK_SIZE_HOLD_MS = 6000;
 // failure lets the request through unchanged, so the leg measures, never crashes.
 const settled = h => async r => { try { await h(r); } catch { await r.fallback().catch(() => {}); } };
 async function lateMovesDeck(page, ms = 1300) {
-  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), settled(async r => {
+  // HOME-7: Home's first read is this week's five (/home/five); the deck is its See all
+  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck|\/home\/five/.test(decodeURIComponent(u.href)), settled(async r => {
     await new Promise(x => setTimeout(x, ms));
     await r.continue();
   }));
@@ -286,6 +287,7 @@ async function lateMovesDeck(page, ms = 1300) {
 // than a short deck, and what sat under it jumped up once when the deck landed.
 async function deckOf(page, n, holdMs = 0) {
   const cut = b => {
+    if (b && Array.isArray(b.open)) { b.open = b.open.slice(0, n); b.done = []; b.allDone = false; }   // HOME-7: this week's five
     const d = b && b.deck;
     if (!d || !Array.isArray(d.tabs)) return b;
     let left = n;
@@ -295,16 +297,18 @@ async function deckOf(page, n, holdMs = 0) {
       return { ...t, count: k, carried: k, moves: (t.moves || []).slice(0, k) };
     });
     if (d.seen) d.seen = d.seen.slice(0, n);
+    // HOME-7: the five hold at most n people too (a new org's five is none)
+    if (b && Array.isArray(b.open)) { b.open = b.open.slice(0, n); b.done = []; b.allDone = false; }
     // a new org's deck: nobody drifting yet, so the deck is as short as it gets
     if (d.drift) d.drift = { ...d.drift, count: 0, people: [] };
     return b;
   };
-  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), settled(async r => {
+  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck|\/home\/five/.test(decodeURIComponent(u.href)), settled(async r => {
     // held here, not by lateMovesDeck: its continue() would skip this rewrite
     const [res] = await Promise.all([r.fetch(), new Promise(x => setTimeout(x, holdMs))]);
     const j = await res.json();
     // alone, or inside the boot bundle (GET /home/bundle?p=/insights?view=deck)
-    for (const k of Object.keys(j)) if (/^\/insights\?view=deck/.test(k) && j[k] && j[k].body) cut(j[k].body);
+    for (const k of Object.keys(j)) if (/^\/insights\?view=deck|^\/home\/five/.test(k) && j[k] && j[k].body) cut(j[k].body);
     await r.fulfill({ response: res, body: JSON.stringify(cut(j)) });
   }));
   await page.route(u => u.href.startsWith(BASE + "/org") && new URL(u.href).pathname === "/org", settled(async r => {

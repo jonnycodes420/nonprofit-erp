@@ -39,6 +39,7 @@ const HOME_READS = new Set([
   "/org", "/grants", "/volunteers", "/tasks", "/board", "/financials", "/billing/status",
   // HARDEN-2: Home's ladder and cards (INSIGHTS-1), asked for on its own at boot.
   "/insights",
+  "/home/five", "/home/cards",   // HOME-7: this week's five, and the panel, cards and rail (one read each)
   // HOME-4: the right rail's reads (client/src/lib/homeReads.js RAIL_READS), in their own bundle.
   "/mail-types", "/mail-types/status",
   // PERF-4: the other main pages' first reads (client/src/lib/pageReads.js

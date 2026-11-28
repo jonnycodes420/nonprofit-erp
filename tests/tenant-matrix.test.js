@@ -473,6 +473,7 @@ function bResolver(routePath, param) {
   // rather than by the segment, or the delivery probe would aim an endpoint id
   // at it and 404 for the wrong reason.
   if (seg1 === "calendar" && param === "id") return `cal_${B}`;
+  if (seg1 === "home" && routePath.startsWith("/home/five/") && param === "id") return `wf_${B}`;   // HOME-7: a row of org B's week's five
   if (seg1 === "donors" && routePath.includes("/list-views/") && param === "id") return `lv_${B}`;   // LIST-1
   if (seg1 === "me" && routePath.includes("/sessions/") && param === "id") return `ses_${B}`;
   // ONBOARD-1 — two kinds of row under /setup: a run and a prepared invitation.

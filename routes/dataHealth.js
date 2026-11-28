@@ -137,6 +137,7 @@ const NOT_MOVED = {
   "asset_pointer_history.entity_id": "a log of photo and file pointer changes as they happened; history is never rewritten",
   "api_call_log.entity_id": "a log of public API calls as they were made; history is never rewritten",
   "insight_outcomes.donor_ids": "INSIGHTS-1: who a suggestion was about when she marked it Done, Not now or Doesn't fit; a record of what happened, never rewritten",
+  "home_week_five.donor_id": "HOME-7: who was in one user's five for one week, kept so the week reads the same; a merged person's row stays a record of that week (next week's five reads the merged person)",
   "insight_shown.donor_ids": "INSIGHTS-1: who a suggestion showed when it was first shown, for What worked; a record of what happened, never rewritten",
   "events_outbox.donor_ids": "JOBS-1: who a change was about when it happened, for the handlers that follow it (they run within moments and the rows go after a week); a record of what happened, never rewritten",
   "name_fixes.donor_id": "IMPORT-5: the record a comma-couple fix renamed, for its Undo; a record of what that click did, never moved",

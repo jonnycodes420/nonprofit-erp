@@ -68,7 +68,7 @@ const HOME_SHAPE_MS = 800;
 export function homeShape() {
   if (!deckCode) return null;
   return Promise.race([
-    Promise.all([deckCode, landed("/insights?view=deck"), landed("/home/lead")]),
+    Promise.all([deckCode, landed("/home/five"), landed("/home/lead")]),   // HOME-7: the five set the first look's shape
     new Promise(r => setTimeout(r, HOME_SHAPE_MS)),
   ]);
 }

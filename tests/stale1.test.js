@@ -228,7 +228,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
   });
 
   // ── §5 · A PLEDGE PAYMENT ──────────────────────────────────────────────────
-  await open(`/dashboard`);
+  await open(`/dashboard?moves=all`);
   await noReload("§5", async () => {
     await page.locator('[data-testid="home-moves"]').first().waitFor({ timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(800);

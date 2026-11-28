@@ -191,7 +191,7 @@ const short = iso => `${MON[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}`;
     });
 
     await step("§7 §8", async () => {
-      await page.goto(`${APP}/dashboard`, { waitUntil: "networkidle", timeout: 60000 });
+      await page.goto(`${APP}/dashboard?moves=all`, { waitUntil: "networkidle", timeout: 60000 });
       const card = page.locator('[data-testid="move-card"]').first();
       await card.waitFor({ timeout: 20000 });
       const tips = [];

@@ -33,6 +33,7 @@ const FirstWin = lazy(() => import("./onboarding/FirstWin"));   // ONBOARD-3: th
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
+import * as HW from "./home/homeWeek";   // HOME-7: the panel, the cards and the rail
 import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
 // FLOWS-7: the words for the server's pace states (shared/numbers/pace.js PACE_LABELS).
 const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Short of pace":s==="ended"?"Ended":"In progress";   // DEFINE-1: ended is a result, not a pace   // HOME-5: Home never says "behind"
@@ -221,6 +222,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // MOPUP-3: a phone holds what sits under the deck too, when the deck is known to be empty (lib/movesGate.js).
   const [phoneHold]=useState(()=>!homeWide&&deckKnownEmpty());
   const [movesSettled,onMovesSettled]=useMovesGate(homeWide||phoneHold);
+  const [weekData,setWeekData]=useState(null);   // HOME-7: this week's five (its drift and planned lists feed the panel and cards)
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
     const mq=window.matchMedia("(min-width:1100px)"); const on=()=>setHomeWide(mq.matches);
@@ -1262,6 +1264,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       {key:"birthdays",n:birthdaysThisWeek.length,one:"birthday this week",many:"birthdays this week",
        definition:"People on file whose birthday is today or in the six days after it.",onOpen:()=>setRailView({kind:"list",key:"birthdays"})},
     ];
+    // HOME-7: Today, Year-end so far, Thank-yous, Retention, Your givers, Connections (home/HomeCards.jsx).
+    if(surface==="home"&&!editMode&&railReads.cards) return (
+      <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}>
+        {setupWhere==="rail"&&<SetupRailCard status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>}
+        {HW.homeRailMain({ railReads, OwnersCard, onNavigate, openProfile, isAdmin, isReadOnly })}
+        <HomeMailLine onNavigate={onNavigate}/>
+      </div>
+    );
     return (
       <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}>
         {setupWhere==="rail"&&<SetupRailCard status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>}
@@ -1319,7 +1329,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // and only on a wide screen: on a phone, holding the rail cost 150 ms of its
   // 3.58 s budget (perf-app), so a phone draws as before.
   const holdUnderDeck=surface==="home"&&!editMode&&!movesSettled&&!scopedHome;   // ACCESS-3: no deck is drawn for them, so nothing waits on one
-  const homeHead=FL.homeHead({ scoped:scopedHome, onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
+  const homeHead=FL.homeHead({ scoped:scopedHome, onMovesSettled, onWeekData:setWeekData, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
   return(
     <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
       {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
@@ -1371,14 +1381,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const cardsBlock=HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal });
       // BUILD-89 — the shell owns the two columns now (see ONE PANEL above),
       // so the stack renders straight into it.
-      return holdUnderDeck?null:cardsBlock;
+      // HOME-7: Home's work is the five (in the header), the panel and the cards; the old stack stays the board's.
+      if(holdUnderDeck) return null;
+      return surface==="home"&&!editMode&&!scopedHome?HW.homeWork({ auth, today:railReads.cards&&railReads.cards.today||null, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }):cardsBlock;
       })()}
       </div>{/* /home-shell-main */}
       {surface==="home"&&todayRail}
       </div>{/* /home-shell-top */}
       {/* FIX-3 A (finding 1) — the lower half runs the full width of the
           panel, below the Thread and the rail (see sectionStack). */}
-      {!holdUnderDeck&&HL.homeLower({ editMode, homeCrossoverCard, sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
+      {!holdUnderDeck&&HL.homeLower({ editMode, homeCrossoverCard, sectionStack:surface==="home"&&!editMode&&!scopedHome?null:sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
       </div>{/* /home-shell */}
       </div>{/* /dash-col */}
 

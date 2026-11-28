@@ -213,14 +213,14 @@ async function seed() {
   await leg("§1 follow-ups", async () => {
     await page.goto(APP + "/dashboard", { waitUntil: "load" });
     await page.waitForSelector('[data-testid="home-rail"][data-ready="1"]', { timeout: 30000 });
-    const btn = page.locator('[data-testid="home-today-followups"]');
+    const btn = page.locator('[data-testid="panel-thread-all"]');   // HOME-7: the Thread tab's See all
     const label = (await btn.innerText()).trim();
     await btn.click();
     await page.waitForFunction(() => { const l = document.querySelector('[data-testid="rail-list"]'); return l && Number(l.getAttribute("data-rows")) >= 13; }, null, { timeout: 15000 }).catch(() => {});
     const rows = Number(await page.locator('[data-testid="rail-list"]').getAttribute("data-rows").catch(() => 0));
     const rail = await page.locator(".home-rail").innerText();
     // SENDS-1: Home names what it counts, "people to follow up", never read as the Tasks badge.
-    ok("§1 \"13 people with a next step\" opens a list of 13 under \"People with a next step · 13\"", label === "13 people with a next step" && rows === 13 && /People with a next step · 13/.test(rail), { label, rows, rail: rail.slice(0, 80) });
+    ok("§1 \"See all 13 in the Thread\" opens a list of 13 under \"People with a next step · 13\"", label === "See all 13 in the Thread" && rows === 13 && /People with a next step · 13/.test(rail), { label, rows, rail: rail.slice(0, 80) });
     await page.locator(".home-rail .home-rail-row").first().click();
     await page.waitForURL(/\/donors\//, { timeout: 15000 }).catch(() => {});
     ok("§1 a name in that list opens the person", /\/donors\/d_fl2_t/.test(page.url()), page.url());

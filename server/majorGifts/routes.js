@@ -677,7 +677,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
 
   // ONE BATCH OF READS, not a query per tile (the BUILD-54 §1 pattern). Every
   // figure below is summed in the database over exactly the rows it names.
-  const [pipeline, dueQ, askedY, committedY, convs, backlog, officers, counts] = await Promise.all([
+  const [pipeline, dueQ, askedY, committedY, convs, backlog, officers, counts, askPeople] = await Promise.all([
     // Pipeline by stage, over the whole org's open proposals.
     query(`SELECT o.proposal_stage AS stage, COUNT(*)::int AS n, COALESCE(SUM(o.target_amount),0) AS amt,
                   COALESCE(SUM(CASE WHEN o.probability IS NOT NULL
@@ -722,6 +722,9 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
     query("SELECT COUNT(*)::int AS n FROM users WHERE org_id=?", [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
             WHERE o.org_id=? AND d.deleted_at IS NULL`, [orgId]),
+    // HOME-7: how many people the open asks are with (Home's Major gifts card reads this tile)
+    query(`SELECT COUNT(DISTINCT o.donor_id)::int AS n FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+            WHERE o.org_id=? AND d.deleted_at IS NULL AND o.proposal_stage = ANY(?::text[])`, [orgId, P.OPEN_STAGE_KEYS]),
   ]);
 
   const byStage = P.PROPOSAL_STAGES.map(s => {
@@ -754,7 +757,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
     empty: MG.emptySentence({ proposalCount: counts[0].n, officerCount: officers[0].n }),
     byStage,
     tiles: {
-      pipeline: { ...tile("pipeline", openCents), amount: toDollars(openCents), count: openCount },
+      pipeline: { ...tile("pipeline", openCents), amount: toDollars(openCents), count: openCount, people: askPeople[0].n },
       weighted: { ...tile("weighted", weightedCents), amount: toDollars(weightedCents), counted: withProb,
                   unset: openCount - withProb,
                   sentence: P.weightedSentence({ cents: weightedCents, counted: withProb, unset: openCount - withProb,

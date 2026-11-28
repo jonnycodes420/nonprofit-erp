@@ -30,6 +30,10 @@ export const HOME_GRID_CSS = `
 .home-shell .moves-card { border-radius: var(--h-radius); padding: var(--h-4); }
 .home-shell .moves-tab { border-radius: var(--h-radius); }
 .home-shell [data-testid="home-today"], .home-shell [data-testid="home-to-confirm"], .home-shell [data-testid="home-owners"] { border-radius: var(--h-radius); padding: var(--h-pad-tight); }
+/* HOME-7: on a phone the rail comes last: greeting, the five, the panel, the two cards, then the rail (it was first, order -1) */
+.home-shell .home-rail { order: 0; }
+/* HOME-7: two cards side by side (Major gifts and Planned giving; Recent gifts and Drift), one column on a phone */
+.home-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--h-4); align-items: start; }
 @media (min-width: 1100px) {
   .home-shell-top { display: grid; grid-template-columns: minmax(0, 7fr) minmax(300px, 3fr); align-items: stretch; }
   .home-rail { width: auto; }
