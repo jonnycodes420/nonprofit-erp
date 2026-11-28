@@ -1330,7 +1330,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
     const label = providerLabel(s.provider) || s.display_name;
     const line = a.status === "broken"
       ? `${label} stopped working. ${a.sentence}`
-      : quietSentence({ label, silentDays: a.silentDays, rhythm: a.rhythm });
+      : quietSentence({ label, silentDays: a.silentDays, rhythm: a.rhythm, lastDate: last, stored: true });   // HONEST-4 item 6: a task keeps a date, not a count
 
     // The next step, as a task for whoever runs this office.
     const [admin] = await query(

@@ -888,6 +888,10 @@ async function statusCheckOnce() {
     else if ((r.unrecordedCharges || 0) > 0) put("stripe", "degraded", "A charge reached Stripe without a gift; it is being looked at.");
     else put("stripe", "up");
   }
+  // HONEST-4 item 1 (W-1128-Integrations-N4): the Stripe and giving-source lines say Working only over
+  // real activity in a real org, and each states its last real gift read (server/connections/proof.js).
+  const PF = require("../connections/proof");
+  const realAct = await PF.platformActivity(query).catch(() => null);
   const lastTick = async name => (await query(`SELECT ok, COALESCE(finished_at, started_at) AS at FROM tick_log WHERE name=? ORDER BY started_at DESC LIMIT 1`, [name]).catch(() => []))[0] || null;
   {
     const t = await lastTick("processGivingSources");
@@ -898,6 +902,10 @@ async function statusCheckOnce() {
     // healthy deploy as degraded on the public page (found on prod, TRUST-2).
     else if (Date.now() - new Date(t.at).getTime() > 13 * 3600e3) put("connections", "degraded", "The sync is overdue.");
     else put("connections", "up");
+  }
+  for (const r of results) {
+    if (r.service === "stripe") Object.assign(r, PF.publicLine(r, realAct && realAct.stripe, { noun: "Stripe" }));
+    if (r.service === "connections") Object.assign(r, PF.publicLine(r, realAct && realAct.sources, { noun: "giving-source" }));
   }
   {
     if (!process.env.RESEND_API_KEY) put("email", "down", "Email is not configured.");
