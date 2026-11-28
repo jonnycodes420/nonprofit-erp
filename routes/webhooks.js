@@ -2178,12 +2178,16 @@ sharedRecordUnsubscribe = recordUnsubscribe;
 // So: GET RENDERS. It says which organisation it is about (a person on four
 // nonprofits' lists cannot answer "unsubscribe from what?"), and it carries
 // ONE button that POSTs. Three states, one page.
-function unsubscribeHtml({ ok, email, orgName, token, done, staff }) {
+function unsubscribeHtml({ ok, email, orgName, token, done, staff, report }) {
   // STAFF-MAIL-2: `staff` is true (the morning email) or "weekly".
   const which = staff === "weekly" ? "weekly email" : "morning email";
   const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const who = orgName ? `<strong>${esc(orgName)}</strong>` : "this organization";
-  const message = ok && staff
+  const message = ok && staff === "report"
+    ? (done ? `<h1>${esc(report)} is stopped</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}will not be sent ${esc(report)} on this schedule any more. Nothing else changes.</p>`
+      : `<h1>Stop getting ${esc(report)}?</h1><p>${email ? `<strong>${esc(email)}</strong> ` : "You "}will stop getting ${esc(report)} on this schedule. Nothing else changes.</p>
+         <form method="POST" action="/unsubscribe?token=${encodeURIComponent(token || "")}"><button type="submit" class="go">Stop it</button></form>`)
+    : ok && staff
     ? (done
       ? `<h1>The ${which} is off</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}will not get the ${which} any more. Turn it back on in Settings, under Your email.</p>`
       : `<h1>Stop the ${which}?</h1>
@@ -2244,6 +2248,7 @@ async function unsubscribeOrgName(orgId) {
   const [o] = await query("SELECT name FROM orgs WHERE id = ?", [orgId]).catch(() => []);
   return await donorFacingOrgName(orgId, o?.name || "").catch(() => o?.name || "") || o?.name || "";
 }
+const reportUnsub = (decoded, post) => require("./crm").reportHooks.scheduleUnsubscribe(decoded, { post });   // REPORTS-6
 app = routers.r1;
 
 // GET RENDERS AND CHANGES NOTHING (BUILD-94 Part 4). One click, on the page,
@@ -2253,6 +2258,8 @@ app.get("/unsubscribe", wrap(async (req, res) => {
   res.set("Content-Type", "text/html");
   if (!decoded) return res.status(400).send(unsubscribeHtml({ ok: false }));
   if (decoded.staff === "morning_brief" || decoded.staff === "weekly") return res.send(unsubscribeHtml({ ok: true, staff: decoded.staff === "weekly" ? "weekly" : true, email: decoded.email, token: req.query.token, done: false }));
+  // REPORTS-6: a scheduled report's own link names the report and writes nothing here.
+  if (decoded.staff === "report_schedule") { const r = await reportUnsub(decoded, false); return res.status(r.ok ? 200 : 400).send(unsubscribeHtml(r.ok ? { ok: true, staff: "report", report: r.title, email: decoded.email, token: req.query.token, done: false } : { ok: false })); }
   const orgName = await unsubscribeOrgName(decoded.orgId);
   res.send(unsubscribeHtml({ ok: true, email: decoded.email, orgName, token: req.query.token, done: false }));
 }));
@@ -2263,6 +2270,13 @@ app.get("/unsubscribe", wrap(async (req, res) => {
 app.post("/unsubscribe", wrap(async (req, res) => {
   const decoded = verifyUnsubscribeToken(req.query.token);
   if (!decoded) return res.status(400).end();
+  // REPORTS-6 · a scheduled report's link: that one schedule, for that one address.
+  if (decoded.staff === "report_schedule") {
+    const r = await reportUnsub(decoded, true);
+    if (!/text\/html/.test(String(req.headers.accept || ""))) return res.status(r.ok ? 200 : 400).end();
+    res.set("Content-Type", "text/html");
+    return res.send(unsubscribeHtml(r.ok ? { ok: true, staff: "report", report: r.title, email: decoded.email, done: true } : { ok: false }));
+  }
   // STAFF-MAIL-2 · the weekly email's link: that one setting, nothing else.
   if (decoded.staff === "weekly") {
     await run("UPDATE users SET notify_weekly=false WHERE id=? AND org_id=?", [String(decoded.userId || ""), decoded.orgId]);

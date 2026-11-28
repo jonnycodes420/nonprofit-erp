@@ -842,6 +842,9 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
 // Handed out here rather than exported from module scope, where it does not
 // exist: everything in this file is declared inside mount().
 reportHooks.runBoardPackSchedule = runBoardPackScheduleForOrg;
+// REPORTS-6: the same PDF, attached by a schedule to named people (server/reports/reportSchedules.js).
+reportHooks.renderBoardPackPdf = renderBoardPackPdf;
+reportHooks.boardPackFilename = boardPackFilename;
 }
 
 module.exports = { routers, mount };

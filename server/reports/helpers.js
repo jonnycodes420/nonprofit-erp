@@ -1016,6 +1016,7 @@ reportHooks.yearWindows = async orgId => {
   return { cur: reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior: reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth), year: p.year };
 };
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
+reportHooks.handlerKeys = Object.keys(REPORT_HANDLERS);   // REPORTS-6: the tab reports a "do something" may name
 return { GOAL_CATEGORIES, composeBoardPack, computeDashboard, computeFundraisingPace, paceWithCommitment, fundraisingCampaignRows, fundraisingGoalsPortfolio, goalFigureRow, goalCard, savedDashboardFor };
 }
 

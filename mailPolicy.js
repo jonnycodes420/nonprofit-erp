@@ -76,6 +76,7 @@ const KIND_CATEGORY = {
   meeting_brief: "staff", staff_notice: "staff", staff_alert: "staff",
   task_notice: "staff", gift_alert: "staff", workflow_staff: "staff", board_pack: "staff",
   campaign_test: "staff",
+  report_schedule: "staff",   // REPORTS-6: a scheduled report, as a PDF, to the people an admin named
   // account and security
   password_reset: "account", magic_link: "account", two_factor: "account",
   team_invite: "account", email_change: "account", account: "account",

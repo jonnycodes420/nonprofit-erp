@@ -25,6 +25,7 @@ import { Figure, FigureContext } from "./Figure";
 import { DonorLink } from "./RecordLink";
 // PERF-2: Home draws GoalRow too (CallsToMake), so it lives on its own and Home does not load the dashboards.
 import { GoalRow } from "./GoalRow";
+import { ScheduleButton } from "./reports/ScheduleDialog";   // REPORTS-6 item 3: the deck, on a schedule
 
 // FIX-60 · "0 ? grants". A count in the Board's answer is followed by a text
 // part that starts with its noun; the noun moves into the figure's `unit`, so
@@ -422,6 +423,20 @@ export function Dashboards({ data, onNavigate, dashKey }) {
     document.body.appendChild(a); a.click(); a.remove();
   }
 
+  // REPORTS-6 item 3 · THE BOARD DECK IN ONE CLICK: 16:9, one figure a page, footing to this view.
+  const [deckBusy, setDeckBusy] = useState(false);
+  async function makeDeck() {
+    setDeckBusy(true);
+    try {
+      const r = await fetch(`${API}/board-deck/pdf`, { headers: { Authorization: "Bearer " + localStorage.getItem("npe_token") } });
+      if (!r.ok) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await r.blob());
+      a.download = `board-deck-${board?.asOf || "today"}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+    } finally { setDeckBusy(false); }
+  }
+
   const asOf = board ? (board.asOfLabel || displayDate(board.asOf)) : "";
   return (
     <FigureContext.Provider value={{ openPerson }}>
@@ -467,6 +482,13 @@ export function Dashboards({ data, onNavigate, dashKey }) {
                        color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: board ? "pointer" : "not-allowed", flexShrink: 0 }}>
               Export PDF
             </button>
+            {key === "board" && <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+              <button type="button" data-testid="make-board-deck" onClick={makeDeck} disabled={!board || deckBusy}
+                style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: board ? "pointer" : "not-allowed" }}>
+                {deckBusy ? "Making the deck…" : "Make the board deck"}
+              </button>
+              <ScheduleButton target="board-deck" label="Send the deck on a schedule" />
+            </div>}
           </div>
 
           {loading && <div style={{ padding: 30 }}><Spin /></div>}

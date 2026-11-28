@@ -101,6 +101,7 @@ const BODY_EXEMPT = [
   [/^\/me(\/|$)/, "the caller's own account; the matrix §3 crosses its row-id paths"],
   [/^\/admin\//, "super-admin only (requireSuperAdmin, crossed by §2), all-org by design"],
   [/^\/ops(\/|$)/, "super-admin only, all-org by design"],
+  [/^\/your-dashboard\/tiles\/:key$/, "REPORTS-6: :key is a report's name from a fixed catalogue and the tile list is the caller's own (org, user); no org row is addressed"],
   [/^\/support\//, "SUPPORT-1: the help assistant and support sessions, no org rows addressed by id"],
   [/^\/mail-types\/:key$/, "a key from the fixed registry in mailTypes.js; turns a type on or off for the caller's own org, reads only `on` and `audience`"],
   [/^\/groups\/starters\/:key$/, "a key from a fixed starter registry; makes a group in the caller's own org from it, no ids read from the body"],

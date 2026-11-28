@@ -67,8 +67,10 @@ export const NEW_DASH_ID = "new-dashboard";
 export const STORED_REPORTS_ID = "board-files";
 // INSIGHTS-1: what happened after each kind of suggestion.
 export const WHAT_WORKED_ID = "what-worked";
+// REPORTS-6 item 4: the dashboard a new org opens Reports on (server/reports/yourDashboard.js).
+export const YOUR_DASH_ID = "your-dashboard";
 export const isDashboardGroupId = id =>
-  isDashboard(id) || isSavedDashboard(id) || id === BOARD_PACK_ID || id === NEW_DASH_ID || id === STORED_REPORTS_ID || id === WHAT_WORKED_ID;
+  isDashboard(id) || isSavedDashboard(id) || id === YOUR_DASH_ID || id === BOARD_PACK_ID || id === NEW_DASH_ID || id === STORED_REPORTS_ID || id === WHAT_WORKED_ID;
 
 export const RAIL_GROUPS = [
   { id: "dashboards", question: "Dashboards", items: [] },
@@ -121,7 +123,8 @@ export function railGroups(tabDefs = [], standard = [], saved = [], dashboards =
   return RAIL_GROUPS.map(g => ({
     ...g,
     items: g.id === "dashboards"
-      ? [...dashboards.map(d => ({ id: DASH_PREFIX + d.key, label: d.label, sub: null })),
+      ? [{ id: YOUR_DASH_ID, label: "Your dashboard", sub: null },
+         ...dashboards.map(d => ({ id: DASH_PREFIX + d.key, label: d.label, sub: null })),
          ...savedDashboards.map(d => ({ id: SDASH_PREFIX + d.id, label: d.name,
            sub: d.mine && !d.shared ? "just you" : (d.shared && !d.mine ? d.ownerName || "shared" : null) })),
          { id: BOARD_PACK_ID, label: "Board pack", sub: null },
@@ -136,6 +139,7 @@ export function railGroups(tabDefs = [], standard = [], saved = [], dashboards =
 
 // The label of any report id, for a heading.
 export function reportLabel(id, tabDefs = [], standard = [], saved = [], dashboards = [], savedDashboards = []) {
+  if (id === YOUR_DASH_ID) return "Your dashboard";
   if (id === BOARD_PACK_ID) return "Board pack";
   if (id === NEW_DASH_ID) return "New dashboard";
   if (id === STORED_REPORTS_ID) return "Past reports";

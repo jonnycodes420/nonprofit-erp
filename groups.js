@@ -618,6 +618,8 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // WIRE-1: every list can become a Group.
   "attendedEvent", "registeredEvent", "member", "memberLevel", "hasPledge", "recurring", "fundraiser", "gavePage",
   "auctionBidder", "funder", "inJourney", "openTask", "kind", "fromImport", "groupId",
+  // REPORTS-6: a group kept in step with a report: the report's people, as it reads now.
+  "report",
   // AGENT-3: grant reports due, memberships ending, auction winners.
   "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner",
   // GROUPS-2: the starters' rules, each a definition that already exists.
@@ -642,6 +644,7 @@ function normalizeRules(raw) {
     if (v === undefined || v === null || v === "" || v === false) continue;
     // LIST-1: the list's filter is JSON, checked whole by donorList.parseWhere.
     if (k === "where") { rules.where = typeof v === "string" ? v : JSON.stringify(v); continue; }
+    if (k === "report") { const r = typeof v === "string" ? v : JSON.stringify(v); if (r.length <= 4000) rules.report = r; else errors.push("That report is too long to keep a group in step with."); continue; }
     rules[k] = String(v).trim().slice(0, 120);
   }
   if (rules.where) {
@@ -774,6 +777,7 @@ function rulesSentence(rules = {}) {
   if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);
   if (rules.volAnswer) parts.push("who gave one answer on their application");
   if (rules.volAvail) parts.push(`free on ${rules.volAvail}`);
+  if (rules.report) return `Everyone on the report ${require("./server/reports/reportPeople").ruleLabel(rules.report)}, as it reads now. Worked out fresh every time it is read.`;
   return parts.length ? `Everyone on file: ${parts.join(", ")}. Worked out fresh every time it is read.` : "";
 }
 
@@ -821,6 +825,11 @@ async function memberSql(orgId, group, depth = 0) {
     };
   }
   if (group.kind !== "dynamic") return NOBODY;
+  // REPORTS-6: kept in step with a report, so its members are the report's people now.
+  if (group.rules && group.rules.report) {
+    const ids = await require("./server/reports/reportPeople").idsForRule(orgId, group.rules.report);
+    return { sql: `SELECT donors.id FROM donors WHERE donors.org_id = ? AND donors.deleted_at IS NULL AND donors.archived_at IS NULL AND donors.id = ANY(?::text[])`, args: [orgId, ids] };
+  }
   const f = await buildDonorFilter(orgId, group.rules || {}, { depth, hideArchived: true });
   if (f.badRole || f.badStatus) return NOBODY;
   return { sql: `SELECT donors.id FROM donors WHERE ${f.whereSql}`, args: f.params };

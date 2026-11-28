@@ -339,6 +339,9 @@ the morning email unless the person turned on its own reminder, so no step goes 
   helpers return real success; `retryFailedNotifications` retries and `/health` surfaces the count. (BUILD-44)
 - **Log a send (`dunning_sent`, a sequence advance, `sent:true`) and stamp any "once" flag only after real
   delivery.** An outage must retry, not eat the only warning. (BUILD-58, BUILD-90)
+- **A scheduled report to named people is staff mail with its own Unsubscribe (REPORTS-6).** Kind `report_schedule`; its
+  link is a staff token on `/unsubscribe` (`staff: "report_schedule"`, the schedule and the address): GET and HEAD render
+  and write nothing, the POST stops that one schedule for that one address (`report_schedule_unsubs`). Nothing else changes.
 - **Staff mail (digests, gift alerts, task notices) carries `brandEmailHeaderHtml` and no unsubscribe footer;
   donor marketing carries both.** An all-zero digest shows a nudge or is suppressed, period still reserved. (BUILD-35, BUILD-36)
 - **One email per person per event: `notifyUserOnce` keys on (org, event_key, recipient) without channel;
