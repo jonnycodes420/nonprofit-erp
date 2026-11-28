@@ -89,10 +89,13 @@ function buildOrg({ seed, people: N, giftsPer = 3.2, startYear = 2019, endIso = 
   }
   // business and foundation donors (about 3%)
   const nBiz = Math.max(8, Math.round(N * 0.03));
+  const usedBiz = new Set();
   for (let i = 0; i < nBiz; i++) {
     // a real file's businesses have names of their own, never "Co 2", "Co 3"
     const TRADE = ["Plumbing LLC", "Family Foundation", "Insurance Agency", "Orchards", "Builders Inc", "Law Office", "Charitable Trust", "Auto Repair", "Dental Group"];
-    const name = i < BIZ.length ? BIZ[i] : `${LAST[(i * 7) % LAST.length]} ${TRADE[Math.floor(i / LAST.length) % TRADE.length]}${i >= LAST.length * TRADE.length ? ` of ${TOWNS[i % TOWNS.length][0]}` : ""}`;
+    let name = i < BIZ.length ? BIZ[i] : null;
+    for (let j = i; !name || usedBiz.has(name); j += 13) name = `${LAST[(j * 7) % LAST.length]} ${TRADE[Math.floor(j / LAST.length) % TRADE.length]}`;
+    usedBiz.add(name);
     const p = newPerson("", { first: "", kind: "org" });
     p.org = name; p.last = ""; p.email = `giving${p.pid}@${name.toLowerCase().replace(/[^a-z]+/g, "")}.example.com`; p.email2 = "";
     usedNames.delete(" ");

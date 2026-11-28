@@ -3696,7 +3696,7 @@ DONOR_ID,FIRST_NAME,LAST_NAME,ORG_REC,DONOR_TYPE,OPT_LINE,ADDRESS,CITY,STATE,ZIP
 23695,,Inchbald Family Foundation,Y,FD,,887 Church St,Cardew,NY,12801,giving3695@inchbaldfamilyfoundation.example.com,,802-555-3043,N,,,,01/15/2019
 23696,,Pemberton Family Foundation,Y,FD,,672 Orchard Ln,Lake Larkin,VT,05446,giving3696@pembertonfamilyfoundation.example.com,,802-555-2865,N,,,,01/15/2019
 23697,,Wexcombe Family Foundation,Y,FD,,581 Kingfisher Rd,North Hollis,NH,03049,giving3697@wexcombefamilyfoundation.example.com,,802-555-3431,N,,,,01/15/2019
-23698,,Foxcroft Family Foundation,Y,FD,,90 Linden Ct,Riverbend,VT,05401,giving3698@foxcroftfamilyfoundation.example.com,,802-555-8022,N,,,,01/15/2019
+23698,,Underhill Insurance Agency,Y,CO,,90 Linden Ct,Riverbend,VT,05401,giving3698@underhillinsuranceagency.example.com,,802-555-8022,N,,,,01/15/2019
 23699,,Nettlefold Family Foundation,Y,FD,,512 Mill St,Cardew,NY,12801,giving3699@nettlefoldfamilyfoundation.example.com,,802-555-7317,N,,,,01/15/2019
 23700,,Waverley Family Foundation,Y,FD,,981 Kingfisher Rd,Cardew,NY,12801,giving3700@waverleyfamilyfoundation.example.com,,802-555-8682,N,,,,01/15/2019
 23701,,Ashcombe Insurance Agency,Y,CO,,480 Maple Ave,Ashby Falls,VT,05403,giving3701@ashcombeinsuranceagency.example.com,,802-555-6142,N,,,,01/15/2019
@@ -3704,7 +3704,7 @@ DONOR_ID,FIRST_NAME,LAST_NAME,ORG_REC,DONOR_TYPE,OPT_LINE,ADDRESS,CITY,STATE,ZIP
 23703,,Ottershaw Insurance Agency,Y,CO,,544 Willow Bend,Lake Larkin,VT,05446,giving3703@ottershawinsuranceagency.example.com,,802-555-4330,N,,,,01/15/2019
 23704,,Vantongeren Insurance Agency,Y,CO,,314 Church St,Lake Larkin,VT,05446,giving3704@vantongereninsuranceagency.example.com,,802-555-8681,N,,,,01/15/2019
 23705,,Elmstead Insurance Agency,Y,CO,,421 Mill St,Ashby Falls,VT,05403,giving3705@elmsteadinsuranceagency.example.com,,802-555-8608,N,,,,01/15/2019
-23706,,Marchbank Insurance Agency,Y,CO,,212 Mill St,Cardew,NY,12801,giving3706@marchbankinsuranceagency.example.com,,802-555-3042,N,,,,01/15/2019
+23706,,Coldridge Insurance Agency,Y,CO,,212 Mill St,Cardew,NY,12801,giving3706@coldridgeinsuranceagency.example.com,,802-555-3042,N,,,,01/15/2019
 23707,,Upcott Insurance Agency,Y,CO,,599 Willow Bend,Riverbend,VT,05401,giving3707@upcottinsuranceagency.example.com,,802-555-8708,N,,,,01/15/2019
 23708,,Esterbrook Insurance Agency,Y,CO,,677 Orchard Ln,Cardew,NY,12801,giving3708@esterbrookinsuranceagency.example.com,,802-555-7329,N,,,,01/15/2019
 23709,Cressida,Hawksley,N,IN,,816 Harbor View Dr,Riverbend,VT,05401,cressida.hawksley6@example.org,,,N,,,Dear Cressida,01/15/2019
