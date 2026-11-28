@@ -687,12 +687,20 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
     `UPDATE bookkeeping_connections SET sync_lock_until = NOW() + INTERVAL '5 minutes'
       WHERE id=? AND org_id=? AND (sync_lock_until IS NULL OR sync_lock_until < NOW()) RETURNING id`, [conn.id, orgId]);
   if (!lease.length) return refuse("busy", "A sync is already running for this organisation. Steward did not start a second one; look again in a minute.");
+  // HONEST-4 item 2: three failed tries in a row pause the hourly auto-sync; a person's press clears it.
+  const PAUSE = require("./server/finance/qboPause");
+  const gate = await PAUSE.beforeRun({ query, run }, conn, who);
+  if (!gate.ok) {
+    await run(`UPDATE bookkeeping_connections SET sync_lock_until=NULL WHERE id=? AND org_id=?`, [conn.id, orgId]);
+    return refuse("paused", gate.paused.sentence);
+  }
 
   const ctx = { orgId, realmId: String(conn.realm_id), connId: conn.id, map, who,
                 token: conn.credentials_sealed && tokenFor ? force => tokenFor(conn, force) : null };
   const results = [];
   let remaining = 0;
   const [{ now: runNow }] = await query(`SELECT NOW() AS now`, []);
+  let threw = false;
   try {
     const since = startDateOf(conn, map);
     const wanted = all ? null : [...new Set(giftIds.map(String))].slice(0, 500);
@@ -783,7 +791,8 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
     } else {
       for (const g of pending) results.push(await syncSalesReceipt(ctx, g));
     }
-  } finally {
+  } catch (e) { threw = true; throw e; } finally {
+    await PAUSE.afterRun({ run }, conn, { results, threw }).catch(e => console.error("[qbo-pause]", e.message));
     const sentNow = results.some(r => r.status === "synced");
     const [left] = await query(
       `SELECT COUNT(*)::int AS n FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND realm_id=? AND status='failed'`, [orgId, VENDOR, ctx.realmId]);

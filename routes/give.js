@@ -3850,7 +3850,7 @@ app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
       `SELECT rs.id, rs.donor_id, rs.amount, rs.interval, rs.status, rs.fund_id,
               rs.failure_count, rs.first_failed_at, rs.last_failed_at, rs.dunning_step,
               rs.paused_at, rs.resume_at, rs.canceled_at, rs.recovered_at,
-              rs.created_at, rs.current_period_end,
+              rs.created_at, rs.current_period_end, rs.stripe_subscription_id, rs.card_brand, rs.card_last4,
               d.name AS donor_name, d.email AS donor_email,
               f.name AS fund_name,
               COALESCE(g.total, 0) AS total_given, COALESCE(g.cnt, 0)::int AS linked_gift_count
@@ -3877,6 +3877,8 @@ app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
   ]);
   const pendingBySub = {};
   for (const p of proposals) if (p.subscription_id) pendingBySub[p.subscription_id] = p;
+  const CL = require("../server/give/cardLine");   // HONEST-4 item 4: the card, and who last updated it
+  const cardUpd = await CL.latestUpdates(query, orgId, orgTime.orgTzSql("payment_recovery_events.org_id"));
   const rows = subs.map(s => {
     const pending = pendingBySub[s.id] || null;
     // Display precedence: canceled > past due > paused > pending donor
@@ -3898,6 +3900,7 @@ app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
       failureCount: s.failure_count, lastFailedAt: s.last_failed_at, dunningStep: s.dunning_step,
       pausedAt: s.paused_at, resumeAt: s.resume_at, canceledAt: s.canceled_at,
       pendingProposal: pending ? { id: pending.id, kind: pending.kind, expiresAt: pending.expires_at, resendCount: pending.resend_count } : null,
+      cardLine: CL.cardLineOf(s, s.stripe_subscription_id ? cardUpd[s.stripe_subscription_id] : null),
     };
   });
   const invitations = proposals.filter(p => !p.subscription_id).map(p => ({

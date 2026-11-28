@@ -199,6 +199,10 @@ const GUARDED_WRITERS = [
   // connection alerts on for each org's first admin. Dry run by default; --apply writes through
   // writerDbUrl, one audit row per org. org_creo skipped.
   "honest3-connection-alerts",
+  // HONEST-4: retitles open quiet-connection tasks to the day they went quiet, and marks status-page
+  // checks "unknown" where no real connection was measured. Dry run by default; --apply writes through
+  // writerDbUrl, one audit row per org. org_creo skipped.
+  "honest4-repair",
   // FLOWS-16: rewrites Atlas proposal lines that said "Saved 0 things." to "Nothing was saved.". Dry run by
   // default; --apply writes through writerDbUrl, one audit row per org. org_creo skipped.
   "flows16-saved-zero",
