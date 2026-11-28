@@ -576,16 +576,17 @@ function RecoveryPanel({ onNavigate }) {
     <div style={{ background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "14px 18px" }}>
       {/* PARITY-4 Part 1 · the cards that never failed, because the bank
           updated them. Both numbers open the same rows. */}
-      {au.count > 0 && (
+      {/* HONEST-4 item 4: shown every year, at nought too, so the updater's work is always on screen. */}
+      {au && (
         <FigureContext.Provider value={{ openPerson: id => onNavigate && onNavigate("donors", { selectDonorId: id }) }}>
           <div data-testid="cards-auto-updated" style={{ fontSize: 14, color: T.ink, lineHeight: 1.6, marginBottom: 12 }}>
-            Cards updated automatically this year{": "}
-            <Figure variant="inline" kind="count" value={au.count} label="Cards updated automatically" definition={au.definition}
+            Cards updated by the bank this year{": "}
+            <Figure variant="inline" kind="count" value={au.count} label="Cards updated by the bank" definition={au.definition}
               source={{ key: "cards-auto-updated", params: { since: au.since, measure: "count" } }} />
-            , keeping{" "}
+            {au.count > 0 && <>, keeping{" "}
             <Figure variant="inline" kind="money" value={au.monthly} label="Monthly giving kept by card updates" definition={au.definition}
               source={{ key: "cards-auto-updated", params: { since: au.since } }} />
-            {" "}a month of giving.
+            {" "}a month of giving</>}.
           </div>
         </FigureContext.Provider>
       )}
@@ -828,7 +829,9 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                     {money(s.amount)}<span style={{ color: T.ink3, fontWeight: 500 }}>{per(s.interval)}</span>
                   </td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{fundLabel(s.fundName)}</td>
-                  <td data-testid="rec-source" style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap" }}>{s.source === "offline" ? "Offline · recorded by staff" : "Card · Stripe"}</td>
+                  <td data-testid="rec-source" style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap" }}>{s.source === "offline" ? "Offline · recorded by staff" : "Card · Stripe"}
+                    {/* HONEST-4 item 4: the card, and when and by whom (the bank or the donor) it was last updated */}
+                    {s.cardLine && <div data-testid="rec-card-line" style={{ fontSize: 11.5, color: T.ink3, whiteSpace: "normal" }}>{s.cardLine.words}</div>}</td>
                   <td style={{ padding: "10px 10px" }} title={s.stateSentence || undefined}><StatusPill status={s.displayStatus} /></td>
                   <td data-testid="rec-next" style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" ? (s.canceledOn ? `Canceled ${fmtDate(s.canceledOn)}` : "Stopped") : s.displayStatus === "paused" ? "Paused" : fmtDate(s.nextChargeAt)}</td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{fmtDate(s.startedAt)}</td>

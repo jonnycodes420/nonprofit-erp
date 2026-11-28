@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API } from "../../api";
 import { track } from "../../lib/analyticsDoor";   // ANALYTICS-1: the /book funnel, never her answers
-import { SlotPicker, SlotFrame, DirectLine, SLOW_MS } from "../booking/slots";
+import { SlotFrame, DirectLine, SLOW_MS, DIRECT_WORDS, EMAIL_LINE } from "../booking/slots";
 import { BOOKING_URL } from "../booking/config";
 import { showTestimonial, CUSTOMER_QUOTE, FOUNDER_PHOTO } from "../booking/config";
 
@@ -29,6 +29,12 @@ const FINE = "You'll get a calendar invite and a reminder. Nothing else.";
 
 // "Book Tue, Dec 1 at 10:30 AM"
 const bookWords = (day, slot) => `Book ${day.dow}, ${day.mon} ${day.day} at ${slot.time} ${slot.ampm}`;
+// HONEST-4 item 7: when the times can't be read, the page says so at once, with the calendar's link.
+export const TIMES_FAILED = "Times didn't load.";
+function TimesFailed({ href }) {
+  return <p className="bk-none" role="status" data-book-failed>{TIMES_FAILED}{" "}
+    <a href={href} target="_blank" rel="noreferrer" data-book-failed-link>{DIRECT_WORDS}</a>. {EMAIL_LINE}</p>;
+}
 
 function Founder() {
   return <div className="bk-you">
@@ -41,9 +47,10 @@ function Founder() {
 function Card({ code }) {
   const [f, setF] = useState({ name: "", email: "", orgName: "", currentSystem: USING[0], website: "" });
   const [t, setT] = useState(null);
+  const [page, setPage] = useState(0);
   const [dayI, setDayI] = useState(0);
   const [slot, setSlot] = useState(null);
-  const [state, setState] = useState("idle");   // idle · sending · open (last click on the tool) · embed (the tool's calendar) · booked
+  const [state, setState] = useState("idle");   // idle · sending · open (last click on the tool) · link (no times: the calendar link) · booked
   const [open, setOpen] = useState("");
   const [err, setErr] = useState("");
   const set = k => e => setF({ ...f, [k]: e.target.value });
@@ -51,14 +58,17 @@ function Card({ code }) {
   const started = useRef(false);
   const startedOnce = () => { if (!started.current) { started.current = true; track("book_form_started", { has_partner: !!code }); } };
 
+  // HONEST-4 item 7: three weeks a page; "Later dates" asks for the next. No answer in 5 s, or no
+  // times to read, and the card says "Times didn't load" with the calendar's link: never a spinner.
   useEffect(() => {
     let alive = true;
-    fetch(API + "/public/book/times").then(r => (r.ok ? r.json() : { source: "embed" })).catch(() => ({ source: "embed" }))
-      .then(j => { if (!alive) return; setT(j); const first = (j.days || []).findIndex(d => d.slots.length); setDayI(first < 0 ? 0 : first); });
-    // HONEST-3 item 6: the button never sits on "Loading times…": after 5 s the card goes on without them.
-    const slow = setTimeout(() => { if (alive) setT(x => x || { source: "embed" }); }, SLOW_MS);
+    const failed = { source: "unavailable", link: BOOKING_URL };
+    setT(x => (x && x.source === "calendly" ? { ...x, loading: true } : x));
+    fetch(API + "/public/book/times?page=" + page).then(r => (r.ok ? r.json() : failed)).catch(() => failed)
+      .then(j => { if (!alive) return; setT(j); setSlot(null); const first = (j.days || []).findIndex(d => d.slots.length); setDayI(first < 0 ? 0 : first); });
+    const slow = setTimeout(() => { if (alive) setT(x => (x && !x.loading ? x : failed)); }, SLOW_MS);
     return () => { alive = false; clearTimeout(slow); };
-  }, []);
+  }, [page]);
 
   const live = !!t && t.source === "calendly";
   const day = live ? t.days[dayI] : null;
@@ -77,7 +87,7 @@ function Card({ code }) {
       track("book_submitted", { stage: d.booked ? "booked" : d.open ? "confirm" : "pick", has_partner: !!code });
       if (d.booked) setState("booked");
       else if (d.open) { setOpen(d.open); setState("open"); }
-      else setState("embed");
+      else setState("link");
     } catch (x) {
       setState("idle"); setErr((x && x.message) || BOOK_FALLBACK);
     }
@@ -88,10 +98,17 @@ function Card({ code }) {
     <p className="bk-sub">The calendar has sent you the invitation, and Jonathan will have read your answers before the call.</p>
     <p className="bk-fine">{FINE}</p>
   </div>;
-  if (state === "open" || state === "embed") return <div className="bk-card" data-book-card data-book-state={state}>
-    <h2 className="bk-h2">{state === "open" ? "One last click" : "Pick a time"}</h2>
-    <div className="bk-sub">{state === "open" ? "Confirm the time on the calendar below." : "All times Eastern · Google Meet"}</div>
-    {state === "open" ? <SlotFrame src={open} onBooked={booked} /> : <SlotPicker name={f.name.trim()} email={f.email.trim()} onBooked={booked} />}
+  if (state === "open") return <div className="bk-card" data-book-card data-book-state={state}>
+    <h2 className="bk-h2">One last click</h2>
+    <div className="bk-sub">Confirm the time on the calendar below.</div>
+    <SlotFrame src={open} onBooked={booked} />
+    <p className="bk-fine">{FINE}</p>
+  </div>;
+  // HONEST-4 item 7: without times the card never frames the calendar; it hands over the link.
+  if (state === "link") return <div className="bk-card" data-book-card data-book-state="link">
+    <h2 className="bk-h2">Thanks. Now pick a time</h2>
+    <div className="bk-sub">All times Eastern · Google Meet</div>
+    <TimesFailed href={(t && t.link) || BOOKING_URL} />
     <p className="bk-fine">{FINE}</p>
   </div>;
 
@@ -108,19 +125,24 @@ function Card({ code }) {
       <label htmlFor="book-system" className="bk-f">Using today<select id="book-system" name="currentSystem" value={f.currentSystem} onChange={set("currentSystem")}>{USING.map(u => <option key={u}>{u}</option>)}</select></label>
     </div>
     <label htmlFor="book-website" aria-hidden="true" style={{ position: "absolute", left: -10000, width: 1, height: 1, overflow: "hidden" }}>Website<input id="book-website" tabIndex={-1} autoComplete="off" name="website" value={f.website} onChange={set("website")} /></label>
+    {t && t.source !== "calendly" && <TimesFailed href={t.link || BOOKING_URL} />}
     {live && <>
-      <div className="bk-days" role="radiogroup" aria-label="Day">
-        {t.days.map((d, i) => <button type="button" key={d.date} role="radio" aria-checked={i === dayI} disabled={!d.slots.length} data-book-day={d.date}
-          className={i === dayI ? "on" : ""} onClick={() => { setDayI(i); setSlot(null); }}>{d.dow}<b>{d.day}</b>{d.mon}</button>)}
+      <div className="bk-days" role="radiogroup" aria-label="Day" data-book-page-n={t.page || 0}>
+        {t.days.map((d, i) => <button type="button" key={d.date} role="radio" aria-checked={i === dayI} data-book-day={d.date} data-open={d.slots.length}
+          className={i === dayI ? "on" : ""} style={d.slots.length ? undefined : { opacity: 0.55 }} onClick={() => { setDayI(i); setSlot(null); }}>{d.dow}<b>{d.day}</b>{d.mon}</button>)}
+      </div>
+      <div className="bk-pages" style={{ display: "flex", justifyContent: "space-between", margin: "4px 0 8px" }}>
+        {page > 0 ? <button type="button" className="bk-link" data-book-earlier onClick={() => setPage(p => p - 1)}>Earlier dates</button> : <span />}
+        {t.more && <button type="button" className="bk-link" data-book-later onClick={() => setPage(p => p + 1)}>{t.loading ? "Loading…" : "Later dates"}</button>}
       </div>
       {day && day.slots.length ? <div className="bk-slots" role="radiogroup" aria-label="Time">
         {day.slots.map(s => <button type="button" key={s.start} role="radio" aria-checked={!!slot && slot.start === s.start} data-book-slot={s.start}
           aria-label={`${s.time} ${s.ampm}`} className={slot && slot.start === s.start ? "on" : ""} onClick={() => { setSlot(s); track("book_time_picked", { day_index: dayI }); }}>{s.time}</button>)}
-      </div> : <p className="bk-none">No open times this week. Email jonathan@stewardapp.dev and he will find one.</p>}
+      </div> : <p className="bk-none" data-book-day-none>{day ? `No open times on ${day.dow}, ${day.mon} ${day.day}. Pick another day or Later dates.` : "No open times in these three weeks."} Or email jonathan@stewardapp.dev and he will find one.</p>}
     </>}
     {err && <p className="form-err" role="alert">{err}</p>}
     <button className="bk-btn" type="submit" data-book-button disabled={state === "sending" || !t || (live && !slot)}>
-      {state === "sending" ? "Booking…" : !t ? "Loading times…" : live ? (slot ? bookWords(day, slot) : "Pick a time above") : "Next: pick a time"}</button>
+      {state === "sending" ? "Booking…" : !t ? "Loading times…" : live ? (slot ? bookWords(day, slot) : "Pick a time above") : "Send, then pick a time"}</button>
     <p className="bk-fine">{FINE}</p>
   </form>;
 }

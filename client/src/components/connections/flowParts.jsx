@@ -10,7 +10,7 @@ import { errorMessage } from "../../lib/domainError";
 // The badge word for a card. `flow` cards (every API connection) use the flow's own label; the
 // page's other cards (inbox, BCC, keys) keep their words.
 export const FLOW_WORD = { working: "Working", waiting: "Connected, nothing flowing yet", needs_you: "Needs you",
-  not_connected: "Not connected", unavailable: "Not available yet", example: "Example",   // HONEST-2: a demo's made-up connection
+  not_connected: "Not connected", unavailable: "Not available yet", example: "Example data",   // HONEST-2, HONEST-4: a made-up connection
   connected: "Connected", attention: "Needs attention", ready: "Ready" };
 // The summary line's three buckets.
 export const bucketOf = s => s === "needs_you" || s === "attention" ? "needs_you"
@@ -18,16 +18,24 @@ export const bucketOf = s => s === "needs_you" || s === "attention" ? "needs_you
 export const isBrass = s => bucketOf(s) === "needs_you";
 
 // One flow sentence, with its figure opening the rows when it carries one (QuickBooks' waiting gifts).
-export function FlowSentence({ flow, style }) {
+// HONEST-4 item 2: a flow with `fixes` (QuickBooks) says its headline, then each reason as a link to the
+// control that fixes it. `onFix(anchor)` opens it; without one (a line elsewhere) the reasons are words.
+export function FlowSentence({ flow, style, onFix = null }) {
   if (!flow) return null;
   const f = flow.figure;
-  if (!f || !f.source) return <span style={style}>{flow.sentence}</span>;
-  // "273 gifts ($261,998.91) are waiting: …" — the amount is the figure, and it opens the 273 rows.
-  const m = /^(.*?)\((\$[\d,]+\.\d\d)\)(.*)$/.exec(flow.sentence);
-  if (!m) return <span style={style}>{flow.sentence}</span>;
+  const text = flow.fixes && flow.fixes.length && flow.head ? flow.head : flow.sentence;
+  const fixes = flow.fixes && flow.fixes.length && flow.head ? flow.fixes : [];
+  const tail = fixes.map(x => <span key={x.anchor + x.words}>{" "}{onFix
+    ? <button type="button" data-testid="flow-fix" data-anchor={x.anchor} onClick={() => onFix(x.anchor)}
+      style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", fontWeight: 700,
+        textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>{x.words}</button>
+    : x.words}</span>);
+  // "273 gifts ($261,998.91) waiting." — the amount is the figure, and it opens the 273 rows.
+  const m = f && f.source ? /^(.*?)\((\$[\d,]+\.\d\d)\)(.*)$/.exec(text) : null;
+  if (!m) return <span style={style}>{text}{tail}</span>;
   return <span style={style}>{m[1]}(<Figure variant="inline" kind="money" value={f.value} figureKey="connection-waiting"
     label="Waiting to go to QuickBooks" source={f.source}
-    definition="Every gift dated on or after the QuickBooks start date that has not been sent to QuickBooks or skipped. Real money only." />){m[3]}</span>;
+    definition="Every gift dated on or after the QuickBooks start date that has not been sent to QuickBooks or skipped. Real money only." />){m[3]}{tail}</span>;
 }
 
 // "Bring in a file": a tool with no account to connect. One row, one Upload button (ONBOARD-5's words).
@@ -97,7 +105,8 @@ export function ConnectionLines({ onNavigate, providers = null, states = ["needs
           background: T.white, border: "1px solid " + (brass ? T.gold600 : T.bg2), margin: "8px 0" }}>
         <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: brass ? T.gold600 : T.ink, flexShrink: 0 }} />
         <span style={{ flex: "1 1 260px", minWidth: 0 }}>
-          <FlowSentence flow={c.flow} style={{ fontSize: 13.5, color: brass ? T.gold700 : T.ink, lineHeight: 1.5 }} />
+          <FlowSentence flow={c.flow} style={{ fontSize: 13.5, color: brass ? T.gold700 : T.ink, lineHeight: 1.5 }}
+            onFix={onNavigate && step ? () => onNavigate("settings", { section: step.section, focus: step.focus }) : null} />
           {brass && reach && <span data-testid={testid + "-reach"} style={{ display: "block", fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 2 }}>{reach}</span>}
         </span>
         {step && onNavigate && <button type="button" data-testid={testid + "-step"}

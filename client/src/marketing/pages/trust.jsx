@@ -7,7 +7,9 @@ import { Hero, FaqS, FinalCta } from "../lib";
 import { API } from "../../api";
 import { SUBPROCESSORS, WHEN_WORDS } from "../../../../shared/subprocessors.js";
 
-const STATE_WORDS = { up: "Working", degraded: "Slower or partly affected", down: "Not working", unknown: "Not measured yet" };
+// HONEST-4 item 1: a line with nothing real to measure (no live connection in a real org) shows no
+// status word and no percentage, the way HubSpot leaves a status blank. Its sentence says why.
+const STATE_WORDS = { up: "Working", degraded: "Slower or partly affected", down: "Not working", unknown: "" };
 const STATE_DOT = { up: "var(--emerald, #0D5C3A)", degraded: "#C9A84C", down: "#0F1A12", unknown: "#D4CFC6" };
 const fmtDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
@@ -36,7 +38,7 @@ export function Status() {
           <div key={s.key} className="card" data-service={s.key}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
               <h4 style={{ margin: 0 }}><span aria-hidden style={{ display: "inline-block", width: 10, height: 10, borderRadius: 99, background: STATE_DOT[s.state], marginRight: 8 }} />{s.label}</h4>
-              <span>{STATE_WORDS[s.state]}{s.uptime != null ? ` · ${s.uptime}% since ${new Date(s.since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}</span>
+              <span data-status-word={s.state}>{STATE_WORDS[s.state]}{s.uptime != null && s.state !== "unknown" ? ` · ${s.uptime}% since ${new Date(s.since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}</span>
             </div>
             <p style={{ margin: "6px 0 10px", opacity: 0.8 }}>{s.says}{s.detail ? ` ${s.detail}` : ""}</p>
             <div role="img" aria-label={`${s.label}, last 90 days`} style={{ display: "grid", gridTemplateColumns: "repeat(90, 1fr)", gap: 2 }}>

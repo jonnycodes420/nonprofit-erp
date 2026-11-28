@@ -92,7 +92,9 @@ async function run({ ok, login, api, q }) {
   const pend = await api("GET", "/qbo/pending", tok);
   ok("§1 QuickBooks says what is waiting and the fund that holds it back, from the Pending definition",
     qb && qb.flow.state === "waiting" && pend.status === 200
-      && qb.flow.sentence === `${pend.body.count} gifts ($${(pend.body.total.cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}) are waiting: 1 fund isn't mapped yet (Building).`
+      // HONEST-4 item 2: the headline is the waiting count and dollars, then each reason, each a link (fixes).
+      && qb.flow.head === `${pend.body.count} gifts ($${(pend.body.total.cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}) waiting.`
+      && / 1 fund isn't mapped \(Building\)\./.test(qb.flow.sentence) && (qb.flow.fixes || []).some(f => f.anchor === "qbo-map-open")
       && qb.flow.figure && qb.flow.figure.source && qb.flow.figure.source.key === "qbo-pending", { flow: qb && qb.flow, pending: pend.body && pend.body.count });
   const counts = r.body.flowCounts || {};
   const n = s => cards.filter(c => c.flow.state === s).length;
@@ -103,7 +105,8 @@ async function run({ ok, login, api, q }) {
   const src = f => fs.readFileSync(path.join(ROOT, f), "utf8");
   const conn = src("client/src/components/Connections.jsx");
   const parts = src("client/src/components/connections/flowParts.jsx");
-  ok("§2 the Settings card's state is the card's flow", /const statusOf = c => c\.flow \? c\.flow\.state/.test(conn));
+  // HONEST-4 item 3: an example reads as not connected first; otherwise the state is the card's flow.
+  ok("§2 the Settings card's state is the card's flow", /const statusOf = c => c\.badge && c\.badge\.state === "example" \? "example" : c\.flow \? c\.flow\.state/.test(conn));
   ok("§2 the detail's badge and sentence are the flow's", /c\.flow \? c\.flow\.label/.test(conn) && /c\.flow \? <FlowSentence flow=\{c\.flow\}/.test(conn));
   // HONEST-1 walk: the line first sat in `hero`, which is the board's surface, so Home never drew it.
   ok("§2 Home (in the Thread, the Home section that cannot be hidden) and Finance draw ConnectionLines, which reads the same GET /connections flows",
@@ -116,7 +119,9 @@ async function run({ ok, login, api, q }) {
   const s2 = await api("POST", "/connections/sweep", tok, { notify: false });
   const tasks = await q(`SELECT title FROM tasks WHERE org_id=$1`, [ORG]);
   ok("§3 a feed past its usual gap opens exactly one task, in the one quiet sentence, however often the sweep runs",
-    s1.status === 200 && s2.status === 200 && tasks.length === 1 && tasks[0].title === gb.flow.sentence, tasks);
+    // HONEST-4 item 6: the task is stored, so it names the day it went quiet rather than a count that drifts.
+    s1.status === 200 && s2.status === 200 && tasks.length === 1
+      && tasks[0].title === gb.flow.sentence.replace(/ in \d+ days\./, ` since ${new Date(civil(now - 40 * DAY) + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}.`), tasks);
   ok("§3 …and nothing is emailed", s1.body && s1.body.emailed === 0 && s2.body && s2.body.emailed === 0, [s1.body, s2.body]);
   // HONEST-1 walk: on staging every tick failed "sweepQuietConnections is not a function": jobs.js read
   // a name its mount (server/boot/steps-4.js) never handed it. Every name jobs.js reads must be handed over.

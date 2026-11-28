@@ -158,7 +158,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         const v = m[1];
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API routes the audit posts to
-        if (v === "/public/book" || v === "/public/book/partner/" || v === "/public/book/times") continue; // ONBOARD-4, BOOK-1: the booking card's own API routes
+        if (v === "/public/book" || v === "/public/book/partner/" || v === "/public/book/times" || v === "/public/book/times?page=") continue; // ONBOARD-4, BOOK-1: the booking card's own API routes
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
         if (v === "/public/connections") continue;                   // HONEST-2: the Connections page's list, read from the API
         if (v === "/support/site/" || v === "/handoff") continue; // SUPPORT-1: the help center chat's API route
@@ -301,8 +301,9 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
     ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 0, others);
-    ok("the card books a picked time (Book <day> at <time>), then Calendly's page for it or, with no times, its calendar (BOOK-1)",
-      /const bookWords = \(day, slot\) => `Book \$\{day\.dow\}/.test(bookSrc) && /<SlotFrame /.test(bookSrc) && /<SlotPicker /.test(bookSrc) && bookSrc.includes("You'll get a calendar invite and a reminder. Nothing else."));
+    // HONEST-4 item 7: with no times, the card says "Times didn't load" with the calendar's link, never the embed.
+    ok("the card books a picked time (Book <day> at <time>), then Calendly's page for it or, with no times, the calendar's link (BOOK-1, HONEST-4)",
+      /const bookWords = \(day, slot\) => `Book \$\{day\.dow\}/.test(bookSrc) && /<SlotFrame /.test(bookSrc) && /<TimesFailed /.test(bookSrc) && !/<SlotPicker /.test(bookSrc) && bookSrc.includes("You'll get a calendar invite and a reminder. Nothing else."));
   }
 
   console.log("\n— HELP-1 · every screen has a help article —");

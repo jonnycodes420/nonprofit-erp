@@ -28,7 +28,8 @@ const LINES = {
   bcc: "Copy a Steward address on any email to log it to the person it names.",
   api: "Scoped keys for your own tools.",
   webhooks: "Steward posts to an address you choose when something happens.",
-  zapier: "Start a Zap when a gift comes in, with an API key.",
+  // HONEST-4 item 5: Zapier is one line, as Zapier. What its app triggers and does, never the apps it reaches.
+  zapier: "Connect to 6,000+ apps. Starts a Zap on New gift, New person or Stage changed; can Create person, Record gift or Add note. Uses an API key.",
   bookkeeperFile: "A monthly gift file that foots to the cent. Nothing to connect.",
   statements: "A bank statement, a spreadsheet or any export, mapped once and remembered.",
   donorbox: "Its gift export comes in as a file.",
@@ -61,9 +62,11 @@ async function publicConnections() {
   put(inbox.length ? "connects" : "notYet", "inbox", inbox.length === 1 ? (inbox[0] === "google" ? "Gmail" : "Outlook") : "Gmail and Outlook", LINES.inbox);
   put("connects", "bcc", "BCC address", LINES.bcc);
   put("connects", "bookkeeper-file", "Bookkeeper file", LINES.bookkeeperFile);
-  put("connects", "api", "Open API", LINES.api);
-  put("connects", "webhooks", "Webhooks", LINES.webhooks);
-  put("connects", "zapier", "Zapier", LINES.zapier);
+  // HONEST-4 item 5: Zapier, API keys and webhooks sit under one "Build your own" heading, as in Settings.
+  const g2 = g.build = [];
+  g2.push({ key: "zapier", name: "Zapier", line: LINES.zapier });
+  g2.push({ key: "api", name: "Open API", line: LINES.api });
+  g2.push({ key: "webhooks", name: "Webhooks", line: LINES.webhooks });
   put("files", "statements", "Spreadsheets and statements", LINES.statements);
   put("files", "donorbox", "Donorbox", LINES.donorbox);
   return g;
@@ -71,6 +74,7 @@ async function publicConnections() {
 
 const GROUP_WORDS = {
   connects: { title: "Connects", sentence: "Connect it yourself from Settings today, or with us on your setup call." },
+  build: { title: "Build your own", sentence: "Zapier, API keys and webhooks, for tools Steward does not connect to itself." },
   files: { title: "Import from a file", sentence: "Not a connection: its export comes in as a file, and Steward reads the file." },
   notYet: { title: "Not available yet", sentence: "Steward can't connect to these yet. Tell us you need one and we'll say when it's ready." },
 };
@@ -81,8 +85,8 @@ function mount(app, { wrap }) {
     // HONEST-3 item 3 (W-1126-Integrations-05): "public pages still list file-only and unavailable tools
     // as connections". The site lists only what connects today, file tools under their own "Import from
     // a file" heading, and nothing that isn't available. Settings keeps its third group.
-    const { connects, files } = await publicConnections();
-    res.json({ groups: { connects, files }, words: { connects: GROUP_WORDS.connects, files: GROUP_WORDS.files } });
+    const { connects, build, files } = await publicConnections();
+    res.json({ groups: { connects, build, files }, words: { connects: GROUP_WORDS.connects, build: GROUP_WORDS.build, files: GROUP_WORDS.files } });
   }));
 }
 
