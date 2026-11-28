@@ -316,6 +316,25 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   unless she says "Set them aside" (`answers.outliers`). Future-dated rows are listed with their dates. The receipt
   (`summary.rowChecks`) and the import check page count all four whichever way she chose.
 
+- **What the old system knew about a gift lands where Steward keeps it (IMPORT-12, `shared/giftExtras.js`).** A
+  negative row, or a gift its file marks refunded (Bloomerang's Is Refunded), is a refund against the person's gift: the
+  one it names, else the latest earlier gift of that amount, else one at least that large. It is written as a negative
+  row with `refund_of`, and the gift is marked refunded in full when the whole gift went back, as "Record a refund" does.
+  A refund with no gift to stand against is still set aside. A soft credit, from a column (Soft Credit Name(s)) or a row
+  of its own (DonorPerfect S, LGL "Soft Credit"), is a `gift_soft_credits` row and never money. A tribute, the anonymous
+  mark and a pledge link (PLINK, Pledge ID) are written onto the gift (`server/imports/giftExtrasWrite.js`).
+- **A system's people file is a known shape of its own, paired with its gifts file (IMPORT-12).** Bloomerang
+  Constituents, DonorPerfect Donors and Neon Accounts join their gift files on the system's own ID, as Salesforce's pair
+  does. A system's codes are read as its manual gives them: DonorPerfect's record type M is a split's main row (set
+  aside: its parts carry the money), S a soft credit; NOMAIL_REASON DE is deceased; Bloomerang's Status Deceased and
+  Email Interest Type Opted Out are flags. An Opportunity with no contact is its Account's (an organisation's) gift.
+- **A person exported twice under two IDs answers to both (IMPORT-12).** The second ID is kept on the person
+  (`external_donor_ids`), so the gifts under it still find them.
+- **The full-size exports grade the reader (IMPORT-12).** `tests/fixtures/import/systems-full/make.cjs` writes each
+  system's export at a real size from one made-up org, with its key computed from the model. `tests/import-systems.test.js`
+  holds every system to that key to the cent. Each writer cites where its headers come from. eKYROS publishes none, so
+  its fixture is invented and says so.
+
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
   `rethrowProgrammerError(e)` the first line of those catches, and use `errorMessage` in async handlers. (BUILD-84)
