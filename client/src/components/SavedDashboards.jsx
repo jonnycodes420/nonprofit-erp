@@ -22,6 +22,7 @@ import { ReportTable } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { useUrlWriter } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
+import { ScheduleButton } from "./reports/ScheduleDialog";   // REPORTS-6 item 1
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const SD_CSS = `
@@ -470,6 +471,11 @@ export function BoardPackPanel({ onNavigate, onOpenSettings }) {
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>
         Steward emails the pack to your own staff and board addresses on the day you pick. It never goes to a donor.
         {!enabled && sch && <> {sch.offSentence}</>}
+      </div>
+      {/* REPORTS-6 item 1: to people you name here (a board chair, a funder contact), on your day and hour. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <ScheduleButton target="board-pack" label="Send it to people you name" />
+        <span style={{ fontSize: 12, color: T.ink3 }}>They do not need a Steward login: the pack arrives as a PDF.</span>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <select aria-label="How often" value={schFreq} onChange={e => setSchFreq(e.target.value)} style={fieldStyle}>

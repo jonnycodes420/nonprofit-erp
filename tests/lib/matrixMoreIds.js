@@ -127,6 +127,10 @@ async function seed(q, o, tag) {
   await ins(q, "sales_bookings", { id: `sbk_${o}`, name: `${mark} Booker`, org_name: `${mark} Org`, email: `admin-${tag}@mx.local`,
     file_name: `${mark}.csv`, file_type: "text/csv", file_size: 7, file_data: "\\x" + Buffer.from(mark).toString("hex") });
   await ins(q, "onboard_concierge_jobs", { id: `ocj_${o}`, org_id: o, file_name: `${mark}.csv`, file_size: 7 });
+  // REPORTS-6 — a report sent on a schedule to named people, and one "do something with these people" press.
+  await ins(q, "report_schedules", { id: `rsc_${o}`, org_id: o, target: "board-deck", target_name: `${mark} deck`, frequency: "monthly",
+    day: 5, hour: 7, recipients: [`board-${tag}@mx.local`], enabled: true });
+  await ins(q, "report_action_batches", { id: `rpb_${o}`, org_id: o, kind: "mailing", report: `${mark} report`, count: 1, made: { groupId: `grp_${o}`, campaignId: `c_${o}` } });
 }
 
 // org B's id for one param. Paths are matched by prefix; a param this module
@@ -134,6 +138,9 @@ async function seed(q, o, tag) {
 function resolve(p, n, B) {
   const R = [
     [/^\/going-out\/sent\//, { id: `ams_${B}` }],
+    [/^\/report-schedules\/:id/, { id: `rsc_${B}` }],   // REPORTS-6: org B's schedule
+    [/^\/report-people\/batches\//, { id: `rpb_${B}` }],   // REPORTS-6: org B's mailing-draft press
+    [/^\/your-dashboard\/(preview|tiles)\//, { key: "giving" }],   // REPORTS-6: a report's name, never a row
     [/^\/onboarding\/(concierge\/booking|booking-file)\//, { id: `sbk_${B}` }],   // ONBOARD-4: org B's booking file
     [/^\/going-out\/held\//, { id: `mblk_${B}` }],
     [/^\/donors\/:id\/blocked-mail\/:bid/, { bid: `mblk_${B}` }],

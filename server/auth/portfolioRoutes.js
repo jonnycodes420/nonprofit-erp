@@ -118,6 +118,7 @@ const CLOSED_SEGMENTS = new Set(`
   stripe support support-access support-session surveys surveys-volunteer-followup tasks templates threads thank-yous
   top100 trash tribute-notices users voice voice-memos volunteer-hours volunteer-qualifications volunteer-shifts
   volunteers volunteer-hub webhooks why workflows xero agent api plan-steps letters campaign-tidy
+  board-deck report-schedules report-people your-dashboard
 `.split(/\s+/).filter(Boolean));
 
 function matches(d, method, path) {

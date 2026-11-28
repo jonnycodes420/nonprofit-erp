@@ -1305,6 +1305,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // ── NUMBERS-10 item 1 · one fund total: card = dialog = Transactions = fund balances; covered fees said (tests/lib/numbers10FundChecks.js) ──
   if (!skipSet.has("numbers10fund")) await require("./numbers10FundChecks").numbers10FundChecks({ orgId, get, q, agree, skip });
   if (!skipSet.has("numbers10softevent")) await require("./numbers10SoftEventChecks").numbers10SoftEventChecks({ orgId, get, q, agree, skip });   // NUMBERS-10 items 3, 5
+  // ── REPORTS-6 · the Board view = the board deck = its PDF = Your dashboard's tiles = the reports (tests/lib/reports6Checks.js) ──
+  if (!skipSet.has("reports6")) await require("./reports6Checks").reports6Checks({ get, raw, agree, skip });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

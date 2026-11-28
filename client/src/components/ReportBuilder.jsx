@@ -18,6 +18,8 @@ import { cellText, centsOf, footCents, footCount, sortValue, nextSort, sortRows,
 import { DonorLink, useUrlWriter } from "./RecordLink";
 import { SaveAsGroup } from "./Groups";   // FLOWS-5: list reports save their people
 import { listReportOf, listGroupName } from "../lib/listReports";
+import { ReportActions } from "./reports/ReportActions";   // REPORTS-6 item 2: do something with these people
+import { ScheduleButton } from "./reports/ScheduleDialog";   // REPORTS-6 item 1: send it on a schedule
 import { PagedReportHead } from "./reports/PagedReportHead";   // POLISH-14 item 6
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
@@ -229,7 +231,8 @@ function Builder({ catalogue, initial, onSaved, onCancel, onOpen }) {
   const [msg, setMsg] = useState("");
   const pickEntity = k => { setEntity(k); const e = catalogue.entities.find(x => x.key === k); setColumns([e.fields.find(f => !f.groupOnly)?.key].filter(Boolean)); setFilter({ op: "and", rules: [] }); setGroupBy(""); setOut(null); };
   const def = () => ({ entity, columns: groupBy ? [] : columns, filter: filter.rules.length ? filter : undefined, groupBy: groupBy || undefined });
-  const runIt = async () => { setMsg(""); try { setOut(await apiFetch("/report-builder/run", { method: "POST", body: JSON.stringify({ definition: def() }) })); } catch (e) { setOut(null); setMsg(errorMessage(e, "That report could not run.")); } };
+  const [ranDef, setRanDef] = useState(null);   // REPORTS-6: the definition the results on screen came from
+  const runIt = async () => { setMsg(""); const d = def(); try { setOut(await apiFetch("/report-builder/run", { method: "POST", body: JSON.stringify({ definition: d }) })); setRanDef(d); } catch (e) { setOut(null); setRanDef(null); setMsg(errorMessage(e, "That report could not run.")); } };
   const save = async () => {
     setMsg("");
     try { const r = await apiFetch("/saved-reports", { method: "POST", body: JSON.stringify({ name, shared, schedule: weekly ? "weekly" : null, definition: def() }) }); onSaved(r.id); }
@@ -267,6 +270,7 @@ function Builder({ catalogue, initial, onSaved, onCancel, onOpen }) {
         <button onClick={runIt} style={btn(false)} data-testid="rb-run">Run it</button>
       </div>
       {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
+      {out && ranDef && out.rows && out.rows.length > 0 && <ReportActions spec={{ kind: "builder", def: ranDef, label: name.trim() || "This report" }} />}
       <ResultTable out={out} onOpen={onOpen} />
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Name this report" style={{ ...inp, width: 240, maxWidth: "100%" }} data-testid="rb-name" />
@@ -326,10 +330,12 @@ export function ReportRunView({ id, meta, onOpen }) {
           <div style={{ display: "flex", gap: 8 }}>
             <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/csv${fileQs ? "?" + fileQs : ""}`, `${name || "report"}.csv`).catch(e => setMsg(e.message))}>CSV</button>
             <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/pdf${fileQs ? "?" + fileQs : ""}`, `${name || "report"}.pdf`).catch(e => setMsg(e.message))}>PDF</button>
+            <ScheduleButton target={`report:${id}`} />
           </div>
         </div>
         {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
         {out && out.paging && <PagedReportHead out={out} onRange={(from, to) => setAsk({ from, to, page: 1 })} onPage={page => setAsk(a => ({ ...a, from: out.paging.from, to: out.paging.to, page }))} />}
+        {out && out.rows.length > 0 && <ReportActions spec={{ kind: "saved", id, label: name }} />}
         {out ? (out.rows.length ? <ResultTable out={out} onOpen={onOpen} listId={id} /> : <div style={{ color: T.ink3, fontSize: 13 }}>Nothing matches this report yet.</div>)
           : !msg && <div style={{ color: T.ink3, fontSize: 13 }}>Running…</div>}
       </Card>

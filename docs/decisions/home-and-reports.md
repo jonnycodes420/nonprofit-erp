@@ -330,6 +330,21 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   period through `orgPeriodBounds(org, period, -1)`. It reserves `board_pack_sends` before the first send and
   releases it when nothing was accepted, and rides the existing 5-minute tick. "Send a test to me" goes to the
   caller alone and reserves nothing. (REPORTS-3)
+- **A scheduled report reaches named people as a PDF (REPORTS-6).** `server/reports/reportSchedules.js`: a saved or
+  standard report, the board pack (monthly or quarterly) or the board deck, on the org's day (1 to 28) and hour, to the
+  addresses an admin typed. The email's only link is Unsubscribe; the report is the attachment, drawn by the renderer
+  Download PDF uses (`reportPdf.js`, or the pack's and deck's own). Staff mail (`report_schedule`), held by the Staff
+  mail switch, the mail block and each address's Unsubscribe for that schedule. An address on file is refused unless
+  the person is marked staff or board. `report_schedule_sends` is reserved first and names who it went to and who not.
+- **"Do something with these N people" is one function (REPORTS-6).** `server/reports/reportPeople.js` `peopleOf` is the
+  count, every action and a kept-in-step group's members (`groups.js` rule `report`). Rows that are gifts or funds act on
+  the people behind them and the bar says so; a report with nobody behind it says so and offers nothing. Calls are
+  POST /threads/plan; a mailing is a campaign draft, never sent.
+- **Your dashboard reads each tile through its report's own route (REPORTS-6).** `server/reports/yourDashboard.js` asks
+  `/reports/:key` or `/saved-reports/:id/run` in process as the viewer, so a tile is its report's number and a stored
+  report is served only when nothing it reads has changed. An org with no saved reports opens Reports here.
+- **The board deck is the Board view's numbers (REPORTS-6).** `server/reports/boardDeck.js` reads `computeDashboard("board")`;
+  `assertSurfacesAgree`'s reports6 pass reads them back out of the PDF beside their own labels.
 - **A figure still loading is a skeleton, never a 0; a read that failed is a dash.** Home's rail starts
   at `null`, not `||0`. (FIX-27)
 - **A campaign has a page, and its list and page are on the census.** `CampaignsList.jsx` is in

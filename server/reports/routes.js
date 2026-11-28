@@ -218,34 +218,13 @@ app.get("/saved-reports/:id/pdf", LANE.middleware, requireAuth, wrap(async (req,
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
-  const out = await runSaved(req.user.orgId, rep, { from: req.query.from, to: req.query.to, all: true });   // POLISH-14: a file is the whole range
+  // REPORTS-6: one renderer (server/reports/reportPdf.js) for this download, a schedule's preview and
+  // its attachment, under the org's name and logo, dated, with what each column means.
+  const out = await reportHooks.renderSavedReportPdf(req.user.orgId, req.user.userId, rep, { from: req.query.from, to: req.query.to });   // POLISH-14: a file is the whole range
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
-  const PDFDocument = require("pdfkit");
-  const doc = new PDFDocument({ size: "LETTER", layout: "landscape", margin: 36, bufferPages: true });
-  const chunks = []; doc.on("data", c => chunks.push(c));
-  const done = new Promise(r => doc.on("end", r));
-  const W = doc.page.width - 72, n = Math.max(out.columns.length, 1), cw = W / n;
-  doc.font("Helvetica-Bold").fontSize(15).fillColor("#0f1a12").text(rep.name, 36, 36);
-  if (rep.question) doc.font("Helvetica").fontSize(9.5).fillColor("#5a554f").text(rep.question);
-  doc.moveDown(0.6);
-  const header = () => {
-    const y = doc.y;
-    out.columns.forEach((c, i) => doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#0f1a12").text(c.label, 36 + i * cw, y, { width: cw - 6, lineBreak: false, ellipsis: true }));
-    doc.moveTo(36, y + 13).lineTo(36 + W, y + 13).strokeColor("#e8e4db").stroke(); doc.y = y + 17;
-  };
-  header();
-  for (const r of out.rows) {
-    if (doc.y > doc.page.height - 60) { doc.addPage(); header(); }
-    const y = doc.y;
-    out.columns.forEach((c, i) => doc.font("Helvetica").fontSize(8.5).fillColor("#0f1a12").text(rbFormatCell(r[c.key], c.type), 36 + i * cw, y, { width: cw - 6, lineBreak: false, ellipsis: true }));
-    doc.y = y + 13;
-  }
-  doc.moveDown(0.5).font("Helvetica").fontSize(8.5).fillColor("#5a554f")
-    .text(`${out.totals.count.toLocaleString("en-US")} rows${out.totals.sums.length ? " · " + out.totals.sums.map(s => `${s.label} ${rbFormatCell(s.cents / 100, "money")}`).join(" · ") : ""}${out.capped ? ` · first ${out.rows.length} shown` : ""}`, 36);
-  doc.end(); await done;
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${String(rep.name).replace(/[^\w -]/g, "")}.pdf"`);
-  res.end(Buffer.concat(chunks));
+  res.end(out.pdf);
 }));
 
 // Ops/test hook: drive the exact scheduled path for the caller's org.

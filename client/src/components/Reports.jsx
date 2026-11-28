@@ -5,7 +5,9 @@ import { track } from "../lib/analyticsDoor";   // ANALYTICS-1
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
-import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID, WHAT_WORKED_ID } from "../lib/reportsRail";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID, WHAT_WORKED_ID, YOUR_DASH_ID, DEFAULT_REPORT } from "../lib/reportsRail";
+import { YourDashboard } from "./reports/YourDashboard";   // REPORTS-6 item 4
+import { ReportActions } from "./reports/ReportActions";   // REPORTS-6 item 2
 import StoredReports from "./StoredReports";
 import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
@@ -335,6 +337,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const onNewDashboard = active === NEW_DASH_ID;
   const onStored = active === STORED_REPORTS_ID;
   const onWorked = active === WHAT_WORKED_ID;   // INSIGHTS-1
+  const onYourDash = active === YOUR_DASH_ID;   // REPORTS-6
   const fsm = fiscalStart || 7;
   const CUR_FY = serverYears ? serverYears.fy : null;
   const CUR_CY = serverYears ? serverYears.cy : null;
@@ -348,6 +351,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   // Every pick goes through the resolver too: an alias (std:top-50) brings the
   // controls the standard version fixes.
   const pick = id => {
+    setPicked(true);
     const r = resolveReportId(id);
     if (r.params?.scope) setScope(r.params.scope);
     if (r.params?.groupBy) setGroupBy(r.params.groupBy);
@@ -355,6 +359,13 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   };
 
   const loadList = () => apiFetch("/saved-reports").then(setList).catch(() => setList({ standard: [], saved: [] }));
+  // REPORTS-6 item 4: with nothing asked for and no saved reports, Reports opens on Your dashboard.
+  const [askedFor] = useState(() => !!(initialSavedReport || initialReport));
+  const [picked, setPicked] = useState(false);
+  useEffect(() => {
+    if (askedFor || picked || !list || (list.saved || []).length) return;
+    if (active === DEFAULT_REPORT) setActive(YOUR_DASH_ID);
+  }, [list]);
   const loadSavedDashboards = () => apiFetch("/saved-dashboards")
     .then(r => setSavedDashboards(r.dashboards || [])).catch(() => setSavedDashboards([]));
   useEffect(() => {
@@ -845,10 +856,11 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {onBoardPack && <BoardPackPanel onNavigate={onNavigate}
           onOpenSettings={() => onNavigate && onNavigate("settings", { section: "org", focus: "board-pack" })} />}
 
+        {onYourDash && <YourDashboard onPick={pick} />}
         {onStored && <StoredReports onNavigate={onNavigate} />}
         {onWorked && <WhatWorked />}
 
-        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && !onStored && !onWorked && active !== BUILD_ID
+        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && !onStored && !onWorked && !onYourDash && active !== BUILD_ID
           && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
 
         {isTab && <Card style={{ padding: "18px 22px" }}>
@@ -922,6 +934,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
                   message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : `${d.alsoOnFile ? d.alsoOnFile.sentence + " " : ""}Once gifts land in this period, this report fills in automatically. Try another period above.`} />)
               : d ? <>
                   {narrative && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.7, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${T.bg2}` }}>{narrative}{d.alsoOnFile && <span data-testid="report-also-on-file"> {d.alsoOnFile.sentence}</span>}{d.scheduled && <span data-testid="report-scheduled" title="A gift dated after today counts on its date, not before."> {d.scheduled.sentence}</span>}</div>}
+                  {!DIGEST_REPORTS.includes(active) && <ReportActions spec={{ kind: "tab", key: active, query: paramsStr, label }} />}
                   {table}
                 </> : null);
             if (customIncomplete || loading) return null;

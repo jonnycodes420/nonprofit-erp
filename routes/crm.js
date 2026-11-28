@@ -99,6 +99,10 @@ const MODULES = [
   "../server/mail/sendPlan",   // SENDS-2: a send to more than one person has a plan
   "../server/outreach/draftPlans",   // SENDS-2: milestone drafts' plan kinds
   "../server/reports/boardPack",
+  "../server/reports/boardDeck",   // REPORTS-6: the board deck, 16:9
+  "../server/reports/reportSchedules",   // REPORTS-6: scheduled reports to named people
+  "../server/reports/reportPeople",   // REPORTS-6: do something with these people
+  "../server/reports/yourDashboard",   // REPORTS-6: Your dashboard and the gallery
   "../server/reports/dashboard",
   "../server/reports/fundraising",
   "../server/reports/impact",
@@ -129,6 +133,10 @@ routers.r1.use(require("../server/outreach/campaignMerge").routers.r1);   // LET
 routers.r1.use(require("../server/org/switchOrg").routers.r1);   // ACCESS-1: the org switcher
 routers.r1.use(require("../server/reports/dashboard").routers.r1);
 routers.r1.use(require("../server/reports/boardPack").routers.r1);
+routers.r1.use(require("../server/reports/boardDeck").routers.r1);   // REPORTS-6
+routers.r1.use(require("../server/reports/reportSchedules").routers.r1);   // REPORTS-6
+routers.r1.use(require("../server/reports/reportPeople").routers.r1);   // REPORTS-6
+routers.r1.use(require("../server/reports/yourDashboard").routers.r1);   // REPORTS-6
 routers.r1.use(require("../server/reports/routes").routers.r1);
 routers.r1.use(require("../server/org/data").routers.r1);
 routers.r1.use(require("../server/donors/routes").routers.r1);

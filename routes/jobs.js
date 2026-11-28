@@ -218,6 +218,14 @@ if (!backgroundTicksDisabled()) {
   every("processBoardPackSchedule", 5 * 60 * 1000, () => recordTick("processBoardPackSchedule", processBoardPackSchedule));
 }
 
+// REPORTS-6 — a saved report, the board pack or the board deck, to the people an admin named, on
+// the org's day and hour. The same 5-minute tick, never a second scheduler; each period goes once
+// (report_schedule_sends), and the Staff mail switch, the mail block and each Unsubscribe hold it.
+const processReportSchedules = () => require("../server/reports/reportSchedules").processReportSchedules({ query, orgTime });
+if (!backgroundTicksDisabled()) {
+  every("processReportSchedules", 5 * 60 * 1000, () => recordTick("processReportSchedules", processReportSchedules));
+}
+
 // The tick — runs both digests for every onboarded org for the most-recently-
 // COMPLETED week/month. Reuses the existing 5-min scheduler cadence (NOT a
 // second scheduler). Idempotency means a digest for a completed period goes out
