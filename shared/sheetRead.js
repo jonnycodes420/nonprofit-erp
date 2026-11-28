@@ -1408,8 +1408,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (!isRefund && status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
       const rk = isRefund || status === SOFT_CREDIT_STATUS ? { mark: {} } : rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}`, hasId: !!(s(get(b, "giftId")) || s(get(b, "externalId"))) });   // IMPORT-11, IMPORT-13
       if (rk.aside) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rk.aside }); continue; }
-      const rep = !isRefund && idOnce.check({ giftId: get(b, "giftId"), sheet: t.sheet, line: b.line });   // IMPORT-13: a gift ID is one gift
-      if (rep) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rep }); continue; }
+      const ownId = role("giftId") && GR.isGiftIdHeader(role("giftId").header) ? get(b, "giftId") : null;   // a check number is not the gift
+      const rep = !isRefund && idOnce.check({ giftId: ownId, sheet: t.sheet, line: b.line, cents: cents(amt), date: s(get(b, "date")), who: pkey, fund: s(get(b, "fund")) });   // IMPORT-13: a gift ID is one gift
+      if (rep && !rep.split) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rep }); continue; }
       let unreadable = null;
       // when: a gift with a person and an amount always lands. No date, or a
       // date Steward cannot place in a day, is a gift with no date, flagged.
@@ -1506,7 +1507,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (methodCol && (!m.known || !m.original) && !inKind && !/^pledge$/i.test(m.original)) giftFlags.push("method_unknown");
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
-                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
+                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: (rep && rep.split ? null : s(ownId)) || null,
                      note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark, ...(unreadable ? { unreadableDate: unreadable } : {}),
                      // ASKS-1: an auction purchase: the item and what it was worth
                      auction: role("item") ? auctionFactsOf({ itemRaw: get(b, "item"), fmvRaw: get(b, "fmv"), hasFmvColumn: !!role("fmv"), answers, moneyOf }) : null };

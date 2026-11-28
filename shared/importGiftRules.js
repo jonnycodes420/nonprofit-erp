@@ -28,20 +28,32 @@ export const unreadableDateReason = words => `a date Steward couldn't read ("${s
 export const EMAIL_ONLY_REASON = email => `only an email (${email}), no name`;
 export const REFUND_UNMATCHED = cents => `a refund with no gift to match (${fmt$(cents)})`;
 
-// One per understand() call: the first line each gift ID was on.
+// One per understand() call: the first line each gift ID was on. The same ID on
+// the same person, amount and date is the same gift; the same ID with another
+// amount or fund is a split designation (Bloomerang writes each fund's part as a
+// line under one Transaction Number), so it lands, without the ID ({ split }).
 export function giftIdOnce() {
   const seen = new Map();
   return {
-    check({ giftId, sheet, line, cents }) {
+    check({ giftId, sheet, line, cents, date, who, fund = "" }) {
       const id = s(giftId);
       if (!id) return null;
       const k = id.toLowerCase();
       const first = seen.get(k);
-      if (!first) { seen.set(k, { sheet, line, cents }); return null; }
+      if (!first) { seen.set(k, { sheet, line, cents, date, who, fund: s(fund).toLowerCase() }); return null; }
+      // a $100 split $50 / $50 across two funds is two lines of one ID with the same amount: the fund tells them apart
+      if (first.cents !== cents || String(first.date || "") !== String(date || "") || first.who !== who || first.fund !== s(fund).toLowerCase()) return { split: true };
       const where = first.sheet === sheet ? `row ${first.line}` : `${first.sheet} row ${first.line}`;
       return { reason: `gift ID ${id} is already on ${where} of this file, so it is one gift`, repeatOf: first.line, repeatId: id };
     },
   };
+}
+
+// A column that names the gift itself (Gift ID, Transaction Number, Opportunity ID), never a check or receipt
+// number, which two people can share: only it makes "one gift per ID", in a file and against the org.
+export function isGiftIdHeader(header) {
+  const h = s(header).toLowerCase();
+  return !!h && !/check|cheque|receipt|\bref|reference|batch|deposit/.test(h) && /\b(id|number|no|#)\b|_id$|^id$/.test(h);
 }
 
 // "TOTAL CONTACTS: 3", "Total", "Grand total: 20" in a name's place, with no

@@ -242,21 +242,24 @@ async function main() {
   const gu = await api("POST", "/sheet-import/understand", tok, gBody);
   const GU = gu.body || {}, gc = GU.counts || {};
   ok("§1 the preview is ready", gu.status === 200 && GU.ready === true, gu.status + " " + JSON.stringify((GU.questions || []).filter(x => !x.optional)).slice(0, 300));
-  ok(`§1 the preview: ${GK.gifts} gifts, $${GK.gift_dollars}, ${GK.set_aside} set aside, ${GK.undated_gifts} undated`,
-     gc.gifts === GK.gifts && gc.giftCents === centsOf(GK.gift_dollars) && gc.aside === GK.set_aside && gc.undatedGifts === GK.undated_gifts, JSON.stringify(gc));
+  // IMPORT-13: a negative row that matches the same person's earlier gift is its refund (the file key, from the
+  // cells: tests/keys/build-keys.js); Jonathan's key's nine set-aside rows are that refund and eight still set aside
+  const GREF = FILE_KEYS.load("gift-history-287").refunds;
+  ok(`§1 the preview: ${GK.gifts} gifts, $${GK.gift_dollars}, ${GK.set_aside - GREF.count} set aside and ${GREF.count} refund, ${GK.undated_gifts} undated`,
+     gc.gifts === GK.gifts && gc.giftCents === centsOf(GK.gift_dollars) && gc.aside === GK.set_aside - GREF.count && (GU.refunds || []).length === GREF.count && gc.undatedGifts === GK.undated_gifts, JSON.stringify(gc));
   const gImp = await importJob(tok, gBody);
   const G_RUN = gImp.importId;
   ok("§1 the gift import ends done", gImp.end && gImp.end.status === "done", JSON.stringify(gImp.end || gImp.start.body).slice(0, 400));
   const landed = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s, COUNT(*) FILTER (WHERE date IS NULL)::int AS undated FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, G_RUN]);
-  ok(`§1 ${GK.gifts} gifts landed, $${GK.gift_dollars} to the cent, ${GK.undated_gifts} undated`,
-     landed.n === GK.gifts && centsOf(landed.s) === centsOf(GK.gift_dollars) && landed.undated === GK.undated_gifts, JSON.stringify(landed));
+  ok(`§1 ${GK.gifts} gifts and ${GREF.count} refund landed, $${GK.gift_dollars} less the refund to the cent, ${GK.undated_gifts} undated`,
+     landed.n === GK.gifts + GREF.count && centsOf(landed.s) === centsOf(GK.gift_dollars) + GREF.cents && landed.undated === GK.undated_gifts, JSON.stringify(landed));
   const rc = (await api("GET", `/imports/${G_RUN}`, tok)).body.import || {};
   const aside = (rc.setAside || rc.asideRows || (rc.summary && rc.summary.aside) || GU.aside || []);
-  ok(`§1 ${GK.set_aside} rows set aside, each with its reason`, rc.rowsSetAside === GK.set_aside && (GU.aside || []).length === GK.set_aside
+  ok(`§1 ${GK.set_aside - GREF.count} rows set aside, each with its reason`, rc.rowsSetAside === GK.set_aside - GREF.count && (GU.aside || []).length === GK.set_aside - GREF.count
      && (GU.aside || []).every(a => a.reason && a.line), JSON.stringify([rc.rowsSetAside, (GU.aside || []).map(a => [a.line, a.cents, a.reason])]));
   const asideCents = (GU.aside || []).reduce((n, a) => n + (a.cents || 0), 0);
-  ok("§1 the set-aside rows are the six negatives and the three zeros (-$4,946.00)", asideCents === -494600
-     && (GU.aside || []).filter(a => a.cents < 0).length === 6 && (GU.aside || []).filter(a => a.cents === 0).length === 3, asideCents);
+  ok("§1 the set-aside rows are the five negatives with no gift to match or money paid out, and the three zeros (-$4,940.00)", asideCents === -494600 - GREF.cents
+     && (GU.aside || []).filter(a => a.cents < 0).length === 6 - GREF.count && (GU.aside || []).filter(a => a.cents === 0).length === 3, asideCents);
   const horse = (GU.aside || []).find(a => a.cents === -480000) || {};
   ok("§1 the -$4,800 \"Purchase of Oakwell Horse\" is set aside as money paid out, not a refund", /paid out|expense|purchase/i.test(horse.reason || ""), horse.reason);
   ok("§1 the receipt reconciles and offers Undo", rc.reconciled === true && rc.canUndo === true, JSON.stringify([rc.reconciled, rc.canUndo, rc.findings]));
@@ -266,8 +269,8 @@ async function main() {
   for (const a of GU.aside || []) { const y = String(gSheets[0].grid[a.line - 1][0]).slice(0, 4); asideYear[y] = (asideYear[y] || 0) + a.cents; }
   ok("§1 per year, landed + set aside = the key's years, to the cent", Object.entries(GK.years).every(([y, v]) => (landedYear[y] || 0) + (asideYear[y] || 0) === centsOf(v)),
      JSON.stringify({ landedYear, asideYear, key: GK.years }));
-  ok("§1 per year, landed = the file's positive rows (2024 258,039.90 · 2025 239,318.07 · 2026 73,771.96)",
-     Object.keys(posYear).every(y => landedYear[y] === posYear[y]) && landedYear["2024"] === 25803990 && landedYear["2025"] === 23931807 && landedYear["2026"] === 7377196,
+  ok("§1 per year, landed = the file's positive rows less the one refund (2024 258,033.90 · 2025 239,318.07 · 2026 73,771.96)",
+     Object.keys(posYear).every(y => landedYear[y] === posYear[y] + (y === "2024" ? GREF.cents : 0)) && landedYear["2024"] === 25803390 && landedYear["2025"] === 23931807 && landedYear["2026"] === 7377196,
      JSON.stringify({ landedYear, posYear }));
   await surfaces(ORG, { step: "after gifts", importId: G_RUN, fileKey: FILE_KEYS.load("gift-history-287") });
 
@@ -281,7 +284,7 @@ async function main() {
   // accounting label ("Business Contributions") stays on the gift as its category.
   const EVENT_LABELS = new Set(["Bourbon & Breeders Gala", "Gallop & Glow 5K"]);
   const wantCat = {}; for (const [, r] of catMismatch) { const k = EVENT_LABELS.has(String(r[4] || "").trim()) ? String(r[4]).trim() : ""; wantCat[k] = (wantCat[k] || 0) + 1; }
-  const gotCat = {}; for (const g of gifts) gotCat[g.campaign || ""] = (gotCat[g.campaign || ""] || 0) + 1;
+  const gotCat = {}; for (const g of gifts.filter(x => Number(x.amount) > 0)) gotCat[g.campaign || ""] = (gotCat[g.campaign || ""] || 0) + 1;   // IMPORT-13: a refund row is its gift's, not another gift
   ok("§2 only the event and appeal labels become the gift's campaign", JSON.stringify(Object.entries(wantCat).sort()) === JSON.stringify(Object.entries(gotCat).sort()), JSON.stringify({ wantCat, gotCat }));
   const acct = catMismatch.filter(([, r]) => r[4] && !EVENT_LABELS.has(String(r[4]).trim()));
   const acctNotes = {}; for (const [, r] of acct) acctNotes[String(r[4]).trim()] = (acctNotes[String(r[4]).trim()] || 0) + 1;
@@ -528,7 +531,7 @@ async function main() {
   await surfaces(ORG, { step: "after gifts undo" });
   const g2 = await importJob(tok, gBody);
   const again = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, g2.importId]);
-  ok("§6 the gift file again, alone: the same 278 gifts and dollars", g2.end && g2.end.status === "done" && again.n === GK.gifts && centsOf(again.s) === centsOf(GK.gift_dollars), JSON.stringify(again));
+  ok("§6 the gift file again, alone: the same 278 gifts, the same refund, and the same dollars", g2.end && g2.end.status === "done" && again.n === GK.gifts + GREF.count && centsOf(again.s) === centsOf(GK.gift_dollars) + GREF.cents, JSON.stringify(again));
   await surfaces(ORG, { step: "after gifts again", importId: g2.importId, fileKey: FILE_KEYS.load("gift-history-287") });
   await api("POST", `/imports/${g2.importId}/reverse`, tok, {});
   d = snapDiff(S0, await snapshot(ORG));
