@@ -328,6 +328,8 @@ const PROD_READONLY = [
   "asks1-auction-sheets-readonly",
   // IMPORT-11: counts gifts over $100,000,000 by org; one READ ONLY session, SELECT only, no --apply.
   "import11-over-cap",
+  // IMPORT-13: counts, by org, possible repeated gifts in one import, undated gifts with words in the date, workbooks whose pledges wrote nothing; READ ONLY, no --apply.
+  "import13-gauntlet-rows",
   // FLOWS-4: counts stale "Missed you" drafts, tasks on archived events, hours and meeting notes saved twice; SELECTs only, no --apply.
   "flows4-volunteer-rows",
   // FLOWS-3: counts people in Draft/Paused journeys and early dated first steps; SELECTs only, no --apply.
