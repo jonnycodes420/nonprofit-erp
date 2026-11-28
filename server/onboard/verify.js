@@ -100,14 +100,18 @@ function spotCheck({ fileSpot = [], heldByKey = new Map() }) {
   return fileSpot.slice(0, 10).map(s => {
     const rows = s.rows || [];
     const fileC = rows.reduce((t, r) => t + n(r.cents), 0);
-    const fileLast = rows.map(r => r.date).filter(Boolean).sort().pop() || null;
+    // IMPORT-12: the file's gifts counted as Steward counts them (money.js GIFT): a refund row is no gift, and a gift
+    // refunded in full (a refund row of its whole amount) is no longer one
+    const kept = rows.filter(r => n(r.cents) > 0);
+    for (const r of rows.filter(x => n(x.cents) < 0)) { const i = kept.findIndex(k => n(k.cents) === -n(r.cents)); if (i >= 0) kept.splice(i, 1); }
+    const fileLast = kept.map(r => r.date).filter(Boolean).sort().pop() || null;
     const h = heldByKey.get(String(s.key || "").toLowerCase()) || null;
     const heldC = h ? n(h.cents) : 0, heldCount = h ? n(h.gifts) : 0, heldLast = h ? h.last || null : null;
     return {
       name: s.name, key: s.key, fileRows: rows,
-      file: { cents: fileC, gifts: rows.length, last: fileLast },
+      file: { cents: fileC, gifts: kept.length, last: fileLast },
       held: h ? { cents: heldC, gifts: heldCount, last: heldLast, donorId: h.id } : null,
-      matches: !!h && heldC === fileC && heldCount === rows.length && (heldLast || null) === fileLast,
+      matches: !!h && heldC === fileC && heldCount === kept.length && (heldLast || null) === fileLast,
     };
   });
 }
