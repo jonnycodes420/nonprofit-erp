@@ -1380,11 +1380,11 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       for (const m of moneyCols) { const v = moneyOf(cellOf(t, b, m)); if (v != null) { tableSums[m.index] += cents(v); sinceSubtotal[m.index] += cents(v); } }
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
       if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
-      // HARDEN-1: money paid out is not a refund; IMPORT-12: any other negative row is a refund, netted later
-      const isRefund = amt < 0 && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));
+      // HARDEN-1: money paid out is not a refund. IMPORT-12: in a known system's export a negative row is a refund, netted later
+      const isRefund = amt < 0 && !!t.shape && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));
       if (amt < 0 && !isRefund) {
         const said = s(get(b, "note")) || s(get(b, "type"));
-        aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` });
+        aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: PAID_OUT_RE.test(said) ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
         continue;
       }
       const statusCol = role("status");

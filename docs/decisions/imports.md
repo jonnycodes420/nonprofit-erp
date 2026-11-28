@@ -316,8 +316,10 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   unless she says "Set them aside" (`answers.outliers`). Future-dated rows are listed with their dates. The receipt
   (`summary.rowChecks`) and the import check page count all four whichever way she chose.
 
-- **What the old system knew about a gift lands where Steward keeps it (IMPORT-12, `shared/giftExtras.js`).** A
-  negative row, or a gift its file marks refunded (Bloomerang's Is Refunded), is a refund against the person's gift: the
+- **What the old system knew about a gift lands where Steward keeps it (IMPORT-12, `shared/giftExtras.js`).** In a
+  known system's export, a negative row, or a gift its file marks refunded (Bloomerang's Is Refunded), is a refund
+  against the person's gift. A spreadsheet no system claims keeps HARDEN-1's rule and sets the negative row aside, as
+  Jonathan's real-shaped key does. The gift a refund stands against is: the
   one it names, else the latest earlier gift of that amount, else one at least that large. It is written as a negative
   row with `refund_of`, and the gift is marked refunded in full when the whole gift went back, as "Record a refund" does.
   A refund with no gift to stand against is still set aside. A soft credit, from a column (Soft Credit Name(s)) or a row

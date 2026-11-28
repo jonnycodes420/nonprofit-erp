@@ -111,6 +111,9 @@ async function apiLeg(k) {
   const secs = elapsed(t0);
   ok(`§1 ${k}: the import finished`, imp.end && imp.end.status === "done", JSON.stringify(imp.end || (imp.start && imp.start.body)).slice(0, 300));
   const h = await held(O.id);
+  // a file no known system claims (eKYROS) keeps HARDEN-1's rule: a negative row is set aside, so Steward holds the gifts
+  const known = !!(u.knownShape && u.knownShape.system);
+  if (!known) Object.assign(key, { cents: key.cents + key.refundCents, refunds: 0, byYear: undefined });
   ok(`§1 ${k}: ${key.people} people`, h.people === key.people, h.people);
   ok(`§1 ${k}: ${key.gifts} gifts`, h.gifts === key.gifts, h.gifts);
   ok(`§1 ${k}: ${usd(key.cents)}, refunds netted, to the cent`, Number(h.cents) === key.cents, usd(Number(h.cents)));

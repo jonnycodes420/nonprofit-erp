@@ -38,7 +38,7 @@ async function writeGiftExtras({ query, run, recalcPledgePayment }, { orgId, who
       await run(`UPDATE gifts SET refunded_in_full = TRUE WHERE org_id = ? AND id = ANY(?::text[])`, [orgId, full]);
       // a gift refunded in full is no longer a gift (money.js GIFT): its person's last gift and count are worked out again
       const ids = [...new Set(ref.filter(r => r[2].full).map(r => personId.get(r[2].personKey)).filter(Boolean))];
-      await require("../../donorSummary").recomputeSummaries(run, orgId, ids);
+      await require("../../shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, ids);   // NUMBERS-6: the one writer
     }
     out.refunds = ref.length; out.refundCents = ref.reduce((t, r) => t + r[2].cents, 0); out.refundedInFull = full.length;
   }
