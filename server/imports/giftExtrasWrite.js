@@ -2,7 +2,7 @@
 // WRITTEN WITH THE GIFT.
 //
 // The one reader (shared/giftExtras.js) says, for each gift row, what the old
-// system knew: a refund against it, who else is credited, whom it honours,
+// system knew: a refund against it, who else is credited, whom it honors,
 // whether it is anonymous, which pledge it pays. The gifts themselves are
 // written by recordGifts (the one gift path, in the import's transaction);
 // this writes the rest onto them, set-wise, in the same transaction:

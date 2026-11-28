@@ -63,7 +63,7 @@ export const EXPORT_SHAPES = [
       "record type": "giftNote",
       // IMPORT-12: an Opportunity with no contact is its Account's: a business's or a foundation's gift.
       // Beside a contact it is that person's household account, which the contacts file already names.
-      "account name": { role: "org", reason: "the organisation, for a gift with no contact; beside a contact, that person's household account" },
+      "account name": { role: "org", reason: "the organization, for a gift with no contact; beside a contact, that person's household account" },
       "honoree name": "tributeName", "tribute type": "tributeType", "recurring donation": "recurring",
     },
   },
@@ -90,7 +90,7 @@ export const EXPORT_SHAPES = [
       // IMPORT-12: Bloomerang's own transaction types; a pledge is a promise, its payments are money
       "type": { role: "status", values: { donation: "received", "pledge payment": "received", "recurring donation payment": "received", pledge: "pledged",
         "recurring donation": "void" } },
-      "soft credited amount": { role: "ignore", reason: "what the soft credit recognises, the same money as the gift; never added to anyone's giving" },
+      "soft credited amount": { role: "ignore", reason: "what the soft credit recognizes, the same money as the gift; never added to anyone's giving" },
       "has tribute": { role: "ignore", reason: "whether the gift has a tribute; the Tribute column names it" },
       "pledge amount": { role: "ignore", reason: "the pledge's whole amount, on its own Pledge row" },
       "pledge balance": { role: "ignore", reason: "what was still owed when the file was made; Steward works it out from the payments" },
@@ -118,8 +118,8 @@ export const EXPORT_SHAPES = [
       "donor id": "externalId", "nomail": "doNotMail", "home phone": "phone", "mobile phone": "phone", "opt line": "address2",
       // NOMAIL_REASON DE is deceased (DonorPerfect's own code); NC asked not to be contacted
       "nomail reason": { role: "deceased", values: { de: "yes", nc: "no", ia: "no" } },
-      "org rec": { role: "ignore", reason: "Y for an organisation; Steward reads that from the name" },
-      "donor type": { role: "ignore", reason: "DonorPerfect's donor type code (IN, CO, FD); Steward reads an organisation from its name" },
+      "org rec": { role: "ignore", reason: "Y for an organization; Steward reads that from the name" },
+      "donor type": { role: "ignore", reason: "DonorPerfect's donor type code (IN, CO, FD); Steward reads an organization from its name" },
       "spouse id": { role: "ignore", reason: "the spouse's DONOR_ID; the two are linked as one household (both rows are in the file)" },
       "salutation": "keep", "created date": { role: "ignore", reason: "when the record was made in DonorPerfect, not a gift" },
     },

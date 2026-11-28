@@ -2,7 +2,7 @@
 // GIFT SURVIVES THE MOVE.
 //
 // Every system our prospects run writes more on a gift row than an amount and a
-// date: who else is credited (a soft credit), whom it honours (a tribute),
+// date: who else is credited (a soft credit), whom it honors (a tribute),
 // whether the donor asked not to be named, whether it is one of a monthly
 // series, which pledge it pays, and whether it was refunded. Before this the
 // one reader set every refund aside (so Steward held more than the file) and
