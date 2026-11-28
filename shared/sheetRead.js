@@ -35,6 +35,7 @@ import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf 
 import { readTotalRow, checkHeadline } from "./totalRows.js";
 import { applySheetKinds, linkGiftSheetsById, joinSentence, sheetsSetAside } from "./sheetWorkbook.js";   // IMPORT-11
 import { rowChecks, rowCheckLists } from "./importRowChecks.js";   // IMPORT-11: the cap, copies, far outside, future-dated
+import { GIFT_EXTRA_HEADER_ROLES, GIFT_EXTRA_ROLE_LABELS, SOFT_CREDIT_STATUS, softCreditRow, takeGiftExtras, settleGiftExtras } from "./giftExtras.js";   // IMPORT-12
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
   demotePeopleSheetAmounts, mergedLinesOf, partnersAndHouseholds, spouseQuestion, choiceLines, amountChecks, importButtonSentence,
   notePreferences, personFields, peopleSheetGiftsOf } from "./sheetReadLines.js";
@@ -63,6 +64,7 @@ const ROLE_LABELS = {
   doNotContact: "Do not contact", commRestrictions: "Communication restrictions", deceased: "Deceased", volunteer: "Volunteer (yes or x)", board: "Board member",
   staff: "Staff", keep: "Keep as a custom field", totalOf: "A total of another sheet", ignore: "Leave out",
   ...AUCTION_ROLE_LABELS,   // ASKS-1: an auction sheet's item and its fair market value
+  ...GIFT_EXTRA_ROLE_LABELS,   // IMPORT-12: soft credits, tributes, anonymous, pledge links, refunds
 };
 export const SHEET_ROLES = Object.keys(ROLE_LABELS).map(k => ({ key: k, label: ROLE_LABELS[k] }));
 
@@ -135,6 +137,7 @@ const HEADER_ROLES = [
   ["board", ["board", "board member", "on board", "trustee", "board?"]],
   ["staff", ["staff", "employee", "staff member", "staff?"]],
   ...AUCTION_HEADER_ROLES,   // ASKS-1: Bidder, Winning bid, Item, Value (shared/auctionSheet.js)
+  ...GIFT_EXTRA_HEADER_ROLES,   // IMPORT-12 (shared/giftExtras.js)
 ];
 // A column that adds up money kept elsewhere ("Gave at dinner" beside a Gifts
 // sheet). Checked against the gifts before it is skipped; one that does not
@@ -194,7 +197,7 @@ const NO = new Set(["no", "n", "false", "unpaid", "not yet", "pending", "0", "op
 const STATUS_PAID = new Set(["completed", "complete", "succeeded", "success", "paid", "closed won", "posted", "received", "settled", "cleared", "approved", "captured", "deposited"]);
 const STATUS_PLEDGE = new Set(["pledged", "promised", "open", "outstanding", "committed", "not yet received", "not received", "unpaid", "balance due", "pledge", "awaiting payment",
   "not yet paid", "not paid", "not paid yet", "to be paid", "owed", "due"]);
-const STATUS_ASIDE = new Set(["refunded", "failed", "denied", "declined", "reversed", "canceled", "cancelled", "voided", "void", "pending", "chargeback", "disputed", "closed lost", "partially refunded", "unclaimed", "expired"]);
+const STATUS_ASIDE = new Set(["refunded", "failed", "denied", "declined", "reversed", "canceled", "cancelled", "voided", "void", "pending", "chargeback", "disputed", "closed lost", "partially refunded", "unclaimed", "expired", "split main"]);
 const TYPE_GIFT = /^(donation|donation payment|payment|deposit|sales receipt|gift|contribution|charge|website payment|express checkout payment|mobile payment|subscription payment|recurring payment|p2p|merchant transaction|credit card|one-time donation|recurring donation|check|cash)$/i;
 const TYPE_ASIDE = /(withdrawal|transfer|refund|fee|journal|bill|expense|hold|reversal|invoice|payout|authorization|currency conversion)/i;
 const ORG_WORDS = /\b(foundation|fund|inc|incorporated|llc|l\.l\.c|corp|corporation|company|co\.|church|ministries|ministry|trust|bank|association|club|society|school|university|college|council|group|partners|lp|llp|pc|pllc|daf|giving|philanthropies|charitable|rotary|lions|kiwanis|temple|synagogue|parish|diocese|chapel)\b/i;
@@ -1032,8 +1035,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                   sample: p.sample, reason: c.mismatch || "this may be the amount: Steward could not tell", options: SHEET_ROLES });
       continue;
     }
-    if (c.duplicateOf && dataRows(t).every(b => s(cellOf(t, b, c)) === s(cellOf(t, b, roleOf(t, c.duplicateOf))))) {
-      c.disposition = "skipped"; c.skipReason = `the same values as "${roleOf(t, c.duplicateOf).header}"`; continue;
+    // IMPORT-12: the column it duplicated may have been placed elsewhere since (a known shape); then it is no copy
+    const twin = c.duplicateOf ? roleOf(t, c.duplicateOf) : null;
+    if (twin && dataRows(t).every(b => s(cellOf(t, b, c)) === s(cellOf(t, b, twin)))) {
+      c.disposition = "skipped"; c.skipReason = `the same values as "${twin.header}"`; continue;
     }
     // section labels in a headed column ("Month": January, February) are not data
     if (dataRows(t).every(b => isBlank(b.cells[c.index]) || b.cells.filter(x => !isBlank(x)).length === 1)) {
@@ -1102,6 +1107,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const people = new Map();   // key → the record
   const byId = new Map(), byEmail = new Map(), byName = new Map();
   const gifts = [], pledges = [], aside = [], totals = [], flags = [], totalChecks = [];   // IMPORT-10: totals that do not foot
+  const refundCands = [], columnCredits = [], rowCredits = [];   // IMPORT-12: settled after every row is read
   const nearMisses = [];
   // FIX-59 · ONE PERSON, TWO SPELLINGS, ON TWO LISTS OF ONE EVENT. When an
   // event's file brings in more than one list (a guest list and a seating
@@ -1296,7 +1302,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         const src = (c, v) => ({ header: c.header, value: v, sheet: tt.sheet, file: sourceFile });
         for (const r of COMMS_ROLES) {
           const c = role(r); if (!c) continue;
-          const raw = s(cellOf(tt, bb, c)); if (!raw) continue;
+          const raw0 = s(cellOf(tt, bb, c)); if (!raw0) continue;
+          const raw = c.values && c.values[raw0.toLowerCase()] ? c.values[raw0.toLowerCase()] : raw0;   // IMPORT-12: a system's own words
           if (r === "mailingList") {
             // IMPORT-8: the choice column's own cell ("Unsubscribed", "please remove
             // me"), never a note elsewhere on the row
@@ -1355,6 +1362,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         if (person.spouseName && !person.spouseWord) { const h = String((role("spouse") || {}).header || ""); person.spouseWord = /partner/i.test(h) && !/spouse/i.test(h) ? "partner" : "spouse"; }
         person.lines.push(`${t.sheet}:${b.line}`);
         if (person.externalId) byId.set(person.externalId.toLowerCase(), pkey);
+        // IMPORT-12: a person exported twice under two IDs keeps both, so the second ID's gifts still find them
+        if (extId && !byId.has(extId.toLowerCase())) { byId.set(extId.toLowerCase(), pkey); (person.otherIds = person.otherIds || []).push(extId); }
         if (person.email) byEmail.set(person.email, pkey);
         if (!byName.has(nameKey)) byName.set(nameKey, pkey);
         absorbRow(person, t, b);
@@ -1371,12 +1380,11 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       for (const m of moneyCols) { const v = moneyOf(cellOf(t, b, m)); if (v != null) { tableSums[m.index] += cents(v); sinceSubtotal[m.index] += cents(v); } }
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
       if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
-      if (amt < 0) {
-        // HARDEN-1: "Purchase of Oakwell Horse" is money the org paid out, not a donor's refund
+      // HARDEN-1: money paid out is not a refund. IMPORT-12: in a known system's export a negative row is a refund, netted later
+      const isRefund = amt < 0 && !!t.shape && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));
+      if (amt < 0 && !isRefund) {
         const said = s(get(b, "note")) || s(get(b, "type"));
-        const out = PAID_OUT_RE.test(said);
-        aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt),
-                     reason: out ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
+        aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: PAID_OUT_RE.test(said) ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
         continue;
       }
       const statusCol = role("status");
@@ -1384,9 +1392,11 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // a known export's own codes (DonorPerfect's G and P) read as the words they stand for
       const status = statusCol && statusCol.values && statusCol.values[statusWord] ? statusCol.values[statusWord] : statusWord;
       const type = s(get(b, "type"));
-      if (type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
-      if (status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
-      const rk = rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}` });   // IMPORT-11
+      if (!isRefund && type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
+      // IMPORT-12: a soft-credit row is recognition on the person thanked, never money
+      if (status === SOFT_CREDIT_STATUS) { ensure(); rowCredits.push(softCreditRow({ t, b, pkey, who, cents: cents(amt), get: r => s(get(b, r)), normalizeDate })); continue; }
+      if (!isRefund && status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
+      const rk = isRefund || status === SOFT_CREDIT_STATUS ? { mark: {} } : rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}` });   // IMPORT-11
       if (rk.aside) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rk.aside }); continue; }
       // when: a gift with a person and an amount always lands. No date, or a
       // date Steward cannot place in a day, is a gift with no date, flagged.
@@ -1484,6 +1494,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark,
                      // ASKS-1: an auction purchase: the item and what it was worth
                      auction: role("item") ? auctionFactsOf({ itemRaw: get(b, "item"), fmvRaw: get(b, "fmv"), hasFmvColumn: !!role("fmv"), answers, moneyOf }) : null };
+      // IMPORT-12: what the old system knew about this gift; a refund row waits for its gift
+      if (takeGiftExtras({ base, isRefund, get: r => get(b, r), has: r => !!role(r), refundCands, columnCredits, normalizeDate })) continue;
       const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });
       // IMPORT-5: a pledge's due dates come from the file, or from her answer
@@ -1525,6 +1537,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       personGiftCents.set(pkey, (personGiftCents.get(pkey) || 0) + cents(amt));
     }
   }
+  // IMPORT-12: a refund nets against its gift; soft credits find their gift and person; payments their pledge
+  const { refunds, soft } = settleGiftExtras({ refundCands, columnCredits, rowCredits, gifts, pledges, people: [...people.values()], aside, fmt$ });
   // "Gave at dinner" beside a gift sheet: skipped only when it foots, person by
   // person, against the gifts this file gives them; otherwise kept, never lost.
   // "Gave at dinner", Lifetime, Last gift beside a gift sheet: checked person by
@@ -1678,7 +1692,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const { commsLines, prefNotes, prefNotePeople } = choiceLines(peopleList);
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
   // IMPORT-6 · EVERY ROW ACCOUNTED FOR (shared/importRows.js)
-  const rowLedger = ledgerOf({ tables, usable, aside, totals, totalChecks, notes, people, gifts, pledges, noteRows, fmt$ });
+  const rowLedger = ledgerOf({ tables, usable, aside, totals, totalChecks, notes, people, gifts: [...gifts, ...refunds], pledges, noteRows, fmt$ });
   // IMPORT-5 (7c): every row of a list of people is a person, a row merged into
   // one, or a row set aside, and the line says so: "656 rows · 650 people · 6 merged"
   const rowAccount = (() => {
@@ -1733,7 +1747,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
-    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, totalChecks, checkLine: checkHeadline(usable.reduce((a, t) => a + (t.readCount || 0), 0), totalChecks), peopleSheetGifts, merged, rowAccount, rowLedger, commsLines, prefNotes, mergedLines, countLines: null, householdGroups: [...householdGroups].map(([k, g]) => ({ key: k, ...g })), householdLine,
+    people: peopleList, gifts, pledges, aside, refunds, softCredits: soft.credits, totals, flags, notes, questions, help, nearMisses, totalOfChecks, totalChecks, checkLine: checkHeadline(usable.reduce((a, t) => a + (t.readCount || 0), 0), totalChecks), peopleSheetGifts, merged, rowAccount, rowLedger, commsLines, prefNotes, mergedLines, countLines: null, householdGroups: [...householdGroups].map(([k, g]) => ({ key: k, ...g })), householdLine,
     nearDuplicates: nearDupes, noteRows, namesCleaned, giftsDeposited: answers.giftsDeposited === "no" ? "no" : "yes",
     addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks, sheetKindRefused,

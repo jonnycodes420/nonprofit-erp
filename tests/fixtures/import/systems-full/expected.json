@@ -1,0 +1,929 @@
+{
+  "salesforce": {
+    "system": "Salesforce",
+    "files": [
+      "salesforce-npsp-contacts.csv",
+      "salesforce-npsp-opportunities.csv"
+    ],
+    "joinedOn": "Contact ID",
+    "people": 4314,
+    "persons": 4200,
+    "organisations": 126,
+    "households": 597,
+    "duplicates": 7,
+    "gifts": 13959,
+    "cents": 748908476,
+    "refunds": 77,
+    "refundCents": 1985081,
+    "softCredits": 0,
+    "softCreditCents": 0,
+    "recurringSeries": 139,
+    "recurringGifts": 1949,
+    "pledges": 63,
+    "pledgeCents": 20308333,
+    "pledgePayments": 0,
+    "tributes": 464,
+    "anonymous": 0,
+    "splits": 202,
+    "deceased": 52,
+    "doNotContact": 78,
+    "noEmail": 169,
+    "twoEmails": 767,
+    "byFund": {
+      "General Operating": 560600236,
+      "Adult Literacy": 49322213,
+      "Summer Readers": 37806763,
+      "Books for Babies": 32045845,
+      "Building Fund": 69133419
+    },
+    "byYear": {
+      "2019": 101766534,
+      "2020": 80294705,
+      "2021": 85534638,
+      "2022": 89809496,
+      "2023": 102419943,
+      "2024": 108885092,
+      "2025": 98912968,
+      "2026": 81285100
+    },
+    "spot": [
+      {
+        "first": "Honora",
+        "last": "Glenrothes",
+        "email": "honora.glenrothes1@example.org",
+        "lifetimeCents": 167553,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Imogen",
+        "last": "Coldridge",
+        "email": "imogen.coldridge41@example.org",
+        "lifetimeCents": 95000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Quillon",
+        "last": "Merriweather",
+        "email": "quillon.merriweather81@example.org",
+        "lifetimeCents": 262500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Cosmo",
+        "last": "Wexcombe",
+        "email": "cosmo.wexcombe121@example.org",
+        "lifetimeCents": 165024,
+        "softCents": 20000,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Nathaniel",
+        "last": "Upcott",
+        "email": "nathaniel.upcott161@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ambrose",
+        "last": "Everleigh",
+        "email": "ambrose.everleigh201@example.org",
+        "lifetimeCents": 7500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Rafferty",
+        "last": "Jessop",
+        "email": "rafferty.jessop241@example.org",
+        "lifetimeCents": 77583,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Zinnia",
+        "last": "Blakemore",
+        "email": "zinnia.blakemore281@example.org",
+        "lifetimeCents": 175000,
+        "softCents": 22521,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Tamsin",
+        "last": "Ingleby",
+        "email": "tamsin.ingleby321@example.org",
+        "lifetimeCents": 197500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Adele",
+        "last": "Drummond",
+        "email": "adele.drummond361@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      }
+    ]
+  },
+  "bloomerang": {
+    "system": "Bloomerang",
+    "files": [
+      "bloomerang-constituents.csv",
+      "bloomerang-transactions.csv"
+    ],
+    "joinedOn": "Account Number",
+    "people": 4944,
+    "persons": 4800,
+    "organisations": 144,
+    "households": 719,
+    "duplicates": 8,
+    "gifts": 15617,
+    "cents": 900351788,
+    "refunds": 84,
+    "refundCents": 5345488,
+    "softCredits": 1327,
+    "softCreditCents": 37309998,
+    "recurringSeries": 131,
+    "recurringGifts": 1884,
+    "pledges": 112,
+    "pledgeCents": 65300000,
+    "pledgePayments": 93,
+    "tributes": 563,
+    "anonymous": 0,
+    "splits": 224,
+    "deceased": 56,
+    "doNotContact": 103,
+    "noEmail": 183,
+    "twoEmails": 831,
+    "byFund": {
+      "General Operating": 669569919,
+      "Building Fund": 73255411,
+      "Adult Literacy": 61099491,
+      "Books for Babies": 45022391,
+      "Summer Readers": 51404576
+    },
+    "byYear": {
+      "2019": 113704590,
+      "2020": 100400137,
+      "2021": 115882421,
+      "2022": 121665449,
+      "2023": 115857191,
+      "2024": 119984905,
+      "2025": 129300528,
+      "2026": 83556567
+    },
+    "spot": [
+      {
+        "first": "Thaddeus",
+        "last": "Glenrothes",
+        "email": "thaddeus.glenrothes1@example.org",
+        "lifetimeCents": 70000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Fenwick",
+        "last": "Jessop",
+        "email": "fenwick.jessop41@example.org",
+        "lifetimeCents": 0,
+        "softCents": 2500,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Zinnia",
+        "last": "Everleigh",
+        "email": "zinnia.everleigh81@example.org",
+        "lifetimeCents": 0,
+        "softCents": 15000,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Wilhelmina",
+        "last": "Redfern",
+        "email": "wilhelmina.redfern121@example.org",
+        "lifetimeCents": 17568,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Leopold",
+        "last": "Ashdown",
+        "email": "leopold.ashdown161@example.org",
+        "lifetimeCents": 100000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": true,
+        "noEmail": false
+      },
+      {
+        "first": "Delphine",
+        "last": "Kittredge",
+        "email": "delphine.kittredge201@example.org",
+        "lifetimeCents": 25000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Nathaniel",
+        "last": "Kilbride",
+        "email": "nathaniel.kilbride241@example.org",
+        "lifetimeCents": 147500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Jasper",
+        "last": "Vantongeren",
+        "email": "jasper.vantongeren281@example.org",
+        "lifetimeCents": 265053,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ulric",
+        "last": "Kilbride",
+        "email": "ulric.kilbride321@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Percival",
+        "last": "Stanwick",
+        "email": "percival.stanwick361@example.org",
+        "lifetimeCents": 65132,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      }
+    ]
+  },
+  "donorperfect": {
+    "system": "DonorPerfect",
+    "files": [
+      "donorperfect-donors.csv",
+      "donorperfect-gifts.csv"
+    ],
+    "joinedOn": "DONOR_ID",
+    "people": 3708,
+    "persons": 3600,
+    "organisations": 108,
+    "households": 514,
+    "duplicates": 6,
+    "gifts": 11975,
+    "cents": 643032526,
+    "refunds": 60,
+    "refundCents": 5380457,
+    "softCredits": 1030,
+    "softCreditCents": 27047348,
+    "recurringSeries": 115,
+    "recurringGifts": 1534,
+    "pledges": 86,
+    "pledgeCents": 47100000,
+    "pledgePayments": 81,
+    "tributes": 367,
+    "anonymous": 0,
+    "splits": 176,
+    "deceased": 39,
+    "doNotContact": 0,
+    "noEmail": 0,
+    "twoEmails": 641,
+    "byFund": {
+      "Books for Babies": 24573178,
+      "General Operating": 496531932,
+      "Summer Readers": 29556342,
+      "Adult Literacy": 35060305,
+      "Building Fund": 57310769
+    },
+    "byYear": {
+      "2019": 76015262,
+      "2020": 78821227,
+      "2021": 91747286,
+      "2022": 61500133,
+      "2023": 97903348,
+      "2024": 89407775,
+      "2025": 87548195,
+      "2026": 60089300
+    },
+    "spot": [
+      {
+        "first": "Juniper",
+        "last": "Blakemore",
+        "email": "juniper.blakemore1@example.org",
+        "lifetimeCents": 10000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Wilhelmina",
+        "last": "Tolliver",
+        "email": "wilhelmina.tolliver41@example.org",
+        "lifetimeCents": 47510,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Jasper",
+        "last": "Saltonstall",
+        "email": "jasper.saltonstall81@example.org",
+        "lifetimeCents": 110000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Philippa",
+        "last": "Chessington",
+        "email": "philippa.chessington121@example.org",
+        "lifetimeCents": 25000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ezra",
+        "last": "Vantongeren",
+        "email": "ezra.vantongeren161@example.org",
+        "lifetimeCents": 0,
+        "softCents": 110000,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Gideon",
+        "last": "Stanwick",
+        "email": "gideon.stanwick201@example.org",
+        "lifetimeCents": 10000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Marisol",
+        "last": "Ashdown",
+        "email": "marisol.ashdown241@example.org",
+        "lifetimeCents": 162555,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Adele",
+        "last": "Dewhurst",
+        "email": "adele.dewhurst281@example.org",
+        "lifetimeCents": 85088,
+        "softCents": 7500,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ignatius",
+        "last": "Glenrothes",
+        "email": "ignatius.glenrothes321@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Zinnia",
+        "last": "Lowndes",
+        "email": "zinnia.lowndes361@example.org",
+        "lifetimeCents": 145000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      }
+    ]
+  },
+  "neon": {
+    "system": "Neon CRM",
+    "files": [
+      "neon-accounts.csv",
+      "neon-donations.csv"
+    ],
+    "joinedOn": "Account ID",
+    "people": 3296,
+    "persons": 3200,
+    "organisations": 96,
+    "households": 468,
+    "duplicates": 6,
+    "gifts": 10312,
+    "cents": 637664780,
+    "refunds": 48,
+    "refundCents": 3914580,
+    "softCredits": 826,
+    "softCreditCents": 22108331,
+    "recurringSeries": 93,
+    "recurringGifts": 1275,
+    "pledges": 0,
+    "pledgeCents": 0,
+    "pledgePayments": 75,
+    "tributes": 353,
+    "anonymous": 166,
+    "splits": 142,
+    "deceased": 40,
+    "doNotContact": 55,
+    "noEmail": 115,
+    "twoEmails": 539,
+    "byFund": {
+      "General Operating": 486963232,
+      "Building Fund": 49822391,
+      "Summer Readers": 30870438,
+      "Books for Babies": 33261088,
+      "Adult Literacy": 36747631
+    },
+    "byYear": {
+      "2019": 75713231,
+      "2020": 71009622,
+      "2021": 72686458,
+      "2022": 86870596,
+      "2023": 84492917,
+      "2024": 83435063,
+      "2025": 81141847,
+      "2026": 82315046
+    },
+    "spot": [
+      {
+        "first": "Philippa",
+        "last": "Rathbone",
+        "email": "philippa.rathbone1@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Philippa",
+        "last": "Ashdown",
+        "email": "philippa.ashdown41@example.org",
+        "lifetimeCents": 160099,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Rosalind",
+        "last": "Underhill",
+        "email": "rosalind.underhill81@example.org",
+        "lifetimeCents": 280021,
+        "softCents": 20000,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Rafferty",
+        "last": "Marchbank",
+        "email": "rafferty.marchbank121@example.org",
+        "lifetimeCents": 62500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Nathaniel",
+        "last": "Esterbrook",
+        "email": "nathaniel.esterbrook161@example.org",
+        "lifetimeCents": 80078,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Leopold",
+        "last": "Lowndes",
+        "email": "leopold.lowndes201@example.org",
+        "lifetimeCents": 97500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Xanthe",
+        "last": "Birchall",
+        "email": "xanthe.birchall241@example.org",
+        "lifetimeCents": 205000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Florentine",
+        "last": "Allardyce",
+        "email": "florentine.allardyce281@example.org",
+        "lifetimeCents": 67500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Sebastian",
+        "last": "Wexcombe",
+        "email": "sebastian.wexcombe321@example.org",
+        "lifetimeCents": 170000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Florentine",
+        "last": "Cardew",
+        "email": "florentine.cardew361@example.org",
+        "lifetimeCents": 376085,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      }
+    ]
+  },
+  "littlegreenlight": {
+    "system": "Little Green Light",
+    "files": [
+      "littlegreenlight-gifts.csv"
+    ],
+    "joinedOn": null,
+    "people": 2408,
+    "persons": 3000,
+    "organisations": 90,
+    "households": 0,
+    "duplicates": 6,
+    "gifts": 9920,
+    "cents": 573498675,
+    "refunds": 39,
+    "refundCents": 1126347,
+    "softCredits": 822,
+    "softCreditCents": 23525597,
+    "recurringSeries": 82,
+    "recurringGifts": 1266,
+    "pledges": 64,
+    "pledgeCents": 33100000,
+    "pledgePayments": 60,
+    "tributes": 362,
+    "anonymous": 0,
+    "splits": 159,
+    "deceased": 0,
+    "doNotContact": 0,
+    "noEmail": 0,
+    "twoEmails": 0,
+    "byFund": {
+      "General Operating": 440187064,
+      "Adult Literacy": 32074462,
+      "Building Fund": 45683125,
+      "Books for Babies": 31585793,
+      "Summer Readers": 23968231
+    },
+    "byYear": {
+      "2019": 71686865,
+      "2020": 60272200,
+      "2021": 67869324,
+      "2022": 89880363,
+      "2023": 78822952,
+      "2024": 71914789,
+      "2025": 78916435,
+      "2026": 54135747
+    },
+    "spot": [
+      {
+        "first": "Osric",
+        "last": "Cardew",
+        "email": "osric.cardew1@example.org",
+        "lifetimeCents": 127535,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Bettina",
+        "last": "Ottershaw",
+        "email": "bettina.ottershaw41@example.org",
+        "lifetimeCents": 15000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Barnaby",
+        "last": "Pickering",
+        "email": "barnaby.pickering81@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ginevra",
+        "last": "Hawksley",
+        "email": "ginevra.hawksley121@example.org",
+        "lifetimeCents": 432591,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": true
+      },
+      {
+        "first": "Fenwick",
+        "last": "Kittredge",
+        "email": "fenwick.kittredge161@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Lazlo",
+        "last": "Quenby",
+        "email": "lazlo.quenby201@example.org",
+        "lifetimeCents": 15075,
+        "softCents": 60000,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ignatius",
+        "last": "Jessop",
+        "email": "ignatius.jessop241@example.org",
+        "lifetimeCents": 195068,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Cosmo",
+        "last": "Waverley",
+        "email": "cosmo.waverley281@example.org",
+        "lifetimeCents": 162500,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Mirabel",
+        "last": "Everleigh",
+        "email": "mirabel.everleigh321@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Marisol",
+        "last": "Yarborough",
+        "email": "marisol.yarborough361@example.org",
+        "lifetimeCents": 0,
+        "softCents": 100000,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      }
+    ],
+    "householdsNote": "only couples who both appear with a gift"
+  },
+  "ekyros": {
+    "system": "eKYROS",
+    "files": [
+      "ekyros-donor-gifts.csv"
+    ],
+    "joinedOn": null,
+    "people": 2214,
+    "persons": 3000,
+    "organisations": 90,
+    "households": 455,
+    "duplicates": 6,
+    "gifts": 9724,
+    "cents": 571899744,
+    "refunds": 54,
+    "refundCents": 1975618,
+    "softCredits": 0,
+    "softCreditCents": 0,
+    "recurringSeries": 92,
+    "recurringGifts": 1259,
+    "pledges": 0,
+    "pledgeCents": 0,
+    "pledgePayments": 76,
+    "tributes": 325,
+    "anonymous": 168,
+    "splits": 140,
+    "deceased": 22,
+    "doNotContact": 0,
+    "noEmail": 0,
+    "twoEmails": 553,
+    "byFund": {
+      "Adult Literacy": 46592199,
+      "General Operating": 410071320,
+      "Summer Readers": 32607449,
+      "Building Fund": 47532092,
+      "Books for Babies": 35096684
+    },
+    "byYear": {
+      "2019": 69843121,
+      "2020": 79401591,
+      "2021": 74957102,
+      "2022": 79053831,
+      "2023": 72952581,
+      "2024": 69795449,
+      "2025": 60410778,
+      "2026": 65485291
+    },
+    "spot": [
+      {
+        "first": "Zinnia",
+        "last": "Esterbrook",
+        "email": "zinnia.esterbrook1@example.org",
+        "lifetimeCents": 60000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Hollis",
+        "last": "Underhill",
+        "email": "hollis.underhill41@example.org",
+        "lifetimeCents": 262500,
+        "softCents": 65059,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Barnaby",
+        "last": "Cardew",
+        "email": "barnaby.cardew81@example.org",
+        "lifetimeCents": 170171,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ignatius",
+        "last": "Esterbrook",
+        "email": "ignatius.esterbrook121@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Yardley",
+        "last": "Saltonstall",
+        "email": "yardley.saltonstall161@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ezra",
+        "last": "Esterbrook",
+        "email": "ezra.esterbrook201@example.org",
+        "lifetimeCents": 120000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Ottilie",
+        "last": "Quenby",
+        "email": "ottilie.quenby241@example.org",
+        "lifetimeCents": 15000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Sebastian",
+        "last": "Ingleby",
+        "email": "sebastian.ingleby281@example.org",
+        "lifetimeCents": 80030,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Jasper",
+        "last": "Quenby",
+        "email": "jasper.quenby321@example.org",
+        "lifetimeCents": 60000,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      },
+      {
+        "first": "Philippa",
+        "last": "Thistlewood",
+        "email": "philippa.thistlewood361@example.org",
+        "lifetimeCents": 0,
+        "softCents": 0,
+        "deceased": false,
+        "dnc": false,
+        "noEmail": false
+      }
+    ],
+    "householdsNote": "only couples who both appear with a gift"
+  },
+  "plain": {
+    "system": null,
+    "files": [
+      "plain-donor-spreadsheet.csv"
+    ],
+    "joinedOn": null,
+    "people": 3090,
+    "persons": 3000,
+    "organisations": 90,
+    "households": 408,
+    "gifts": 5875,
+    "cents": 506416171,
+    "deceased": 33,
+    "doNotContact": 74,
+    "noEmail": 114,
+    "twoEmails": 570,
+    "byYear": {
+      "2019": 77409208,
+      "2020": 65586945,
+      "2021": 70049105,
+      "2022": 63758527,
+      "2023": 84030149,
+      "2024": 65268800,
+      "2025": 80313437
+    },
+    "rows": 2682
+  }
+}

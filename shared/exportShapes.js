@@ -43,6 +43,12 @@ export const EXPORT_SHAPES = [
       "contact id": "externalId", "account name": { role: "ignore", skipWhen: /\bhousehold$/i, whenRole: "householdName", else: "keep",
         reason: "the household Salesforce puts these contacts on; Steward links them into one household" },
       "contact owner": "keep", "mobile": "phone", "mobile phone": "phone", "mailing country": "country", "birthdate": "keep",
+      // IMPORT-12: NPSP's emails; the preferred one is the person's email, the others are kept under their own names
+      "personal email": "email", "preferred email": { role: "ignore", reason: "which of the emails Salesforce prefers; Steward keeps the personal one as the email" },
+      "account id": { role: "ignore", reason: "Salesforce's id for the household account; the Account Name makes the household" },
+      "created date": { role: "ignore", reason: "when the record was made in Salesforce, not a gift" },
+      "deceased": { role: "deceased", values: { true: "yes", false: "no" } }, "do not contact": { role: "doNotContact", values: { true: "yes", false: "no" } },
+      "email opt out": { role: "optOut", values: { true: "yes", false: "no" } },
     },
   },
   {
@@ -54,15 +60,41 @@ export const EXPORT_SHAPES = [
       "opportunity id": "giftId", "contact id": "externalId", "primary contact": "name", "close date": "date", "stage": "status",
       "general accounting unit": "fund", "primary campaign source": "campaign", "payment method": "method",
       "opportunity name": { role: "ignore", reason: "the name Salesforce writes for each donation (who, \"Donation\", the date), already read from its own columns" },
-      "record type": "giftNote", "account name": { role: "ignore", skipWhen: /\bhousehold$/i, else: "keep",
-        reason: "the household account Salesforce makes for each person; Steward makes households from the people" },
+      "record type": "giftNote",
+      // IMPORT-12: an Opportunity with no contact is its Account's: a business's or a foundation's gift.
+      // Beside a contact it is that person's household account, which the contacts file already names.
+      "account name": { role: "org", reason: "the organization, for a gift with no contact; beside a contact, that person's household account" },
+      "honoree name": "tributeName", "tribute type": "tributeType", "recurring donation": "recurring",
     },
   },
   {
-    key: "bloomerang", system: "Bloomerang", part: "transactions",
-    signals: ["account number", "transaction number", "appeal", "email address"],
-    columns: { "account number": "externalId", "transaction number": "giftId", "appeal": "giftNote", "method": "method", "type": "type", "fund": "fund", "campaign": "campaign",
-      "name": { role: "ignore", reason: "the same person as First Name and Last Name, which Steward reads" } },
+    // IMPORT-12: Bloomerang's constituent report, paired with its transactions by Account Number
+    key: "bloomerang-constituents", system: "Bloomerang", part: "Constituents", pairWith: "bloomerang",
+    signals: ["account number", "household name", "communication restrictions", "email interest type", "primary zip code", "primary street", "primary email"],
+    signature: ["communication restrictions", "email interest type", "household name"],
+    columns: {
+      "account number": "externalId", "primary email": "email", "primary phone": "phone", "primary street": "address", "primary city": "city", "primary state": "state",
+      "primary zip code": "zip", "household name": "householdName", "organization name": "org", "communication restrictions": "commRestrictions",
+      "name": { role: "ignore", reason: "the same person as First Name and Last Name, which Steward reads" },
+      "type": { role: "ignore", reason: "Bloomerang's Individual or Organization; Steward reads that from the name" },
+      "status": { role: "deceased", values: { deceased: "yes", active: "no", inactive: "no" } },
+      "email interest type": { role: "optOut", values: { "opted out": "yes", all: "no", custom: "no" } },
+      "created date": { role: "ignore", reason: "when the record was made in Bloomerang, not a gift" },
+    },
+  },
+  {
+    key: "bloomerang", system: "Bloomerang", part: "Transactions", pairWith: "bloomerang-constituents",
+    signals: ["account number", "transaction number", "appeal", "email address", "soft credit name(s)", "is refunded", "pledge transaction number", "has tribute"],
+    columns: { "account number": "externalId", "transaction number": "giftId", "appeal": "giftNote", "method": "method", "fund": "fund", "campaign": "campaign",
+      "name": { role: "ignore", reason: "the same person as First Name and Last Name, which Steward reads" },
+      // IMPORT-12: Bloomerang's own transaction types; a pledge is a promise, its payments are money
+      "type": { role: "status", values: { donation: "received", "pledge payment": "received", "recurring donation payment": "received", pledge: "pledged",
+        "recurring donation": "void" } },
+      "soft credited amount": { role: "ignore", reason: "what the soft credit recognizes, the same money as the gift; never added to anyone's giving" },
+      "has tribute": { role: "ignore", reason: "whether the gift has a tribute; the Tribute column names it" },
+      "pledge amount": { role: "ignore", reason: "the pledge's whole amount, on its own Pledge row" },
+      "pledge balance": { role: "ignore", reason: "what was still owed when the file was made; Steward works it out from the payments" },
+    },
   },
   {
     key: "donorperfect", system: "DonorPerfect", part: "gifts",
@@ -70,25 +102,63 @@ export const EXPORT_SHAPES = [
     columns: {
       "donor id": "externalId", "gift id": "giftId", "gift date": "date", "amount": "amount", "gl code": "fund", "solicit code": "campaign",
       "sub solicit code": "giftNote", "gift type": "method",
-      // DonorPerfect writes G for a gift and P for a pledge
-      "record type": { role: "status", values: { g: "received", p: "pledged", m: "received" } },
+      // DonorPerfect's record types (its XML API manual): G a gift or a split's part, P a pledge,
+      // M a split's main row (its parts carry the money), S a soft credit on the person thanked
+      "record type": { role: "status", values: { g: "received", p: "pledged", m: "split main", s: "soft credit" } },
+      "plink": "pledgeLink", "glink": "giftLink", "memory honor": "tributeType", "gfname": "tributeName", "glname": "tributeLast", "split gift": { role: "ignore", reason: "Y on a split's part; each part is its own gift" },
+      "pledge payment": { role: "ignore", reason: "Y on a payment; PLINK names the pledge it pays" },
+    },
+  },
+  {
+    // IMPORT-12: DonorPerfect's donor file, paired with its gifts by DONOR_ID
+    key: "donorperfect-donors", system: "DonorPerfect", part: "Donors", pairWith: "donorperfect",
+    signals: ["donor id", "org rec", "donor type", "nomail", "nomail reason", "opt line", "spouse id"],
+    signature: ["org rec", "nomail", "nomail reason"],
+    columns: {
+      "donor id": "externalId", "nomail": "doNotMail", "home phone": "phone", "mobile phone": "phone", "opt line": "address2",
+      // NOMAIL_REASON DE is deceased (DonorPerfect's own code); NC asked not to be contacted
+      "nomail reason": { role: "deceased", values: { de: "yes", nc: "no", ia: "no" } },
+      "org rec": { role: "ignore", reason: "Y for an organization; Steward reads that from the name" },
+      "donor type": { role: "ignore", reason: "DonorPerfect's donor type code (IN, CO, FD); Steward reads an organization from its name" },
+      "spouse id": { role: "ignore", reason: "the spouse's DONOR_ID; the two are linked as one household (both rows are in the file)" },
+      "salutation": "keep", "created date": { role: "ignore", reason: "when the record was made in DonorPerfect, not a gift" },
     },
   },
   {
     key: "lgl", system: "Little Green Light", part: "gifts",
-    signals: ["lgl constituent id", "lgl gift id", "constituent name", "gift amount", "payment type"],
+    signals: ["lgl constituent id", "lgl gift id", "constituent name", "gift amount", "payment type", "sort name", "deductible amount"],
     columns: {
-      "lgl constituent id": "externalId", "lgl gift id": "giftId", "gift date": "date", "gift amount": "amount", "payment type": "method",
-      "gift type": { role: "status", values: { gift: "received", "in-kind": "received", "in kind": "received", pledge: "pledged", "pledge payment": "received" } },
+      "lgl constituent id": "externalId", "lgl gift id": "giftId", "gift date": "date", "gift amount": "amount", "amount": "amount", "payment type": "method",
+      "gift type": { role: "status", values: { gift: "received", "in-kind": "received", "in kind": "received", pledge: "pledged", "pledge payment": "received",
+        "soft credit": "soft credit", "other income": "received", "matching gift": "received" } },
+      // IMPORT-12: LGL's own columns
+      "deductible amount": { role: "ignore", reason: "the part of the gift that is tax-deductible; Amount is the gift" },
+      "sort name": { role: "ignore", reason: "the same person as First Name and Last Name, which Steward reads" },
+      "preferred email": "email", "preferred phone": "phone", "tribute name": "tributeName", "tribute dedication": "tributeType", "parent gift id": "giftLink",
       "appeal": "giftNote", "fund": "fund", "campaign": "campaign",
       "constituent name": { role: "ignore", reason: "the same person as First Name and Last Name, which Steward reads" },
     },
   },
   {
-    key: "neon", system: "Neon CRM", part: "donations",
+    // IMPORT-12: Neon's account search export, paired with its donations by Account ID
+    key: "neon-accounts", system: "Neon CRM", part: "Accounts", pairWith: "neon",
+    signals: ["account id", "email 1", "account type", "company name", "household name", "phone 1 full number (f)", "email opt-out"],
+    signature: ["email 1", "phone 1 full number (f)", "email opt-out"],
+    columns: {
+      "account id": "externalId", "email 1": "email", "phone 1 full number (f)": "phone", "company name": "org", "household name": "householdName", "zip code": "zip",
+      "account type": { role: "ignore", reason: "Neon's Individual or Company; Steward reads that from the name" },
+      "email opt-out": "optOut", "account created date": { role: "ignore", reason: "when the account was made in Neon, not a gift" },
+    },
+  },
+  {
+    key: "neon", system: "Neon CRM", part: "Donations", pairWith: "neon-accounts",
     signals: ["account id", "email 1", "tender type", "donation id", "donation amount", "purpose"],
     columns: { "account id": "externalId", "email 1": "email", "donation id": "giftId", "donation date": "date", "donation amount": "amount",
-      "tender type": "method", "campaign name": "campaign", "purpose": "giftNote", "fund": "fund" },
+      "tender type": "method", "campaign name": "campaign", "purpose": "giftNote", "fund": "fund",
+      "account name": { role: "name", reason: "the donor's name as Neon writes it on each donation" },
+      "donation status": { role: "status", values: { succeeded: "received", refunded: "received", pending: "pending", failed: "failed", canceled: "canceled" } },
+      "tribute name": "tributeName", "tribute type": "tributeType", "soft credit name": "softCredit", "anonymous type": "anonymous", "pledge id": "pledgeLink",
+      "recurring donation": "recurring" },
   },
   {
     key: "etapestry", system: "Blackbaud eTapestry", part: "journal",
