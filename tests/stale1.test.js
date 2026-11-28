@@ -244,7 +244,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
     await drainQueue(q).catch(() => {});
     const cm = await until(([b]) => { const el = document.querySelector('[data-testid="dp-open-pledge-words"]'); return !el || el.textContent.replace(/\s+/g, " ").trim() !== b; }, [cardBefore]);
     await check("§5 the pledge card moves", cm, { before: cardBefore, after: await text('[data-testid="dp-open-pledge-words"]') });
-    await go(`/dashboard`);
+    await go(`/dashboard?moves=all`);
     const hm = await until(([b]) => { const el = document.querySelector('[data-testid="home-moves"]'); return el && el.textContent.replace(/\s+/g, " ").trim() !== b; }, [home0]);
     await check("§5 Home's moves move with the payment", hm, { before: home0.slice(0, 160), after: (await text('[data-testid="home-moves"]')).slice(0, 160) });
     await go(`/app/fundraising`);
