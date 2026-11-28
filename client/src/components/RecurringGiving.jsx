@@ -542,9 +542,9 @@ function RecoveryPanel({ onNavigate }) {
   if (!data) return null;
   const { failed, recovered, dollars } = data;
   const au = data.autoUpdated || { count: 0, monthly: 0 };
-  // Nothing to say is said with nothing. An org whose cards have never failed
-  // does not need a panel of zeroes explaining what did not happen.
-  if (!failed.count && !recovered.count && !dollars.cents && !au.count) return null;
+  // Nothing to say is said with nothing: an org with no card gift on Stripe gets no panel. HONEST-4:
+  // one that has card gifts always sees the bank line, at nought too, so the updater's work shows.
+  if (!failed.count && !recovered.count && !dollars.cents && !au.count && !data.cardPlans) return null;
 
   const figure = (key, label, value, def) => (
     <button onClick={() => setOpen(o => (o === key ? null : key))}

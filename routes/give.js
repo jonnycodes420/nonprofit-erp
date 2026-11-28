@@ -4844,8 +4844,10 @@ app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
     FSrc.figureValue(orgId, { key: "cards-auto-updated", params: auSince }),
   ]);
 
+  // HONEST-4 follow-up: the bank line shows for any org with a card gift on Stripe, at nought too.
+  const [cardPlans] = await query(`SELECT COUNT(*)::int AS n FROM recurring_subscriptions WHERE org_id=? AND status IN ('active','past_due','recovering','recovered')`, [orgId]);
   res.json({
-    year: yearStart.slice(0, 4),
+    year: yearStart.slice(0, 4), cardPlans: (cardPlans && cardPlans.n) || 0,
     autoUpdated: {
       count: auCount.value || 0, monthly: auMonthly.value || 0, since: yearStart,
       definition: "Monthly gifts still giving whose card the bank replaced by itself this year, so it never failed. The money is what those gifts bring in each month.",

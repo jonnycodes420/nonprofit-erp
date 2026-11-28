@@ -162,6 +162,13 @@ async function run({ ok, login, api, q }) {
     line("rs_h4_1") && line("rs_h4_1").words === "Visa ending 4242 · updated by the bank Nov 3, 2026"
     && line("rs_h4_2") && line("rs_h4_2").words === "Mastercard ending 0005 · updated by the donor Oct 2, 2026", { a: line("rs_h4_1"), b: line("rs_h4_2") });
 
+  // HONEST-4 follow-up (the staging re-check): the panel hid itself when nothing failed, recovered or
+  // was updated, so "Cards updated by the bank this year: 0" never showed. It shows for any card gift.
+  const recov = await api("GET", "/recurring/recovery", tok);
+  ok("§4 Recurring Health shows the bank line for any org with a card gift, at nought too",
+    recov.status === 200 && recov.body.cardPlans === 2
+    && /!au\.count && !data\.cardPlans\) return null;/.test(require("fs").readFileSync(path.join(ROOT, "client", "src", "components", "RecurringGiving.jsx"), "utf8")), recov.body && recov.body.cardPlans);
+
   // ── §5 · a stored quiet sentence names a date ──────────────────────────────
   const ST = require(path.join(ROOT, "server", "connections", "status.js"));
   ok("§5 the task's sentence names the day it went quiet; the live one counts from today",
