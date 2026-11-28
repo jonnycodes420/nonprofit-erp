@@ -19,3 +19,7 @@ Three choices made here:
 
 Retired: `tests/home6-layout.test.js` (HOME-6's tile and drift-list geometry, none of which is on Home now;
 `docs/tests-retired.md`). The suites that drove the deck on Home open it at `/dashboard?moves=all`.
+
+**Found on the staging walk (28 Nov), fixed in the follow-up PR.** In org_stagewalk, Not now brought in the next in
+rank, who had been called that week, so they went straight to the done strip and four people showed. Not now (and
+the first pick) now pass over anyone already done this week. `tests/insights.test.js` §11 was red on main for it.

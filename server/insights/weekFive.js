@@ -101,18 +101,31 @@ function mount(app, { query, run, wrap, requireAuth, checkWriteAccess, actor, de
     return { ...d, ranked, weekOf: weekStartOf(d.asOf) };
   }
 
-  // The rows Home draws: the open five (or fewer, when the deck ran out), the done strip, and how many more.
-  async function view(req, ctx, rows, { preview = false } = {}) {
-    const orgId = req.user.orgId;
-    const live = rows.filter(r => r.state === "open" || r.state === "done");
-    const ids = [...new Set(live.flatMap(r => (r.move && r.move.ids) || [r.donor_id]))];
-    const [gifts, talks, outs] = ids.length && !preview ? await Promise.all([
+  // What makes a person done this week, read once for a set of people (never a statement per person).
+  async function evidence(orgId, ctx, ids) {
+    const [gifts, talks, outs] = ids.length ? await Promise.all([
       GB.givingBetweenOf(query, orgId, { from: ctx.weekOf, to: ctx.asOf, today: ctx.asOf, donorIds: ids }),
       query(`SELECT donor_id, type FROM interactions WHERE org_id=? AND donor_id = ANY(?) AND type IN ('call','meeting') AND is_sample IS NOT TRUE
               AND LEFT(date,10) >= ? AND LEFT(date,10) <= ?`, [orgId, ids, ctx.weekOf, ctx.asOf]),
       query(`SELECT kind, item_key FROM insight_outcomes WHERE org_id=? AND state='done' AND created_at >= ?::date AND donor_ids && ?::text[]`, [orgId, ctx.weekOf, ids]),
     ]) : [new Map(), [], []];
-    const outcomes = new Set(outs.map(o => `${o.kind}|${o.item_key}`));
+    return { gifts, talks, outcomes: new Set(outs.map(o => `${o.kind}|${o.item_key}`)) };
+  }
+  // HOME-7 staging walk: the next in rank who is not already done this week (a gift in, a call logged, the
+  // deck's Done). Bringing in someone already called sent them straight to the done strip, and Not now
+  // left four people showing instead of five.
+  async function fresh(orgId, ctx, cands, n) {
+    const look = cands.slice(0, Math.max(n * 6, 30));
+    const ev = await evidence(orgId, ctx, [...new Set(look.flatMap(c => c.m.ids || [c.lead]))]);
+    return look.filter(c => !doneBy({ state: "open", donor_id: c.lead, move: { ids: c.m.ids || [c.lead], kind: c.m.kind, itemKey: c.m.itemKey } }, ev)).slice(0, n);
+  }
+
+  // The rows Home draws: the open five (or fewer, when the deck ran out), the done strip, and how many more.
+  async function view(req, ctx, rows, { preview = false } = {}) {
+    const orgId = req.user.orgId;
+    const live = rows.filter(r => r.state === "open" || r.state === "done");
+    const ids = [...new Set(live.flatMap(r => (r.move && r.move.ids) || [r.donor_id]))];
+    const { gifts, talks, outcomes } = preview ? { gifts: new Map(), talks: [], outcomes: new Set() } : await evidence(orgId, ctx, ids);
     const open = [], done = [];
     for (const r of live) {
       const m = r.move || {};
@@ -163,14 +176,14 @@ function mount(app, { query, run, wrap, requireAuth, checkWriteAccess, actor, de
     if (ctx.preparing) return res.json({ preparing: true, sentence: SENTENCE, open: [], done: [], more: 0, drift: { count: 0, people: [] } });
     const rows = await stored(req.user.orgId, req.user.userId, ctx.weekOf);
     if (rows.length) return res.json(await view(req, ctx, rows));
-    res.json(await view(req, ctx, ctx.ranked.slice(0, FIVE).map((c, i) => asRow(ctx, c, i + 1)), { preview: true }));
+    res.json(await view(req, ctx, (await fresh(req.user.orgId, ctx, ctx.ranked, FIVE)).map((c, i) => asRow(ctx, c, i + 1)), { preview: true }));
   }));
 
   app.post("/home/five/start", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const ctx = await context(req);
     if (ctx.preparing) return res.json({ preparing: true, open: [], done: [] });
     const have = await stored(req.user.orgId, req.user.userId, ctx.weekOf);
-    if (!have.length) await insert(req, ctx, ctx.ranked.slice(0, FIVE), 1);
+    if (!have.length) await insert(req, ctx, await fresh(req.user.orgId, ctx, ctx.ranked, FIVE), 1);
     res.setHeader("X-Steward-Changed", "none");   // keeping the week's five changes nothing any screen shows (FRESH-4 re-reads nothing)
     res.json(await view(req, ctx, await stored(req.user.orgId, req.user.userId, ctx.weekOf)));
   }));
@@ -197,8 +210,9 @@ function mount(app, { query, run, wrap, requireAuth, checkWriteAccess, actor, de
     // The next in rank comes in: someone not yet in this week's list, in any state.
     const rows = await stored(req.user.orgId, req.user.userId, ctx.weekOf);
     const inWeek = new Set(rows.map(x => x.donor_id));
-    const next = ctx.ranked.find(c => !inWeek.has(c.lead));
-    if (next && rows.filter(x => x.state === "open").length < FIVE) await insert(req, ctx, [next], Math.max(0, ...rows.map(x => x.rank)) + 1);
+    // One out, one in: the next in rank not yet in this week's list and not already done this week.
+    const [next] = await fresh(req.user.orgId, ctx, ctx.ranked.filter(c => !inWeek.has(c.lead)), 1);
+    if (next) await insert(req, ctx, [next], Math.max(0, ...rows.map(x => x.rank)) + 1);
     res.json(await view(req, ctx, await stored(req.user.orgId, req.user.userId, ctx.weekOf)));
   }));
 

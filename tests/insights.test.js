@@ -615,8 +615,19 @@ async function main() {
     const done = await five(AS_OF, "POST", `/${encodeURIComponent(d.id)}/done`);
     ok("§11 Done moves the person to the done strip and never brings anyone in", !!done && done.open.length === 4 && done.done.some(r => r.donorId === d.donorId && /done/.test(r.outcome))
        && !people(done).includes(d.donorId) && people(done).every(id => people(after).includes(id)), done && { open: people(done), done: done.done.map(r => [r.name, r.outcome]) });
-    const other = await api("GET", `/home/five?asOf=${AS_OF}`, await (async () => { const u = "u2_" + ORG; await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Second Test','admin') ON CONFLICT DO NOTHING`, [u, ORG, `${u}@test.local`, bcrypt.hashSync(PASSWORD, 4)]); return login(`${u}@test.local`, PASSWORD); })());
+    const tok2 = await (async () => { const u = "u2_" + ORG; await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Second Test','admin') ON CONFLICT DO NOTHING`, [u, ORG, `${u}@test.local`, bcrypt.hashSync(PASSWORD, 4)]); return login(`${u}@test.local`, PASSWORD); })();
+    const other = await api("GET", `/home/five?asOf=${AS_OF}`, tok2);
     ok("§11 the five are per user: a second person in the org gets a fresh five on first open", other.status === 200 && other.body.preview === true && other.body.open.length === 5, other.body && people(other.body));
+    // Staging walk (28 Nov): Not now brought in the next in rank, who had already been called that week, so they
+    // went straight to the done strip and four showed. The next in rank already done this week is passed over.
+    if (sixth) {
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES ($1,$2,$3,'call','Called them (§11)',$4,'u_' || $2)`, ["i_h7_" + sixth.donorId, ORG, sixth.donorId, AS_OF]);
+      const five2 = async (path = "", method = "GET", body = {}) => (await api(method, `/home/five${path}?asOf=${AS_OF}`, tok2, method === "GET" ? undefined : { ...body, asOf: AS_OF })).body;
+      const s2 = await five2("/start", "POST");
+      const out2 = await five2(`/${encodeURIComponent(s2.open[0].id)}/skip`, "POST", { why: "not_now" });
+      ok("§11 Not now passes over the next in rank when they are already done this week (called): five still show, and the called person is not one of them",
+         !!out2 && out2.open.length === 5 && !people(out2).includes(sixth.donorId) && !people(out2).includes(s2.open[0].donorId), out2 && { open: people(out2), done: (out2.done || []).map(r => [r.name, r.outcome]), called: sixth.name });
+    }
   }
 
   // ONE-MOVE-1: one move and one ask per person on every screen (tests/lib/oneMoveChecks.js)
