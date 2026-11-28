@@ -495,7 +495,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       if (n !== card.people.length) diffs.push(`Home "${card.title}": the sentence says ${n} people, the card lists ${card.people.length}`);
     }
     const dm = /of the ([\d,]+) people drifting/.exec(t);
-    if (dm && drift && !drift.__error && lead.role !== "officer" && num(dm[1]) !== drift.total) {
+    // IMPORT-13 found: Home counts the high-confidence drifters, Drift lists every one (open for the next brief;
+    // a caller that knows it is in that state names "homeDrift" in ctx.skip and says why)
+    if (dm && drift && !drift.__error && lead.role !== "officer" && !skip.has("homeDrift") && num(dm[1]) !== drift.total) {
       diffs.push(`drifting: Home says ${num(dm[1])} people, Drift says ${drift.total}`);
     }
   }

@@ -883,7 +883,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
   const given = (await importGivenParts(req.user.orgId, [r]))(r, summary);
   // FIX-58: the gift rows said once, each part opening its rows
   const src = part => ({ key: "import-gifts", params: { import: r.id, ...(part ? { part } : {}) } });
-  const giftLine = summary.giftLine ? { ...summary.giftLine, sources: { gifts: src("gifts"), first: src("first"), all: src(null) } } : null;
+  const giftLine = summary.giftLine ? { ...summary.giftLine, sources: { gifts: src("gifts"), first: src("first"), refunds: src("refunds"), all: src(null) } } : null;
   res.json({
     import: {
       id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,

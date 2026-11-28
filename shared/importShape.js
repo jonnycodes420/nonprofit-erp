@@ -3925,7 +3925,11 @@ export function extractWorkbookPledges(sheet, opts = {}) {
   const { headers = [], rows = [], typedRows = [], rowLines = [] } = sheet;
   const find = re => headers.find(h => re.test(String(h))) || "";
   const idCol = find(/pledge\s*(id|#|no)/i);
-  const donorCol = find(/constituent|donor|account/i);
+  // IMPORT-13: the person's ID, name and email are three columns, never one. A "Donor Name" read as an ID
+  // named nobody, so the preview promised Wanda's $900 pledge and the write recorded 0.
+  const nameCol = headers.find(h => /name/i.test(String(h)) && !/pledge|campaign|fund|appeal/i.test(String(h))) || "";
+  const emailCol = find(/e-?mail/i);
+  const donorCol = headers.find(h => /constituent|donor|account|^id$/i.test(String(h)) && h !== nameCol && h !== emailCol && h !== idCol) || "";
   const dateCol = find(/pledge\s*date|^date$/i);
   const totalCol = find(/total\s*pledged|pledge\s*amount|^amount$/i);
   const paidCol = find(/paid\s*to\s*date|^paid$/i);
@@ -3942,7 +3946,9 @@ export function extractWorkbookPledges(sheet, opts = {}) {
     const d = normalizeDateCell(cellOf(dateCol), opts);
     pledges.push({
       externalId: String(row[idCol] || "").trim() || undefined,
-      donorExternalId: normalizeIdCell(cellOf(donorCol)).value || "",
+      donorExternalId: donorCol ? normalizeIdCell(cellOf(donorCol)).value || "" : "",
+      donorName: nameCol ? String(row[nameCol] || "").trim() : "",
+      donorEmail: emailCol ? String(row[emailCol] || "").trim().toLowerCase() : "",
       date: d.value || null,
       amount: total.value,
       paidToDate: paid.value || 0,

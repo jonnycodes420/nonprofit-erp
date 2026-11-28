@@ -217,6 +217,9 @@ async function main() {
   // NUMBERS-10 item 6: REAL_SHAPED_ONLY=N10D runs §N10D alone (tests/lib/numbers10DeleteChecks.js); CI runs everything.
   const n10d = () => require("./lib/numbers10DeleteChecks").n10Delete({ ok, api, q, freshOrg, surfaces, drainQueue });
   if (process.env.REAL_SHAPED_ONLY === "N10D") { await n10d(); await closeDb(); summary(); return; }
+  // IMPORT-13: REAL_SHAPED_ONLY=I13 runs §I13 alone (tests/lib/import13Checks.js, the gauntlet in order); CI runs everything.
+  const i13 = () => require("./lib/import13Checks").import13({ ok, api, q, freshOrg, importJob, surfaces, XLSX, snapshot, snapDiff, drainQueue });
+  if (process.env.REAL_SHAPED_ONLY === "I13") { await i13(); await closeDb(); summary(); return; }
   const ORG = "org_hs1real";
   const tok = await freshOrg(ORG, "Real-shaped (test)");
   const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
@@ -631,6 +634,7 @@ async function main() {
   await n10Fund();   // NUMBERS-10 item 1
   await n10c();
   await n10d();   // NUMBERS-10 item 6
+  await i13();   // IMPORT-13: the gauntlet
 
   await closeDb();
   summary();

@@ -14,7 +14,7 @@
 
 const DAYS = 30;
 const SQL = `
-  SELECT id, gifts_created, donors_created, to_char(committed_at, 'YYYY-MM-DD') AS day
+  SELECT id, gifts_created, donors_created, committed_at
     FROM imports
    WHERE org_id = ? AND shape = 'sheet' AND committed_at IS NOT NULL AND reversed_at IS NULL
      AND committed_at > NOW() - INTERVAL '${DAYS} days'
@@ -22,15 +22,16 @@ const SQL = `
    ORDER BY (gifts_created > 0) DESC, committed_at, id LIMIT 1   -- the import that brought its gifts in
 `;
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const shortDay = d => { const [, m, dd] = String(d).split("-").map(Number); return `${MONTHS[m - 1]} ${dd}`; };
+// IMPORT-13: the earlier import's day and time in the org's zone (it was the database's UTC day)
+const localDay = (at, tz) => new Date(at).toLocaleDateString("en-CA", { timeZone: tz || "UTC" });
+const localWhen = (at, tz) => new Date(at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz || "UTC" });
 
-async function importedBefore({ query, orgId, fileKey, fileName, u, answers }) {
+async function importedBefore({ query, orgId, fileKey, fileName, u, answers, timeZone }) {
   const [row] = await query(SQL, [orgId, fileKey, String(fileName || "")]);
   if (!row) return null;
   const gifts = Number(row.gifts_created || 0), people = Number(row.donors_created || 0);
   const what = gifts ? `${gifts.toLocaleString("en-US")} ${gifts === 1 ? "gift" : "gifts"}` : `${people.toLocaleString("en-US")} ${people === 1 ? "person" : "people"}`;
-  const said = { importId: row.id, day: row.day, gifts, sentence: `You imported this file on ${shortDay(row.day)} (${what}).` };
+  const said = { importId: row.id, day: localDay(row.committed_at, timeZone), gifts, sentence: `You imported this file on ${localWhen(row.committed_at, timeZone)} (${what}). Gifts already here are skipped.` };
   if ((answers || {}).importAgain !== row.id)
     u.questions.push({ id: "importedBefore", kind: "importedBefore", optional: false, ...said, text: `${said.sentence} Import again anyway?` });
   return said;

@@ -67,7 +67,7 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
       const s = await apiFetch(`/imports/${encodeURIComponent(importId)}/undo-status`, { cache: "no-store" }).catch(() => null);
       if (!live.current) return;
       if (!s) continue;
-      if (s.status === "done") return finish({ reversed: true, ...(s.result || {}), sentence: s.sentence });
+      if (s.status === "done") return finish({ reversed: true, ...(s.result || {}), sentence: (s.result && s.result.stayedCount && s.result.sentence) || s.sentence });   // IMPORT-13: a partial undo never reads "Undone."
       if (s.status === "failed") { setErr(s.sentence); setProgress(null); setStep("confirm"); return; }
       setProgress(s);
     }

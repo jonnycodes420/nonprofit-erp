@@ -35,6 +35,7 @@ import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf 
 import { readTotalRow, checkHeadline } from "./totalRows.js";
 import { applySheetKinds, linkGiftSheetsById, joinSentence, sheetsSetAside } from "./sheetWorkbook.js";   // IMPORT-11
 import { rowChecks, rowCheckLists } from "./importRowChecks.js";   // IMPORT-11: the cap, copies, far outside, future-dated
+import * as GR from "./importGiftRules.js";   // IMPORT-13: one gift per ID, unreadable dates, total lines, email-only rows
 import { GIFT_EXTRA_HEADER_ROLES, GIFT_EXTRA_ROLE_LABELS, SOFT_CREDIT_STATUS, softCreditRow, takeGiftExtras, settleGiftExtras } from "./giftExtras.js";   // IMPORT-12
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
   demotePeopleSheetAmounts, mergedLinesOf, partnersAndHouseholds, spouseQuestion, choiceLines, amountChecks, importButtonSentence,
@@ -1129,7 +1130,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // ("Ivy (send with Harlan's) Brooks", "**Gideon Pratt") is moved off it.
   const noteRows = [], namesCleaned = [];
   const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list
-  const occ = new Map(), rowCk = rowChecks(answers);
+  const occ = new Map(), rowCk = rowChecks(answers), idOnce = GR.giftIdOnce(), emailOnlyUsed = [];
   const sourceFile = s(fileName) || "your file";
   const personGiftCents = new Map();   // for "Gave at dinner" checks
   const keptHeaders = new Map();       // header → { header, sheet, count }
@@ -1183,8 +1184,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // IMPORT-10 (shared/totalRows.js): a total is a short label in a label's place, never a row
       // with a person on it; one that does not foot is listed for her to check, never dropped.
       const amtCol = moneyCols.find(m => m.role === "amount");
-      if (readTotalRow({ t, b, cells, moneyHere, amtCol, nameText, sums: { table: tableSums, since: sinceSubtotal }, totals, checks: totalChecks, answers, cellOf, moneyOf, cents, fmt$ })) continue;
+      // IMPORT-13: on gifts joined by ID, the ID names the person, so a $100 that equals the rows above is a gift, not a total
+      const idNames = t.linkedById && byId.has(s(get(b, "externalId")).toLowerCase()) ? s(get(b, "externalId")) : "";
+      if (readTotalRow({ t, b, cells, moneyHere, amtCol, nameText: nameText || idNames, sums: { table: tableSums, since: sinceSubtotal }, totals, checks: totalChecks, answers, cellOf, moneyOf, cents, fmt$ })) continue;
       t.readCount++;
+      if (!moneyHere.length && GR.isTotalPersonRow({ nameText, contact: ["email", "phone", "address"].map(r => get(b, r)) })) {   // IMPORT-13
+        aside.push({ sheet: t.sheet, line: b.line, reason: `a total line ("${nameText.slice(0, 40)}"), not a person`, totalLine: true, cells: filled.slice(0, 6), cents: null }); continue; }
       if (!nameText && !(t.linkedById && byId.has(s(get(b, "externalId")).toLowerCase()))) {   // IMPORT-11: the ID names the person
         for (const m of moneyHere) { const v = cents(moneyOf(cellOf(t, b, m))); tableSums[m.index] += v; sinceSubtotal[m.index] += v; }
         const v = amtCol ? moneyOf(cellOf(t, b, amtCol)) : null;
@@ -1209,7 +1214,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       let email = s(get(b, "email")).toLowerCase();
       if (email && placeholder.email.has(email)) email = "";
       const extId = s(get(b, "externalId"));
-      if (!s(who.name) && email) { who.kind = "person"; who.name = email; who.people = [{ name: "" }]; }
+      if (!s(who.name) && email) {   // IMPORT-13: only an email asks once; set aside by default
+        const amtV = amtCol ? moneyOf(cellOf(t, b, amtCol)) : null, row = { sheet: t.sheet, line: b.line, email, cents: amtV != null ? cents(amtV) : null };
+        if (!byEmail.has(email) && answers.emailOnly !== "name") { aside.push({ ...row, who: email, reason: GR.EMAIL_ONLY_REASON(email), emailOnly: email }); continue; }
+        if (!byEmail.has(email)) emailOnlyUsed.push(row);
+        who.kind = "person"; who.name = email; who.people = [{ name: "" }];
+      }
       const nameKey = who.kind + ":" + who.name.toLowerCase().replace(/[^a-z0-9& ]/g, "").replace(/\s+/g, " ");
       let pkey = null, linkedBy = null;
       if (extId && byId.has(extId.toLowerCase())) { pkey = byId.get(extId.toLowerCase()); linkedBy = "id"; }
@@ -1381,7 +1391,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
       if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
       // HARDEN-1: money paid out is not a refund. IMPORT-12: in a known system's export a negative row is a refund, netted later
-      const isRefund = amt < 0 && !!t.shape && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));
+      const isRefund = amt < 0 && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));   // IMPORT-13: on every sheet, matched to its gift or set aside
       if (amt < 0 && !isRefund) {
         const said = s(get(b, "note")) || s(get(b, "type"));
         aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: PAID_OUT_RE.test(said) ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
@@ -1396,8 +1406,11 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // IMPORT-12: a soft-credit row is recognition on the person thanked, never money
       if (status === SOFT_CREDIT_STATUS) { ensure(); rowCredits.push(softCreditRow({ t, b, pkey, who, cents: cents(amt), get: r => s(get(b, r)), normalizeDate })); continue; }
       if (!isRefund && status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
-      const rk = isRefund || status === SOFT_CREDIT_STATUS ? { mark: {} } : rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}` });   // IMPORT-11
+      const rk = isRefund || status === SOFT_CREDIT_STATUS ? { mark: {} } : rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}`, hasId: !!(s(get(b, "giftId")) || s(get(b, "externalId"))) });   // IMPORT-11, IMPORT-13
       if (rk.aside) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rk.aside }); continue; }
+      const rep = !isRefund && idOnce.check({ giftId: get(b, "giftId"), sheet: t.sheet, line: b.line });   // IMPORT-13: a gift ID is one gift
+      if (rep) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rep }); continue; }
+      let unreadable = null;
       // when: a gift with a person and an amount always lands. No date, or a
       // date Steward cannot place in a day, is a gift with no date, flagged.
       let date = null, dateNote = null;
@@ -1409,7 +1422,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           else {
             date = dateOf(raw, { ...dctx, year: answers.year || null });
             if (date && MONTH_YEAR_RE.test(t0)) dateNote = `Date in your file: ${t0}`;
-            if (!date) dateNote = `Date in your file: ${t0}`;
+            if (!date) {   // IMPORT-13: an unreadable date is set aside unless she says import them undated
+              if (answers.unreadableDates !== "undated") { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: GR.unreadableDateReason(t0), unreadableDate: t0 }); continue; }
+              dateNote = `Date in your file: ${t0}`; unreadable = t0;
+            }
           }
           // TRUTH-6 (W-1109-Finance-15): a gift dated after today comes in as a
           // scheduled gift (shared/numbers/scheduled.js), never set aside, so the file foots.
@@ -1491,7 +1507,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
                      fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
-                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark,
+                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark, ...(unreadable ? { unreadableDate: unreadable } : {}),
                      // ASKS-1: an auction purchase: the item and what it was worth
                      auction: role("item") ? auctionFactsOf({ itemRaw: get(b, "item"), fmvRaw: get(b, "fmv"), hasFmvColumn: !!role("fmv"), answers, moneyOf }) : null };
       // IMPORT-12: what the old system knew about this gift; a refund row waits for its gift
@@ -1551,7 +1567,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // (a guest list, a title row, or a file name with an event word) and holds
   // no dates, the event's date is a question that blocks: without it, every
   // gift would land "No date" and every pledge be due from a made-up day.
-  const undatedCount = gifts.filter(g => !g.date).length;
+  const undatedCount = gifts.filter(g => !g.date && !g.unreadableDate).length;   // IMPORT-13: blank dates; unreadable ones are their own question
   // IMPORT-8 · A FILE NAME NEVER BECOMES AN EVENT. "Spring Gala Donors.xlsx"
   // with undated gifts asked "What was this event called?" and offered to date
   // them by the file. An event comes from the file's contents (who was invited
@@ -1626,6 +1642,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      hint: "Yes marks them deposited on their own dates, so Finance does not list them as Not yet on a deposit. Pledges are not gifts yet and are not marked.",
                      options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, I still need to deposit them" }] });
   }
+  for (const q of [GR.unreadableDateQuestion({ aside, gifts, answers }), GR.emailOnlyQuestion({ aside, answers, emailOnlyUsed })]) if (q) questions.push(q);   // IMPORT-13
   const auctionQ = auctionValueQuestion(gifts, answers);   // ASKS-1: never assume what an item was worth
   if (auctionQ) questions.push(auctionQ);
   // undated gifts with no event are one optional question, never a block
@@ -1689,6 +1706,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const mergedLines = mergedLinesOf(merged);
   const { spouseLinks, householdGroups, householdLine } = partnersAndHouseholds(peopleList, answers);
   if (spouseLinks.length) questions.push(spouseQuestion(spouseLinks, answers));
+  const noteQ = GR.applyNoteFlags(peopleList, answers);   // IMPORT-13: "Mark them as the notes say", never ticked for her
+  if (noteQ) questions.push(noteQ);
   const { commsLines, prefNotes, prefNotePeople } = choiceLines(peopleList);
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
   // IMPORT-6 · EVERY ROW ACCOUNTED FOR (shared/importRows.js)
@@ -1787,6 +1806,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   };
   result.countLines = countLines(result);
   result.rowChecks = rowCheckLists({ gifts, aside, today: T });   // IMPORT-11
+  result.rowChecks.unreadable = GR.unreadableList({ aside, gifts });   // IMPORT-13: their own line on the receipt and the check page
+  result.counts.unreadableDates = result.rowChecks.unreadable ? result.rowChecks.unreadable.count : 0;
   return result;
 }
 

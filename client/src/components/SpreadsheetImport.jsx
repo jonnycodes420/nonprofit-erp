@@ -32,6 +32,7 @@ import { SheetKinds } from "./import/SheetKinds";   // IMPORT-11: what each shee
 import { RowChecksPreview, RowChecksCounted } from "./import/RowChecks";   // IMPORT-11: the cap, copies, far outside, future-dated
 import { EventSuggest, EventMatchQuestion, dayOf } from "./import/EventPick";   // IMPORT-10: the event you meant
 import { ImportedBefore } from "./import/ImportedBefore";   // IMPORT-10: the same file twice is asked
+import { FileChoices, FILE_CHOICE_IDS } from "./import/FileChoices";   // IMPORT-13: unreadable dates, email-only rows, changed gifts, notes
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
@@ -348,7 +349,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
   const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks", "auctionValue", "eventMatch", "importedBefore"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks", "auctionValue", "eventMatch", "importedBefore", ...FILE_CHOICE_IDS].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
   const dateOrderQs = u ? u.questions.filter(q => q.kind === "dateOrder") : [];   // IMPORT-9
   // FIX-59: two defaulted questions, each answered once for the file
   const nearQ = u ? u.questions.find(q => q.id === "nearDuplicates") : null;
@@ -638,6 +639,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
+            <FileChoices questions={u.questions} answers={answers} setAnswer={setAnswer} disabled={rereading} />
             {/* FIX-59: gifts from a file were almost always banked already; Yes unless she says No */}
             {depositQ && (
               <div style={box} data-testid="sheet-question-deposited">
@@ -863,7 +865,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 style={{ ...btn(true), opacity: u.ready && !rereading ? 1 : 0.45, cursor: u.ready && !rereading ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
                 {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
-              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${undoWords(undoUntil("sheet", new Date()), { shape: "sheet" })}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
+              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? `Undo removes the whole import, from its receipt here or in Settings, Imports. ${u.undoSentence || undoWords(undoUntil("sheet", new Date()), { shape: "sheet" })}` : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}
@@ -928,7 +930,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
               {result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} />
-                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{undoWords(undoUntil("sheet", committedAt.current || new Date()), { shape: "sheet" })}</div>}</div>}
+                {!undone && <div data-testid="sheet-undo-until" style={{ ...small, marginTop: 6 }}>{(result.undo && result.undo.sentence) || undoWords(undoUntil("sheet", committedAt.current || new Date()), { shape: "sheet" })}</div>}</div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}

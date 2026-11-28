@@ -246,6 +246,11 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   // Flags and tags are reverted only where this run turned them on and they
   // are still on: a flag somebody set by hand afterwards is not this run's.
   const sj = imp.summary_json ? (typeof imp.summary_json === "string" ? JSON.parse(imp.summary_json) : imp.summary_json) : {};
+  // IMPORT-13: a gift her "Update to the file's amount" edited takes its amount and date back
+  if ((sj.giftUpdates || []).length) {
+    removed.giftsRestored = await require("./knownGifts").undoGiftUpdates({ query }, orgId, sj.giftUpdates);
+    await require("../../shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, [...new Set(sj.giftUpdates.map(x => x.donorId))]);
+  }
   const HISTORY_FLAGS = new Set(["do_not_solicit", "do_not_contact", "do_not_mail", "do_not_email", "do_not_call"]);
   for (const f of (sj.flagsSet || [])) {
     if (!HISTORY_FLAGS.has(f.flag)) continue;
@@ -430,7 +435,8 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   const what = (money ? ` ${money} removed${ppl ? `; ${ppl}${pplTo}` : ""}` : ppl ? ` ${ppl}${pplTo}` : backSaid ? "" : " Nothing it wrote was left to remove")
     + (backSaid ? `${money || ppl ? ";" : ""} ${backSaid}` : "");   // IMPORT-9
   const list = (xs, k) => xs.slice(0, k).map(x => `${x.name} (${x.why})`).join("; ") + (xs.length > k ? `; and ${(xs.length - k).toLocaleString("en-US")} more` : "");
-  const lead = stayed.length ? `Undone, except for ${n(stayed.length, "person", "people")}.` : "Undone.";
+  // IMPORT-13: a partial undo says so first, naming who she kept and why ("Undone, except 1 person you kept: Leah (a note was added Nov 27).")
+  const lead = stayed.length ? `Undone, except ${n(stayed.length, "person", "people")} you kept: ${list(stayed, 5)}.` : "Undone.";
   return done({ reversed: true, gifts: removed.gifts, donorsRemoved: removed.people, journeysStopped: removed.journeys,
     pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted, backToTrash: removed.backToTrash, movedToo: removed.movedToo,
     stayed: stayed.slice(0, 500), stayedCount: stayed.length,

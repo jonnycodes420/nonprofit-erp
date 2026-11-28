@@ -177,7 +177,9 @@ export function settleSoftCredits({ columnCredits, rowCredits }, gifts, people) 
 // kept on the gift's note.
 export function settleGiftExtras({ refundCands, columnCredits, rowCredits, gifts, pledges, people, aside, fmt$ }) {
   const settled = settleRefunds(refundCands, gifts);
-  for (const c of settled.unmatched) aside.push({ sheet: c.sheet, line: c.line, who: c.who, cents: c.cents, reason: `a refund or reversal (${fmt$(c.cents)}) with no gift of theirs in this file to stand against` });
+  // IMPORT-13: listed by name, and the server looks for the gift among the org's own (server/imports/knownGifts.js)
+  for (const c of settled.unmatched) aside.push({ sheet: c.sheet, line: c.line, who: c.who, cents: c.cents, reason: `a refund with no gift to match (${fmt$(c.cents)})`,
+    refundUnmatched: true, personKey: c.personKey, date: c.date || null, rowId: c.rowId, ref: c.ref || "" });
   const soft = settleSoftCredits({ columnCredits, rowCredits }, gifts, people);
   for (const c of soft.unplaced.filter(x => !x.giftRowId)) aside.push({ sheet: c.sheet, line: c.line, who: c.who, cents: 0, reason: `a soft credit (${fmt$(c.cents)}) for a gift this file does not have, so recognition with nothing to stand on` });
   const byRow = new Map(gifts.map(g => [g.rowId, g]));

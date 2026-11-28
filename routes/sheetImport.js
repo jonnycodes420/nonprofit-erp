@@ -554,7 +554,11 @@ async function buildUnderstanding(req, body) {
       depQ.text = depQ.text.replace(/[\d,]+ gifts?/, `${u.gifts.length.toLocaleString("en-US")} ${u.gifts.length === 1 ? "gift" : "gifts"}`);
     }
   }
+  // IMPORT-13: what the org already holds (a gift ID resent, twins, a refund's gift) decides what this file adds
+  const idOf = key => { const m = matches.get(key); const x = m && m.members.find(y => y.status === "matched"); return x ? x.id : null; };
+  await require("../server/imports/knownGifts").applyKnownGifts({ query }, { orgId, u, idOf, answers: body.answers || {} });
   u.countLines = Rm.countLines(u);
+  u.undoSentence = await undoPreviewOf(orgId);   // IMPORT-13: the preview's undo date, in the org's zone
   const nDel = new Set(deletedMatches.map(x => x.id)).size;
   u.deletedMatches = deletedMatches;
   u.deletedSentence = nDel ? `${nDel.toLocaleString("en-US")} ${nDel === 1 ? "person matches someone" : "people match someone"} you deleted. Not imported.` : null;
@@ -579,7 +583,7 @@ async function buildUnderstanding(req, body) {
   const eventPick = require("../server/imports/eventAsk").eventAsk({ u, answers: body.answers || {}, name: nm, orgEvents, EM });
   const events = eventPick.events;
   // IMPORT-10 item 6: the same file within 30 days is asked, never one click from a second import
-  u.importedBefore = await require("../server/imports/importedBefore").importedBefore({ query, orgId, fileKey: fileFingerprint(body), fileName: body.fileName, u, answers: body.answers });
+  u.importedBefore = await require("../server/imports/importedBefore").importedBefore({ query, orgId, fileKey: fileFingerprint(body), fileName: body.fileName, u, answers: body.answers, timeZone: (tz || {}).timezone });
   // IMPORT-11 item 3: gifts far outside the pattern, under their own heading (import them, or set them aside)
   if (u.rowChecks) u.rowChecks.outliers = await require("../server/imports/outliers").importOutliers(query, orgId, u, matches).catch(() => null);
   u.ready = u.questions.filter(q => !q.optional).length === 0;
@@ -994,7 +998,7 @@ async function writePlan({ req, body, importId, who, report }) {
       // GIFTS-1: with no event for the whole file, a gift whose Event or
       // Campaign column names an existing event exactly is that event's.
       fundId: await fundIdFor(g.fund), importId, eventId: eventId || eventIdOf(g.campaign), history: true, post: false,
-      idempotencyKey: "sheet:" + g.rowId, conflict: "idempotency", source: "sheet_import",
+      idempotencyKey: "sheet:" + g.rowId, conflict: "idempotency", source: "sheet_import", externalId: g.kind === "gift" ? g.externalId || null : null,
       actorId: who.id, actorName: who.name, applyInstallment: false,
       // the after-change step runs once for everyone, after the commit
       afterChange: false,
@@ -1003,6 +1007,7 @@ async function writePlan({ req, body, importId, who, report }) {
       // ASKS-1: an auction purchase: type "auction", the item and what it was worth
       ...(g.auction && g.auction.fmvCents != null ? { type: "auction", quidProQuoValue: g.auction.fmvCents / 100, quidProQuoDesc: g.auction.item } : {}),
     };
+    if (g.alreadyHere) { duplicates++; duplicateCents += g.cents; dupLines.add(`${g.sheet}:${g.line}`); continue; }   // IMPORT-13: knownGifts.js
     if (g.kind === "refund") Object.assign(args, { type: "refund", giftType: null, alreadyThanked: true });   // IMPORT-12
     if (g.kind === "installment") {
       const pid = pledgeIdByRow.get(g.installmentOf);
@@ -1012,6 +1017,7 @@ async function writePlan({ req, body, importId, who, report }) {
     giftArgs.push(args); giftOf.push(g);
   }
   const auctionWritten = [];   // ASKS-1
+  let refundsMade = 0, refundCentsMade = 0;   // IMPORT-13: refunds are written with the gifts and said apart from them
   const giftIdByRow = new Map();   // IMPORT-12: the plan's row → the gift written for it
   for (let k = 0; k < giftArgs.length; k += GIFT_BATCH) {
     const out = await recordGifts(giftArgs.slice(k, k + GIFT_BATCH));
@@ -1023,7 +1029,7 @@ async function writePlan({ req, body, importId, who, report }) {
       if (args.installmentId) {
         paid.push([r.giftId, args.installmentId, args.pledgeId]);
         installmentGifts++; installmentCents += g.cents;
-      } else { giftsCreated++; giftCents += g.cents; }
+      } else { giftsCreated++; giftCents += g.cents; if (g.kind === "refund") { refundsMade++; refundCentsMade += g.cents; } }
       if (g.auction && g.auction.fmvCents != null) auctionWritten.push({ giftId: r.giftId, item: g.auction.item, fmvCents: g.auction.fmvCents, cents: g.cents });
     });
     if (paid.length) {
@@ -1034,6 +1040,9 @@ async function writePlan({ req, body, importId, who, report }) {
     const n = Math.min(k + GIFT_BATCH, giftArgs.length);
     await report(`Writing gifts ${n.toLocaleString("en-US")} of ${giftArgs.length.toLocaleString("en-US")}`, memberCount + u.pledges.length + n, total, true);
   }
+  // IMPORT-13: her "Update to the file's amount", the one gift edited, its before kept for Undo
+  summary.giftUpdates = await require("../server/imports/knownGifts").applyGiftUpdates({ query }, { orgId, u });
+  if (summary.giftUpdates.length) await require("../shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, [...new Set(summary.giftUpdates.map(x => x.donorId))]);
   // IMPORT-12: refunds onto their gifts, soft credits, tributes, anonymous, pledge payments (server/imports/giftExtrasWrite.js)
   summary.giftExtras = await require("../server/imports/giftExtrasWrite").writeGiftExtras({ query, run, recalcPledgePayment },
     { orgId, who, u, giftIdByRow, pledgeIdByRow, personId });
@@ -1077,7 +1086,7 @@ async function writePlan({ req, body, importId, who, report }) {
   // counted apart and never said. The receipt now says every part and the
   // whole: "106 rows · 100 gifts $111,790 · 6 first payments on pledges
   // $12,500 · $124,290 in all", each part opening its rows (import-gifts).
-  summary.giftLine = giftLineOf({ giftsCreated, giftCents, installmentGifts, installmentCents });
+  summary.giftLine = giftLineOf({ giftsCreated, giftCents, installmentGifts, installmentCents, refunds: refundsMade, refundCents: refundCentsMade });
   // what came in as money, and what is still promised: never one sum
   summary.givenCents = giftCents + installmentCents;
   summary.pledgedOpenCents = Math.max(0, pledgeCents - installmentCents);
@@ -1120,18 +1129,35 @@ async function writePlan({ req, body, importId, who, report }) {
   const staged = req.body && req.body.preview === true ? await require("../server/onboard/staging").stageImport({ query, run }, orgId, importId, { rollback: true }) : null;
   if (staged && !staged.staged) return { status: 409, body: { error: "preview_not_possible", message: staged.sentence, sentence: staged.sentence } };
   const parts = [];
-  if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
+  if (giftsCreated - refundsMade) parts.push(`${(giftsCreated - refundsMade).toLocaleString("en-US")} ${giftsCreated - refundsMade === 1 ? "gift" : "gifts"} (${money(giftCents - refundCentsMade)})`);
+  if (refundsMade) parts.push(`${refundsMade.toLocaleString("en-US")} ${refundsMade === 1 ? "refund" : "refunds"} against ${refundsMade === 1 ? "its gift" : "their gifts"} (${money(refundCentsMade)})`);
   if (installmentGifts) parts.push(`${installmentGifts.toLocaleString("en-US")} ${installmentGifts === 1 ? "first payment" : "first payments"} on pledges (${money(installmentCents)})`);
   if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${Rm.pledgeMoneyWords({ dueThisYearCents: pledgeDueMade, openCents: pledgeOpenMade, years: pledgeYearsMade, undatedCents: pledgeUndatedMade }, money)})`);
   if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
   const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
     : `Nothing new: every row in this file was already here.`;
-  return { status: 201, touched: [...touched], body: { importId, eventId, staged, giftsCreated, giftCents, pledgesCreated, pledgeCents, donorsCreated, duplicates,
+  // IMPORT-13: the undo date, once, from the run's own commit time in the org's zone (the Imports list's one function)
+  const undo = await undoOf(orgId, importId);
+  return { status: 201, touched: [...touched], body: { importId, eventId, staged, undo, giftsCreated, giftCents, pledgesCreated, pledgeCents, donorsCreated, duplicates,
     aside: u.aside.length, sentence, headline: summary.headline, totals: u.totals, totalsSentence: u.totalsSentence,
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
     columnAccount: u.columnAccount, button: summary.button, reconciled: true, giftLine: summary.giftLine,
     givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents, sheetRows: summary.sheetRows, connections: summary.connections, rowChecks: summary.rowChecks } };
+}
+
+// IMPORT-13 · ONE UNDO WINDOW, ONE DATE: shared/importUndo.js's window, from committed_at, in the org's zone.
+async function undoOf(orgId, importId) {
+  const IU = require("../shared/importUndo.js");
+  const [r] = await query("SELECT committed_at FROM imports WHERE id=? AND org_id=?", [importId, orgId]);
+  const tz = ((await ctx.orgTz(orgId).catch(() => null)) || {}).timezone || undefined;
+  const until = r ? IU.undoUntil("sheet", r.committed_at) : null;
+  return until ? { until: until.toISOString(), window: IU.windowWords("sheet"), sentence: IU.undoWords(until, { timeZone: tz, shape: "sheet" }), timeZone: tz || null } : null;
+}
+async function undoPreviewOf(orgId) {
+  const IU = require("../shared/importUndo.js");
+  const tz = ((await ctx.orgTz(orgId).catch(() => null)) || {}).timezone || undefined;
+  return IU.undoWords(IU.undoUntil("sheet", new Date()), { timeZone: tz, shape: "sheet" });
 }
 
 // IMPORT-7 · EACH SHEET'S ROWS, EACH COUNT NAMED. Every row the reader read
@@ -1179,13 +1205,16 @@ function sheetAccount(u, matches, dupLines) {
 
 // FIX-58: the gift rows of an import, said once: its gifts, the paid first
 // years of its pledges, and the two together. Each part names the rows it opens.
-function giftLineOf({ giftsCreated = 0, giftCents = 0, installmentGifts = 0, installmentCents = 0 }) {
+function giftLineOf({ giftsCreated = 0, giftCents = 0, installmentGifts = 0, installmentCents = 0, refunds = 0, refundCents = 0 }) {
   const rows = giftsCreated + installmentGifts, totalCents = giftCents + installmentCents;
   if (!rows) return null;
   const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
-  const words = [n(rows, "row", "rows"), `${n(giftsCreated, "gift", "gifts")} ${money(giftCents)}`];
-  if (installmentGifts) words.push(`${n(installmentGifts, "first payment", "first payments")} on pledges ${money(installmentCents)}`, `${money(totalCents)} in all`);
-  return { rows, gifts: giftsCreated, giftCents, firstPayments: installmentGifts, firstPaymentCents: installmentCents, totalCents, sentence: words.join(" · ") };
+  // IMPORT-13: a refund is its gift's negative row, said as a refund ("37 gifts $5,620 · 1 refund -$45"), never counted as a gift
+  const words = [n(rows, "row", "rows"), `${n(giftsCreated - refunds, "gift", "gifts")} ${money(giftCents - refundCents)}`];
+  if (refunds) words.push(`${n(refunds, "refund", "refunds")} ${money(refundCents)}`);
+  if (installmentGifts) words.push(`${n(installmentGifts, "first payment", "first payments")} on pledges ${money(installmentCents)}`);
+  if (installmentGifts || refunds) words.push(`${money(totalCents)} in all`);
+  return { rows, gifts: giftsCreated - refunds, giftCents: giftCents - refundCents, refunds, refundCents, firstPayments: installmentGifts, firstPaymentCents: installmentCents, totalCents, sentence: words.join(" · ") };
 }
 
 // One job: under the org's import lock, in one transaction. Anything that
@@ -1389,6 +1418,6 @@ INTERNAL.commit = async (orgId, user, sent, who) => {
 };
 }
 
-function money(c) { return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 }); }
+function money(c) { return (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 }); }   // IMPORT-13: "-$45", never "$-45"
 
 module.exports = { routers, mount, INTERNAL };

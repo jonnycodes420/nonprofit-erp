@@ -123,7 +123,7 @@ async function freshOrg(id, name) {
   const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const today = (await q(`SELECT to_char(committed_at, 'YYYY-MM-DD') d FROM imports WHERE org_id=$1 ORDER BY committed_at DESC LIMIT 1`, [ORG]))[0].d.split("-").map(Number);
   ok("§6 the second preview asks: 'You imported this file on … (45 gifts). Import again anyway?'",
-     !!ib && ib.text === `You imported this file on ${mon[today[1] - 1]} ${today[2]} (45 gifts). Import again anyway?` && again.body.ready === false, { ib, ready: again.body.ready });
+     !!ib && new RegExp(`^You imported this file on ${mon[today[1] - 1]} ${today[2]}, \\d{1,2}:\\d\\d [AP]M \\(45 gifts\\)\\. Gifts already here are skipped\\. Import again anyway\\?$`).test(ib.text) && again.body.ready === false, { ib, ready: again.body.ready });
   const twice = await api("POST", "/sheet-import/commit", tok, { ...body, previewOrgId: ORG });
   const giftsNow = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`, [ORG]))[0].n;
   ok("§6 the commit refuses without her answer, and nothing is written twice", twice.status === 409 && giftsNow === 45, { status: twice.status, giftsNow });

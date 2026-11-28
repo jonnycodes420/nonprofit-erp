@@ -2103,14 +2103,15 @@ const SOURCES = {
     label: "Gifts from this import",
     measure: () => "sum",
     params: { import: "id:required", part: "word" },
-    sentence: p => p.part === "gifts" ? "Every gift this import wrote that is not a payment on a pledge."
+    sentence: p => p.part === "gifts" ? "Every gift this import wrote that is not a payment on a pledge or a refund."
+      : p.part === "refunds" ? "Every refund this import wrote, each a negative row against its gift."
       : p.part === "first" ? "Every payment on a pledge this import wrote: a pledge's first year, already paid in the file."
       : "Every gift this import wrote, payments on its pledges included.",
     sql: (orgId, p) => ({
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
-                   CASE WHEN g.pledge_id IS NOT NULL THEN 'First payment on a pledge' WHEN d.deleted_at IS NOT NULL THEN 'Person deleted since' ELSE 'Gift' END AS detail
+                   CASE WHEN g.pledge_id IS NOT NULL THEN 'First payment on a pledge' WHEN g.amount < 0 THEN 'Refund' WHEN d.deleted_at IS NOT NULL THEN 'Person deleted since' ELSE 'Gift' END AS detail
               FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND g.import_id = ?${p.part === "gifts" ? " AND g.pledge_id IS NULL" : p.part === "first" ? " AND g.pledge_id IS NOT NULL" : ""}`,
+             WHERE g.org_id = ? AND g.import_id = ?${p.part === "gifts" ? " AND g.pledge_id IS NULL AND g.amount > 0" : p.part === "refunds" ? " AND g.amount < 0" : p.part === "first" ? " AND g.pledge_id IS NOT NULL" : ""}`,
       args: [orgId, p.import],
       order: "amount DESC, id",
     }),

@@ -10,9 +10,12 @@
 
 // Hours an import of each kind can be undone, from its commit. A kind not listed: the deposit's.
 export const DEPOSIT_REVERSE_HOURS = 24;
+// IMPORT-13: one window for every file (the gauntlet read "a gift file gets 7 days and a spreadsheet 30" in
+// Settings while every door opens the one reader); a bank deposit is not a file of people and keeps its day.
+export const IMPORT_UNDO_DAYS = 30;
 export const SHAPE_REVERSE_HOURS = Object.freeze({
-  deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7,
-  sheet: 24 * 30, aggregate: 24 * 30, wide: 24 * 30, workbook: 24 * 30, both: 24 * 30,
+  deposit: DEPOSIT_REVERSE_HOURS, ...Object.fromEntries(["gift_file_with_donors", "gifts", "history", "transaction", "sheet", "aggregate", "wide", "workbook", "both"]
+    .map(k => [k, 24 * IMPORT_UNDO_DAYS])),
 });
 
 // The last moment an import of `shape` committed at `committedAt` can be undone (a Date), or null.

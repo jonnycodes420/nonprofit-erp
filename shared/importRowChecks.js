@@ -34,12 +34,15 @@ export function rowChecks(answers = {}) {
   const copiesChoice = answers.copies === "import" || answers.copies === "skip" ? answers.copies : null;
   return {
     // Returns { aside: {reason,…} } to set the row aside, or { mark } for the gift.
-    check({ t, b, cents, rowKey }) {
+    check({ t, b, cents, rowKey, hasId = true }) {
       if (Math.abs(cents) > MAX_GIFT_CENTS) return { aside: { reason: OVER_CAP_WORDS, overCap: true } };
       if (outlierSkip && outlierSkip.has(rowKey)) return { aside: { reason: "far above this person's giving and your org's largest gift: you set it aside", outlier: true } };
       const key = `${t.key}\u0001${(b.raw || b.cells).map(s).join("\u0001")}`;
       const first = firstSeen.get(key);
       if (first == null) { firstSeen.set(key, b.line); return { mark: {} }; }
+      // IMPORT-13: twins with no ID are counted, one rule everywhere (two $125 rows are two gifts); a copy that
+      // carries an ID is IMPORT-11's copy, skipped by default on a dated sheet
+      if (!hasId) return copiesChoice === "skip" ? { aside: { reason: `an exact copy of row ${first}`, copyOf: first, twin: true } } : { mark: { copyOf: first, twin: true } };
       const skip = copiesChoice ? copiesChoice === "skip" : t.cols.some(c => c.role === "date");
       if (skip) return { aside: { reason: `an exact copy of row ${first}`, copyOf: first } };
       return { mark: { copyOf: first } };
@@ -51,8 +54,9 @@ export function rowChecks(answers = {}) {
 // from these rows, so the preview, the receipt and the check page agree.
 export function rowCheckLists({ gifts = [], aside = [], today }) {
   const where = r => `${r.sheet === "Sheet1" ? "" : `${r.sheet} `}row ${r.line}`;
-  const copiesAside = aside.filter(a => a.copyOf != null);
-  const copiesIn = gifts.filter(g => g.copyOf != null);
+  const copiesAside = aside.filter(a => a.copyOf != null && !a.twin);
+  const copiesIn = gifts.filter(g => g.copyOf != null && !g.twin);
+  const twinRows = [...aside.filter(a => a.twin), ...gifts.filter(g => g.twin)];
   const copyRows = [...copiesAside, ...copiesIn].map(r => ({ sheet: r.sheet, line: r.line, copyOf: r.copyOf, cents: r.cents ?? null, imported: copiesIn.includes(r) }));
   const n = copyRows.length;
   const overCap = aside.filter(a => a.overCap).map(a => ({ sheet: a.sheet, line: a.line, who: a.who || null, cents: a.cents ?? null }));
@@ -65,6 +69,10 @@ export function rowCheckLists({ gifts = [], aside = [], today }) {
       count: n, rows: copyRows, imported: copiesIn.length > 0,
       sentence: `${n === 1 ? "1 row is an exact copy" : `${n.toLocaleString("en-US")} rows are exact copies`} of another row: ${copyRows.slice(0, 12).map(r => `${where(r)} (copy of row ${r.copyOf})`).join(", ")}${n > 12 ? `, and ${n - 12} more` : ""}.`,
     } : null,
+    // IMPORT-13: identical rows with no ID, counted as the old system had them
+    twins: twinRows.length ? { count: twinRows.length, imported: twinRows.some(r => gifts.includes(r)),
+      rows: twinRows.map(r => ({ sheet: r.sheet, line: r.line, copyOf: r.copyOf, cents: r.cents ?? null, who: r.who || null })),
+      sentence: `${twinRows.length === 1 ? "1 row is" : `${twinRows.length.toLocaleString("en-US")} rows are`} the same as another row with no ID to tell them apart (${twinRows.slice(0, 6).map(r => `${where(r)} = row ${r.copyOf}`).join(", ")}): ${twinRows.some(r => gifts.includes(r)) ? "each counted as its own gift, as the old system had them" : "set aside, as you chose"}.` } : null,
     overCap: overCap.length ? {
       count: overCap.length, rows: overCap,
       sentence: `${overCap.map(where).join(", ")}: ${OVER_CAP_WORDS}. Set aside.`,

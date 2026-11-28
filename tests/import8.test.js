@@ -206,8 +206,8 @@ async function workbookRoles(sheets) {
     const back = await undoAndWait(BASE, tok, job.importId, { timeoutMs: 60000, pollMs: 100 });
     const body = back.body || {};
     ok("§4 Undo names who stayed and why, never \"Undone.\" alone (main: \"Undone. 60 gifts removed and 29 people this file created.\")",
-      job.end && job.end.status === "done" && note.status < 300 && back.status === 200 && body.stayedCount === 1 && body.stayed[0].id === d.id && body.stayed[0].why === "a note"
-        && /^Undone, except for 1 person\./.test(body.sentence || "") && body.sentence.includes(`1 person stayed because they have activity since the import: ${d.name} (a note).`),
+      job.end && job.end.status === "done" && note.status < 300 && back.status === 200 && body.stayedCount === 1 && body.stayed[0].id === d.id && /^a note was added [A-Z][a-z]{2} \d{1,2}$/.test(body.stayed[0].why || "")
+        && /^Undone, except 1 person you kept: /.test(body.sentence || "") && new RegExp(`1 person stayed because they have activity since the import: ${d.name} \\(a note was added [A-Z][a-z]{2} \\d{1,2}\\)\\.`).test(body.sentence),
       { job: job.end && job.end.status, note: note.status, status: back.status, sentence: body.sentence, stayed: body.stayed });
     const { n: left } = await one(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
     const rm = await api("POST", "/donors/bulk-delete", tok, { ids: (body.stayed || []).map(x => x.id), count: (body.stayed || []).length });
