@@ -173,13 +173,17 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
 
   // Optimistic delete: drop the entry locally right away; on failure, refetch
   // the profile (restores the row) and surface the error.
+  // FRESH-5 item 4: the copy never outlives the server's answer. On success the record is read again
+  // (the server's list replaces the local one); on failure the old list is back at once, with the error.
   const deleteInteraction=async(int)=>{
     const prev=localInts??donor.interactions??[];
     setLocalInts(prev.filter(x=>x.id!==int.id));
     try{
       const r=await apiFetch(`/interactions/${int.id}`,{method:"DELETE"});
+      loadGiftsFull();
       offerUndo(r,(int.type||"entry").replace(/_/g," "),()=>{loadGiftsFull();loadRel&&loadRel();});
     }catch(e){
+      setLocalInts(prev);
       loadGiftsFull();
       alert("Could not delete this entry: "+(errorMessage(e, "unknown error")));
     }

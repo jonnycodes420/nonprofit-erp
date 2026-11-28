@@ -635,6 +635,9 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
     throw e;
   }
   const [row] = await query(sql`SELECT * FROM ${sql.id(t.table_name, RESTORABLE)} WHERE id = ${t.record_id} AND org_id = ${req.user.orgId}`);
+  // FRESH-5: what Undo put back on a person goes through the one after-change step, as its delete did (trash.js).
+  if (row && row.donor_id) await require("../../afterChange").afterChange(req.user.orgId, [row.donor_id], { door: t.table_name === "pledges" ? "pledge" : "logged_touch", recalc: false })
+    .catch(e => console.error(`[restore] after-change (${t.table_name}):`, e.message));
   // The audit row is about the record that came back, not the trash row.
   if (req.audit) {
     req.audit.entity(TRASH_ENTITY[t.table_name], t.record_id);

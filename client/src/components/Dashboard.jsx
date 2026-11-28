@@ -343,9 +343,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     }).catch(()=>{}).finally(()=>setSetupLoaded(true)); // offline/error → no card, Home unaffected
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  const [layoutError,setLayoutError]=useState("");   // FRESH-5: above its first reader (the setup card's save)
   const setSetupCardState=async(state)=>{
+    const before=setupStatus;
     setSetupStatus(s=>s?{...s,cardState:state}:s); // optimistic
-    try{await apiFetch("/org/setup-card",{method:"PUT",body:JSON.stringify({state})});}catch{/* keep optimistic view; recomputed next load */}
+    // FRESH-5 item 4: a refused save puts the card back as it was, with the reason (it kept the new state until a reload)
+    try{await apiFetch("/org/setup-card",{method:"PUT",body:JSON.stringify({state})});}
+    catch(e){setSetupStatus(before);setLayoutError(errorMessage(e,"That did not save. The card is as it was."));}
   };
 
   // ── BUILD-34: per-user section layout + edit mode ─────────────────────────
@@ -353,7 +357,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [editMode,setEditMode]=useState(false);
   const [preEditLayout,setPreEditLayout]=useState(null); // rollback target for Esc / a failed save
   const [dragSectionId,setDragSectionId]=useState(null);
-  const [layoutError,setLayoutError]=useState("");
 
   useEffect(()=>{
     apiFetch("/me/home-layout")

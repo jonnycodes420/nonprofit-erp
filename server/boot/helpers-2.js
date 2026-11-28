@@ -1145,8 +1145,24 @@ async function unlapseHeldByPledge(orgId, ids = null) {
                           AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
       LIMIT 200`,
     [orgId, ...(ids ? [ids] : []), ...hold.args, ...lapsedNow.args]);
+  // FRESH-5 item 3 (W-1112-Volunteers-01X: "Epsilon's Donors list row stayed Lapsed after his profile
+  // returned to Current"): and somebody Steward placed in Lapsed whose own giving is no longer lapsed by
+  // the one rule. A gift whose date was edited into the last 12 months, or one put back by Undo, left
+  // the stage at Lapsed for good: only a new gift un-lapsed (autoUnlapseOnGift), and the profile read Current.
+  const ownRows = await query(
+    `SELECT d.id FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.stage='lapsed'${ids ? " AND d.id = ANY(?)" : ""}
+        AND d.gift_count > 0 AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
+        AND NOT ${lapsedNow.sql}
+        AND NOT EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id
+                          AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
+      LIMIT 200`,
+    [orgId, ...(ids ? [ids] : []), ...lapsedNow.args]);
   let moved = 0;
-  for (const [d, why] of [...rows.map(r => [r, "Auto: they made a pledge"]), ...unitRows.map(r => [r, "Auto: someone they give with gave"])]) {
+  const once = new Set();
+  for (const [d, why] of [...rows.map(r => [r, "Auto: they made a pledge"]), ...unitRows.map(r => [r, "Auto: someone they give with gave"]), ...ownRows.map(r => [r, "Auto: a gift in the last 12 months"])]) {
+    if (once.has(d.id)) continue;
+    once.add(d.id);
     const upd = await query("UPDATE donors SET stage='steward', updated_at=NOW() WHERE id=? AND org_id=? AND stage='lapsed' RETURNING id", [d.id, orgId]);
     if (!upd.length) continue;
     await recordAutoMove(orgId, d.id, "lapsed", "steward", why);

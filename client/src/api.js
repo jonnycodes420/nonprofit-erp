@@ -299,6 +299,7 @@ export async function apiFetch(path, options = {}) {
     // kept the old figure until a reload.
     const after = () => { writeGen++; kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "after" }); };
     const meta = {};   // LIVE-2: the server's X-Steward-Changed, read by apiFetchNow
+    if (options.answer === "response") meta.raw = true;   // FRESH-5: apiWriteFile, a write whose answer is a file
     return apiFetchNow(path, options, 0, meta).then(v => {
       after();
       const w = kindsOfWrite(path, method, options.body, meta.changed);
@@ -392,7 +393,18 @@ async function apiFetchNow(path, options = {}, busyTries = 0, meta = null, token
     const said = bodySentence(err);
     throw Object.assign(new Error(said), { status: res.status, ...err, message: said });
   }
+  if (meta && meta.raw) return res;   // FRESH-5: apiWriteFile reads the bytes itself
   return res.json();
+}
+
+// FRESH-5 item 2 · A WRITE WHOSE ANSWER IS A FILE GOES THROUGH HERE TOO. Printed letters, the
+// letters' PDFs and the screening file were POSTed with a bare fetch(), so the write announced
+// nothing and every screen showing what it stamped (the gifts marked printed, their thank-yous)
+// waited for a reload. This is apiFetch's write path, answered with the Response (status checked,
+// errors thrown with the route's sentence) so the caller reads .blob() and its headers.
+// scripts/ci/raw-write-scan.js fails on a fetch() with a non-GET method anywhere else.
+export function apiWriteFile(path, options = {}) {
+  return apiFetch(path, { method: "POST", ...options, answer: "response" });
 }
 
 export async function streamAI(systemPrompt, userMessage, onChunk) {

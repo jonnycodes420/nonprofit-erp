@@ -87,9 +87,19 @@ async function trashRow(table, id, req) {
        SELECT ?, ?, ?, ?, to_jsonb(t) || ?::jsonb, ?, ? FROM ${table} t WHERE t.id = ? AND t.org_id = ?`,
       [trashId, req.user.orgId, table, id, JSON.stringify(withRow ? { __with: withRow } : {}), who.id, who.name, id, req.user.orgId]);
     await runTx(client, `DELETE FROM ${table} WHERE id = ? AND org_id = ?`, [id, req.user.orgId]);
-    return trashId;
+    return { trashId, donorId: table === "donors" ? null : rows[0].donor_id || null };
+  }).then(async t => {
+    if (!t) return null;
+    // FRESH-5 item 1 (staging, 28 Nov): a row taken off a person goes through the one after-change step, as
+    // its create did. A pledge deleted left "Suggested one-time ask: $1,875" on the profile for seconds:
+    // nothing ran, so the scores' read saw nothing landing and served the stored row (FRESH-4 item 3).
+    if (t.donorId) await require("../../afterChange").afterChange(req.user.orgId, [t.donorId], { door: TRASH_DOOR[table] || "logged_touch", recalc: false })
+      .catch(e => console.error(`[trash] after-change (${table}):`, e.message));
+    return t.trashId;
   });
 }
+// The after-change door a trashed row's person goes through (afterChange.js DOORS).
+const TRASH_DOOR = { pledges: "pledge", volunteer_shifts: "volunteer_hours", event_attendees: "event_checkin", relationships: "relationship", donor_relationships: "relationship" };
 // FIX-45: a minute on the toast; Recent changes lists the trash row after that.
 const UNDO_SECONDS = 60;
 

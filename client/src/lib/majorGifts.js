@@ -5,7 +5,7 @@
 //
 // The GET /me read is lib/majorGiftsAccess.js, shared by every caller.
 import { useEffect, useState } from "react";
-import { API, getToken } from "../api";
+import { apiWriteFile } from "../api";
 
 // The one GET /me read lives in lib/majorGiftsAccess.js (ASKS-1: the shell
 // imports it, and this module stays off Home's first look).
@@ -21,16 +21,8 @@ export function useCanMajorGifts() {
 // A POST that answers with a file (the screening file): fetched with the
 // session and saved from the bytes.
 export async function postDownload(path, body, fallbackName) {
-  const token = getToken();
-  const res = await fetch(`${API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(body || {}),
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw Object.assign(new Error(e.message || e.error || "That file did not download."), { status: res.status, ...e });
-  }
+  // FRESH-5: through api.js's write path, so the write announces what it changed
+  const res = await apiWriteFile(path, { body: JSON.stringify(body || {}) });
   const cd = res.headers.get("Content-Disposition") || "";
   const m = /filename="?([^";]+)"?/i.exec(cd);
   const url = URL.createObjectURL(await res.blob());

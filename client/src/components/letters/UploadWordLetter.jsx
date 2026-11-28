@@ -7,7 +7,7 @@
 // row to confirm, never a guess; what did not carry over is said plainly.
 // Nothing is saved until she presses Save.
 import { useState, useEffect, useRef } from "react";
-import { API, apiFetch } from "../../api";
+import { apiFetch, apiWriteFile } from "../../api";
 import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 
@@ -65,9 +65,8 @@ export default function UploadWordLetter({ onClose, onSaved }) {
     if (!read) return;
     setBusy("pdf");
     try {
-      const r = await fetch(API + "/acknowledgments/templates/docx/preview", { method: "POST", headers: { Authorization: "Bearer " + localStorage.getItem("npe_token"), "Content-Type": "application/json" },
-        body: JSON.stringify({ layout: read.layout, fields: chosen() }) });
-      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || "The preview could not be made.");
+      // FRESH-5: through api.js (a preview writes nothing, and its answer says so: it re-reads no screen)
+      const r = await apiWriteFile("/acknowledgments/templates/docx/preview", { body: JSON.stringify({ layout: read.layout, fields: chosen() }) });
       const url = URL.createObjectURL(await r.blob());
       setPdfUrl(old => { if (old) URL.revokeObjectURL(old); return url; });
     } catch (e) { setErr(errorMessage(e, "The preview could not be made.")); }

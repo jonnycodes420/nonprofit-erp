@@ -1,7 +1,7 @@
 import { Figure } from "./Figure";
 import { useState, useEffect, useRef } from "react";
 import CampaignTidy from "./campaigns/CampaignTidy";   // LETTERS-1: drafts and same-name campaigns, merge with Undo
-import { apiFetch, API } from "../api";
+import { apiFetch, apiWriteFile } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-1
 import { T, activeMark, fmt, fmtFull, fmtTotal, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
@@ -1492,8 +1492,7 @@ function AcknowledgmentsView({ isReadOnly, roTip, onNavigate }) {
   const download = async (path, name) => {
     setBusy(true); setMsg("");
     try {
-      const r = await fetch(API + path, { method: "POST", headers: { Authorization: "Bearer " + localStorage.getItem("npe_token"), "Content-Type": "application/json" }, body: body() });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || j.error || "Could not make the PDF."); }
+      const r = await apiWriteFile(path, { body: body() }).catch(e => { throw new Error(e.message || "Could not make the PDF."); });   // FRESH-5: through api.js, so the write announces
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = name; a.click();

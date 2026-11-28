@@ -66,4 +66,53 @@ async function census({ src = {} } = {}) {
   return problems;
 }
 
-module.exports = { census, listening };
+// ── FRESH-5 item 2 · A SCREEN READS THROUGH liveRead, NEVER A COPY LOADED ONCE ──────────────────
+// A component that reads the server (an apiFetch GET) and holds the answer with no live subscription
+// (useLive / useLiveRead / useLiveRev, useChanged / useChangeRev, the profile's useProfileRefresh or
+// useWriteStamp, api.js onWrite, useStewardTold) shows what it read the moment it opened, whatever is
+// saved after. Each such file under components/ is listed; it fails unless it is on READS_ALLOWED with
+// its reason, or on the baseline (tests/lib/readsOutsideLive.json, the files that read that way when
+// the rule came in: it only shrinks, a file that starts listening comes off it).
+const LIVE_HOOK = /\buseLive(?:Read|Rev)?\(|\buseChang(?:ed|eRev)\(|\buseProfileRefresh\(|\buseWriteStamp\(|\bonWrite\(|\buseStewardTold\(|\bonAnyChange\(/;
+const READS_ALLOWED = {
+  "components/admin/OrdersToSign.jsx": "Steward's own admin console (super admin): no org screen, it re-reads after its own writes",
+  "components/admin/StartLinkPanel.jsx": "Steward's own admin console (super admin): no org screen, it re-reads after its own writes",
+  "components/IdleGuard.jsx": "reads the session's idle limit once; it shows no org data",
+};
+function argsAt(text, at) {
+  let depth = 0;
+  for (let i = at; i < Math.min(text.length, at + 1500); i++) {
+    if (text[i] === "(") depth++;
+    else if (text[i] === ")" && --depth === 0) return text.slice(at, i + 1);
+  }
+  return text.slice(at, at + 1500);
+}
+// [file] under components/ that read with apiFetch GET and listen for nothing. `src` replaces a file's text.
+function readsOutsideLive(src = {}) {
+  const files = walk(path.join(SRC, "components")).map(f => path.relative(SRC, f).split(path.sep).join("/"));
+  for (const extra of Object.keys(src)) if (!files.includes(extra)) files.push(extra);
+  const out = [];
+  for (const rel of files.sort()) {
+    const text = rel in src ? src[rel] : fs.readFileSync(path.join(SRC, rel), "utf8");
+    if (LIVE_HOOK.test(text)) continue;
+    let reads = false;
+    for (const m of text.matchAll(/\bapiFetch\(/g)) {
+      const call = argsAt(text, m.index + m[0].length - 1);
+      if (!/method\s*:/.test(call) || /method\s*:\s*["'`]GET["'`]/.test(call)) { reads = true; break; }
+    }
+    if (reads) out.push(rel);
+  }
+  return out;
+}
+const READS_BASELINE = path.join(__dirname, "readsOutsideLive.json");
+function readsProblems(src = {}, { baseline = null } = {}) {
+  const base = new Set(baseline || JSON.parse(fs.readFileSync(READS_BASELINE, "utf8")).files);
+  const found = readsOutsideLive(src);
+  const problems = found.filter(f => !READS_ALLOWED[f] && !base.has(f))
+    .map(f => `${f} reads the server with apiFetch and listens for no change (no useLive, useChanged, …): what it shows stays as it was when it opened, whatever is saved after. Read it through lib/liveRead.js`);
+  const now = new Set(found);
+  for (const f of base) if (!now.has(f)) problems.push(`${f} is on tests/lib/readsOutsideLive.json but now listens (or is gone): take it off (the baseline only shrinks)`);
+  return problems;
+}
+
+module.exports = { census, listening, readsOutsideLive, readsProblems, READS_ALLOWED };

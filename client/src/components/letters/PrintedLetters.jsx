@@ -11,7 +11,7 @@
 //   2. Letter templates: her own letter, uploaded from Word (UploadWordLetter).
 //   3. Your signature: the picture that prints above your name.
 import { useState, useEffect, useCallback } from "react";
-import { API, apiFetch } from "../../api";
+import { apiFetch, apiWriteFile } from "../../api";
 import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import UploadWordLetter from "./UploadWordLetter";
@@ -36,8 +36,7 @@ function takePick() {
 }
 
 async function downloadPost(path, body, fallbackName) {
-  const r = await fetch(API + path, { method: "POST", headers: { Authorization: "Bearer " + localStorage.getItem("npe_token"), "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || j.error || "The file could not be made."); }
+  const r = await apiWriteFile(path, { body: JSON.stringify(body) }).catch(e => { throw new Error(e.message || "The file could not be made."); });   // FRESH-5: marked printed is a write; it announces
   const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || fallbackName;
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a"); a.href = url; a.download = name; a.click();
