@@ -171,6 +171,7 @@ function mount(app, { query, run, wrap, requireAuth, checkWriteAccess, actor, de
     if (ctx.preparing) return res.json({ preparing: true, open: [], done: [] });
     const have = await stored(req.user.orgId, req.user.userId, ctx.weekOf);
     if (!have.length) await insert(req, ctx, ctx.ranked.slice(0, FIVE), 1);
+    res.setHeader("X-Steward-Changed", "none");   // keeping the week's five changes nothing any screen shows (FRESH-4 re-reads nothing)
     res.json(await view(req, ctx, await stored(req.user.orgId, req.user.userId, ctx.weekOf)));
   }));
 
