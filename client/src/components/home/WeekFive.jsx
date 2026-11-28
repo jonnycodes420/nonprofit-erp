@@ -10,7 +10,7 @@
 // moves deck, kept whole as its own view). Nothing here sends.
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { retryImport } from "../../lib/lazyRetry";
-import { apiFetch, takeParked } from "../../api";
+import { apiFetch, apiWriteQuiet, takeParked } from "../../api";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { T } from "../shared";
 import { DonorLink } from "../RecordLink";
@@ -39,7 +39,7 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
   useEffect(() => {
     let alive = true;
     const keep = d => { if (alive) take(d); };
-    const start = d => (d && d.preview && !isReadOnly ? apiFetch("/home/five/start", { method: "POST", body: "{}" }).then(keep).catch(() => {}) : null);
+    const start = d => (d && d.preview && !isReadOnly ? apiWriteQuiet("/home/five/start").then(keep).catch(() => {}) : null);
     if (data) { if (onData) onData(data); start(data); }
     else apiFetch("/home/five").then(d => { keep(d); start(d); }).catch(e => { if (alive) setErr(e); });
     return () => { alive = false; };
