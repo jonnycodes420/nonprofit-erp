@@ -41,16 +41,25 @@ function giftHistory() {
   const F = "jp-gift-history-287.xlsx";
   const R = sheet(F);
   const people = [...new Set(R.map(r => norm(r.Donor)).filter(Boolean))].map(id => ({ id }));
-  const all = R.map((r, i) => ({ id: `r${i + 2}`, person: norm(r.Donor), cents: centsOf(r.Amount), date: dayOf(r.Date) }));
-  const gifts = all.filter(g => g.cents > 0);
-  const setAside = all.filter(g => g.cents <= 0);
+  const all = R.map((r, i) => ({ id: `r${i + 2}`, person: norm(r.Donor), cents: centsOf(r.Amount), date: dayOf(r.Date), memo: String(r.Memo || "") }));
+  // IMPORT-13 (the brief's rule, read from the cells): a negative row is the refund of the same person's latest
+  // earlier gift of that amount, else of one at least that large with that much left; money paid out ("Purchase
+  // of …") is an expense; anything else negative, or zero, is set aside.
+  const pos = all.filter(g => g.cents > 0), left = new Map(pos.map(g => [g.id, g.cents])), refunds = [];
+  for (const r of all.filter(g => g.cents < 0 && !/^purchase\b|paid out|payment to/i.test(g.memo))) {
+    const mine = pos.filter(g => g.person === r.person && g.date <= r.date && left.get(g.id) >= -r.cents).sort((a, b) => b.date.localeCompare(a.date));
+    const g = mine.find(x => x.cents === -r.cents) || mine[0];
+    if (g) { left.set(g.id, left.get(g.id) + r.cents); refunds.push(r); }
+  }
+  const gifts = [...pos, ...refunds];
+  const setAside = all.filter(g => g.cents <= 0 && !refunds.includes(g));
   const k = computeKey({ people, gifts }, { today: "2026-11-02", fiscalStartMonth: 7 });
   const byCalendarYear = {};
-  for (const g of gifts) { const y = g.date.slice(0, 4); byCalendarYear[y] = (byCalendarYear[y] || 0) + g.cents; }
+  for (const g of gifts) { const y = g.date.slice(0, 4); byCalendarYear[y] = (byCalendarYear[y] || 0) + g.cents; }   // net of the refunds
   // `names` is not compared as people: the importer rightly folds a name's
   // variants ("Mr & Mrs. X" and "X") into one person, which a key read from
   // the cells cannot know without becoming the importer.
-  return { file: F, rows: R.length, names: k.units, gifts: { count: k.gifts.count, cents: k.gifts.cents },
+  return { file: F, rows: R.length, names: k.units, gifts: { count: k.gifts.count, cents: k.gifts.cents }, refunds: { count: refunds.length, cents: refunds.reduce((n, g) => n + g.cents, 0) },
     setAside: { count: setAside.length, cents: setAside.reduce((n, g) => n + g.cents, 0) },
     net: k.gifts.cents + setAside.reduce((n, g) => n + g.cents, 0), byCalendarYear };
 }

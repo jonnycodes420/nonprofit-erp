@@ -45,9 +45,16 @@ async function activityOf(query, orgId, ids, imp) {
             (SELECT COUNT(*) FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id AND i.import_id IS DISTINCT FROM ?
                 AND COALESCE(i.created_by, '') NOT LIKE 'system:%' AND i.type NOT IN ('note', 'call', 'gift') AND i.gift_id IS NULL)::int AS other,
             (SELECT COUNT(*) FROM tasks t WHERE t.org_id = d.org_id AND t.donor_id = d.id AND t.import_id IS DISTINCT FROM ?
-                AND COALESCE(t.created_by, '') NOT LIKE 'system:%')::int AS tasks
+                AND COALESCE(t.created_by, '') NOT LIKE 'system:%')::int AS tasks,
+            -- IMPORT-13: when the latest of it was added, so the confirm and the receipt can say "a note was added Nov 27"
+            GREATEST((SELECT MAX(g.created_at) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.import_id IS DISTINCT FROM ? AND g.created_at >= ?::timestamptz),
+                     (SELECT MAX(i.created_at) FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id AND i.import_id IS DISTINCT FROM ?
+                         AND COALESCE(i.created_by, '') NOT LIKE 'system:%' AND (i.type IN ('note', 'call') OR i.gift_id IS NULL)),
+                     (SELECT MAX(t.created_at) FROM tasks t WHERE t.org_id = d.org_id AND t.donor_id = d.id AND t.import_id IS DISTINCT FROM ?
+                         AND COALESCE(t.created_by, '') NOT LIKE 'system:%')) AS last_at,
+            (SELECT o.timezone FROM orgs o WHERE o.id = d.org_id) AS tz
        FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NULL ORDER BY d.name, d.id`,
-    [imp.id, imp.id, imp.id, since, imp.id, imp.id, imp.id, imp.id, orgId, ids]);
+    [imp.id, imp.id, imp.id, since, imp.id, imp.id, imp.id, imp.id, imp.id, since, imp.id, imp.id, orgId, ids]);
 }
 
 const plural = (k, one, many) => (k === 1 ? one : `${k} ${many}`);
@@ -55,7 +62,11 @@ function whyWords(r) {
   if (r.older_gifts) return `holds ${plural(r.older_gifts, "a gift", "gifts")} from before this import, so it was here first`;
   const w = [r.gifts && plural(r.gifts, "a gift", "gifts"), r.notes && plural(r.notes, "a note", "notes"), r.calls && plural(r.calls, "a call", "calls"),
     r.tasks && plural(r.tasks, "a task", "tasks"), r.other && plural(r.other, "a line on their timeline", "lines on their timeline")].filter(Boolean);
-  return w.join(", ");
+  // IMPORT-13: what was added and when, in the org's zone: "a note was added Nov 27"
+  const when = r.last_at ? new Date(r.last_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: r.tz || "UTC" }) : null;
+  const one = w.length === 1 && /^an? /.test(w[0]);
+  const said = w.length > 1 ? `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}` : w[0] || "";
+  return said ? `${said} ${one ? "was" : "were"} added${when ? `${one ? "" : " since, the last"} ${when}` : " since the import"}` : "";
 }
 const hasActivity = r => !!(r.gifts || r.notes || r.calls || r.tasks || r.other);
 

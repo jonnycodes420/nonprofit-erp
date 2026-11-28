@@ -67,6 +67,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   The payment method is its own field, never the gift type. (BUILD-88a)
 - **A gift is a duplicate only when the source id, donor, amount and date all match.** A colliding id imports
   as its own gift with `external_id` NULL and is counted. No two gifts in one payload may share a source id. (BUILD-83, BUILD-88a)
+  On the one reader IMPORT-13 goes further (below): a known ID that differs is never added.
 - **Giving-source and funder files never match a donor by name alone.** Use an exact email, an EIN or an
   external id, or create a new record and report it. A funder name that matches a person is refused by line. (BUILD-89S, BUILD-100)
 - **Send `identityResolved` when the client has already resolved identity.** Without it, the server's email
@@ -148,8 +149,14 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   no amount yet, because guessing would make up money. The preview states `columnAccount` (total = mapped + kept +
   skipped). This replaces BUILD-78's "no field without an explicit accept" for this reader: the Import button,
   which names the kept columns, is the accept.
-- **A gift with a person and an amount always lands.** A blank or unreadable date is an undated gift
-  (`gifts.date IS NULL`), never a set-aside row. "Oct 2026" is the 1st with the file's words kept; "FY26" is
+- **A gift with a person and an amount always lands; a date Steward can't read is asked (IMPORT-13, replacing
+  IMPORT-4's "a blank or unreadable date is an undated gift").** A **blank** date is an undated gift (`gifts.date IS
+  NULL`), never a set-aside row ("12 gifts have no date"). A date Steward **couldn't read** ("next Friday", "not a
+  date") is set aside by default and listed with its words ("5 gifts have dates Steward couldn't read: 'not a date'"),
+  each opening its rows; "Import them undated" (`answers.unreadableDates = "undated"`) is one click. The receipt and the
+  check page count them on their own line (`rowChecks.unreadable`). The gauntlet's key followed BUILD-77 (unreadable is an
+  error) and IMPORT-4 said undated; neither rule is switched silently: the two are separated and she decides. An undated
+  gift is in no dated figure (this year, last year, LYBUNT). "Oct 2026" is the 1st with the file's words kept; "FY26" is
   undated with its words kept. `POST /imports/:id/date-undated` dates a run's undated gifts in one click.
 - **A shared ID links sheets.** A gift sheet's ID column whose values are the people sheet's IDs is the person,
   and gifts attach by it, never by name. Matching an org's existing people tries that ID first (TRANS-1).
@@ -318,8 +325,8 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 
 - **What the old system knew about a gift lands where Steward keeps it (IMPORT-12, `shared/giftExtras.js`).** In a
   known system's export, a negative row, or a gift its file marks refunded (Bloomerang's Is Refunded), is a refund
-  against the person's gift. A spreadsheet no system claims keeps HARDEN-1's rule and sets the negative row aside, as
-  Jonathan's real-shaped key does. The gift a refund stands against is: the
+  against the person's gift. Since IMPORT-13 a spreadsheet no system claims does the same (the gauntlet: "a migrated
+  org's lifetime totals overstate against its old system"); HARDEN-1's expense rule ("money paid out") is unchanged. The gift a refund stands against is: the
   one it names, else the latest earlier gift of that amount, else one at least that large. It is written as a negative
   row with `refund_of`, and the gift is marked refunded in full when the whole gift went back, as "Record a refund" does.
   A refund with no gift to stand against is still set aside. A soft credit, from a column (Soft Credit Name(s)) or a row
@@ -336,6 +343,37 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   system's export at a real size from one made-up org, with its key computed from the model. `tests/import-systems.test.js`
   holds every system to that key to the cent. Each writer cites where its headers come from. eKYROS publishes none, so
   its fixture is invented and says so.
+
+- **A messy migration lands right, not just close (IMPORT-13, `shared/importGiftRules.js`, `server/imports/knownGifts.js`).**
+  Graded by `tests/fixtures/import/gauntlet/` (eight passes in order on one org, `tests/real-shaped.test.js` §I13):
+  · **A gift ID is one gift.** Inside a file the second row with an ID is set aside by line ("gift ID ST-001 is already on
+    row 2 of this file"). The one reader now stores the ID (`gifts.external_id`). A known ID with the same person, amount
+    and date is already here; one whose amount, date or person differs is never added: "changed since your last import:
+    ST-001 was $250.00, the file now says $999.00", set aside by default. "Update to the file's amount"
+    (`answers.changedGifts = "update"`) edits that one gift's amount and date (`summary_json.giftUpdates` keeps the
+    before; Undo puts it back). A file never moves a gift to another person.
+  · **Twins with no ID are counted, one rule everywhere.** Identical rows with no gift or person ID are each a gift,
+    in a file and across files: three $125 rows when the org already holds two from earlier imports is one more. A copy
+    that carries an ID is IMPORT-11's exact copy, skipped by default on a dated sheet.
+  · **A refund matches its gift or is listed.** A negative row that matches an earlier gift for the same person (its
+    ID, otherwise the same amount on or before its date, in the file or among the org's gifts) is that gift's refund
+    (`refund_of`). An unmatched one is "a refund with no gift to match" by name, set aside.
+  · **Only people become people.** A total line ("TOTAL CONTACTS: 3", no email, phone or address) is set aside on any
+    sheet. A row with an email and no name asks once, "3 people have only an email. Use the email as their name, or set
+    them aside?", set aside by default (`answers.emailOnly = "name"`). "Mark them as the notes say" (IMPORT-8) is on the
+    one reader too (`answers.noteFlags = "apply"`), never ticked for her; a note's flag then rides the person's column
+    choices.
+  · **On gifts joined by ID, the ID names the person**, so a row equal to the rows above it is a gift, never a "total row".
+  · **A workbook's Pledges sheet keyed by name writes its pledges** (the name and email ride with the ID), through the
+    one pledge writer. The workbook screen holds Import while any sheet's equation reads UNBALANCED, and a receipt whose
+    shown and written figures differ says "Not finished: …" as its headline.
+  · **The receipt says one thing.** Its footing counts "already here" as its own part, the same list the headline
+    counts; a refund is said as a refund ("37 gifts $5,620 · 1 refund -$45"); the set-aside dollars by reason add to the
+    whole. **One undo window**: 30 days for every file (a bank deposit 24 hours), `shared/importUndo.js`, its date from
+    the run's `committed_at` in the org's zone, read by the preview, the receipt and the Imports list. The re-import
+    question says "Gifts already here are skipped" and dates the earlier import in the org's time. A partial undo says
+    "Undone, except 1 person you kept: Leah (a note was added Nov 27)", and the confirm names them first.
+  Rows from before: `scripts/ops/import13-gauntlet-rows.js` (read only, counts by org).
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make

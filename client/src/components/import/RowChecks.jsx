@@ -85,6 +85,10 @@ export function RowChecksCounted({ rc, testid = "row-checks-counted" }) {
   if (rc.outliers) lines.push(`${n(rc.outliers.count, "gift", "gifts")} far outside the pattern, imported.`);
   if (rc.outliersSetAside) lines.push(`${n(rc.outliersSetAside, "gift", "gifts")} far outside the pattern, set aside by you.`);
   if (rc.future) lines.push(futureSentence(rc.future));
+  // IMPORT-13: unreadable dates, no-ID twins and gifts changed since the last import, each on its own line
+  if (rc.unreadable) lines.push(rc.unreadable.sentence);
+  if (rc.twins) lines.push(rc.twins.sentence);
+  if (rc.changed && rc.changed.count) lines.push(`${n(rc.changed.count, "gift", "gifts")} changed since your last import: ${rc.changed.updated ? "updated to the file's amount, as you chose" : "set aside, Steward's gift unchanged"} (${rc.changed.rows.slice(0, 3).map(r => r.sentence).join("; ")}).`);
   if (!lines.length) return null;
   return <div data-testid={testid} style={{ ...small, color: T.ink }}>{lines.map(l => <div key={l}>{l}</div>)}</div>;
 }

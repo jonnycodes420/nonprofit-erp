@@ -35,6 +35,7 @@ import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf 
 import { readTotalRow, checkHeadline } from "./totalRows.js";
 import { applySheetKinds, linkGiftSheetsById, joinSentence, sheetsSetAside } from "./sheetWorkbook.js";   // IMPORT-11
 import { rowChecks, rowCheckLists } from "./importRowChecks.js";   // IMPORT-11: the cap, copies, far outside, future-dated
+import * as GR from "./importGiftRules.js";   // IMPORT-13: one gift per ID, unreadable dates, total lines, email-only rows
 import { GIFT_EXTRA_HEADER_ROLES, GIFT_EXTRA_ROLE_LABELS, SOFT_CREDIT_STATUS, softCreditRow, takeGiftExtras, settleGiftExtras } from "./giftExtras.js";   // IMPORT-12
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
   demotePeopleSheetAmounts, mergedLinesOf, partnersAndHouseholds, spouseQuestion, choiceLines, amountChecks, importButtonSentence,
@@ -150,9 +151,9 @@ const EVENT_WORD_RE = /\b(dinner|gala|lunch|luncheon|breakfast|auction|benefit|b
 // The roles that put a value on the person (core Steward fields).
 const PERSON_ROLES = new Set(["name", "first", "last", "lastFirst", "org", "email", "phone", "address", "address2", "city", "state", "zip", "country", "externalId",
   "tags", "aboutThem", "spouse", "householdName", "introducedBy", "guestOf"]);
-const ENGAGE_ROLES = new Set(["invited", "rsvp", "attended", "table", "partySize", "logistics"]);
-const COMMS_ROLES = new Set(["mailingList", "optOut", "doNotEmail", "doNotMail", "doNotCall", "doNotContact", "deceased", "commRestrictions"]);
-const ROLE_FLAG_ROLES = new Set(["volunteer", "board", "staff"]);
+export const ENGAGE_ROLES = new Set(["invited", "rsvp", "attended", "table", "partySize", "logistics"]);
+export const COMMS_ROLES = new Set(["mailingList", "optOut", "doNotEmail", "doNotMail", "doNotCall", "doNotContact", "deceased", "commRestrictions"]);
+export const ROLE_FLAG_ROLES = new Set(["volunteer", "board", "staff"]);
 const HEADER_INDEX = new Map();
 for (const [role, list] of HEADER_ROLES) for (const h of list) if (!HEADER_INDEX.has(h)) HEADER_INDEX.set(h, role);
 // Columns that are deliberately left out, with the reason said out loud.
@@ -1129,7 +1130,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // ("Ivy (send with Harlan's) Brooks", "**Gideon Pratt") is moved off it.
   const noteRows = [], namesCleaned = [];
   const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list
-  const occ = new Map(), rowCk = rowChecks(answers);
+  const occ = new Map(), rowCk = rowChecks(answers), idOnce = GR.giftIdOnce(), emailOnlyUsed = [];
   const sourceFile = s(fileName) || "your file";
   const personGiftCents = new Map();   // for "Gave at dinner" checks
   const keptHeaders = new Map();       // header → { header, sheet, count }
@@ -1183,8 +1184,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // IMPORT-10 (shared/totalRows.js): a total is a short label in a label's place, never a row
       // with a person on it; one that does not foot is listed for her to check, never dropped.
       const amtCol = moneyCols.find(m => m.role === "amount");
-      if (readTotalRow({ t, b, cells, moneyHere, amtCol, nameText, sums: { table: tableSums, since: sinceSubtotal }, totals, checks: totalChecks, answers, cellOf, moneyOf, cents, fmt$ })) continue;
+      // IMPORT-13: on gifts joined by ID, the ID names the person, so a $100 that equals the rows above is a gift, not a total
+      const idNames = t.linkedById && byId.has(s(get(b, "externalId")).toLowerCase()) ? s(get(b, "externalId")) : "";
+      if (readTotalRow({ t, b, cells, moneyHere, amtCol, nameText: nameText || idNames, sums: { table: tableSums, since: sinceSubtotal }, totals, checks: totalChecks, answers, cellOf, moneyOf, cents, fmt$ })) continue;
       t.readCount++;
+      if (!moneyHere.length && GR.isTotalPersonRow({ nameText, contact: ["email", "phone", "address"].map(r => get(b, r)) })) {   // IMPORT-13
+        aside.push({ sheet: t.sheet, line: b.line, reason: `a total line ("${nameText.slice(0, 40)}"), not a person`, totalLine: true, cells: filled.slice(0, 6), cents: null }); continue; }
       if (!nameText && !(t.linkedById && byId.has(s(get(b, "externalId")).toLowerCase()))) {   // IMPORT-11: the ID names the person
         for (const m of moneyHere) { const v = cents(moneyOf(cellOf(t, b, m))); tableSums[m.index] += v; sinceSubtotal[m.index] += v; }
         const v = amtCol ? moneyOf(cellOf(t, b, amtCol)) : null;
@@ -1209,7 +1214,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       let email = s(get(b, "email")).toLowerCase();
       if (email && placeholder.email.has(email)) email = "";
       const extId = s(get(b, "externalId"));
-      if (!s(who.name) && email) { who.kind = "person"; who.name = email; who.people = [{ name: "" }]; }
+      if (!s(who.name) && email) {   // IMPORT-13: only an email asks once; set aside by default
+        const amtV = amtCol ? moneyOf(cellOf(t, b, amtCol)) : null, row = { sheet: t.sheet, line: b.line, email, cents: amtV != null ? cents(amtV) : null };
+        if (!byEmail.has(email) && answers.emailOnly !== "name") { aside.push({ ...row, who: email, reason: GR.EMAIL_ONLY_REASON(email), emailOnly: email }); continue; }
+        if (!byEmail.has(email)) emailOnlyUsed.push(row);
+        who.kind = "person"; who.name = email; who.people = [{ name: "" }];
+      }
       const nameKey = who.kind + ":" + who.name.toLowerCase().replace(/[^a-z0-9& ]/g, "").replace(/\s+/g, " ");
       let pkey = null, linkedBy = null;
       if (extId && byId.has(extId.toLowerCase())) { pkey = byId.get(extId.toLowerCase()); linkedBy = "id"; }
@@ -1381,7 +1391,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
       if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
       // HARDEN-1: money paid out is not a refund. IMPORT-12: in a known system's export a negative row is a refund, netted later
-      const isRefund = amt < 0 && !!t.shape && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));
+      const isRefund = amt < 0 && !PAID_OUT_RE.test(s(get(b, "note")) || s(get(b, "type")));   // IMPORT-13: on every sheet, matched to its gift or set aside
       if (amt < 0 && !isRefund) {
         const said = s(get(b, "note")) || s(get(b, "type"));
         aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: PAID_OUT_RE.test(said) ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
@@ -1396,8 +1406,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // IMPORT-12: a soft-credit row is recognition on the person thanked, never money
       if (status === SOFT_CREDIT_STATUS) { ensure(); rowCredits.push(softCreditRow({ t, b, pkey, who, cents: cents(amt), get: r => s(get(b, r)), normalizeDate })); continue; }
       if (!isRefund && status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
-      const rk = isRefund || status === SOFT_CREDIT_STATUS ? { mark: {} } : rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}` });   // IMPORT-11
+      const rk = isRefund || status === SOFT_CREDIT_STATUS ? { mark: {} } : rowCk.check({ t, b, cents: cents(amt), rowKey: `${t.sheet}:${b.line}`, hasId: !!(s(get(b, "giftId")) || s(get(b, "externalId"))) });   // IMPORT-11, IMPORT-13
       if (rk.aside) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rk.aside }); continue; }
+      const ownId = role("giftId") && GR.isGiftIdHeader(role("giftId").header) ? get(b, "giftId") : null;   // a check number is not the gift
+      const rep = !isRefund && idOnce.check({ giftId: ownId, sheet: t.sheet, line: b.line, cents: cents(amt), date: s(get(b, "date")), who: pkey, fund: s(get(b, "fund")) });   // IMPORT-13: a gift ID is one gift
+      if (rep && !rep.split) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), ...rep }); continue; }
+      let unreadable = null;
       // when: a gift with a person and an amount always lands. No date, or a
       // date Steward cannot place in a day, is a gift with no date, flagged.
       let date = null, dateNote = null;
@@ -1409,7 +1423,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           else {
             date = dateOf(raw, { ...dctx, year: answers.year || null });
             if (date && MONTH_YEAR_RE.test(t0)) dateNote = `Date in your file: ${t0}`;
-            if (!date) dateNote = `Date in your file: ${t0}`;
+            if (!date) {   // IMPORT-13: an unreadable date is set aside unless she says import them undated
+              if (answers.unreadableDates !== "undated") { aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt), reason: GR.unreadableDateReason(t0), unreadableDate: t0 }); continue; }
+              dateNote = `Date in your file: ${t0}`; unreadable = t0;
+            }
           }
           // TRUTH-6 (W-1109-Finance-15): a gift dated after today comes in as a
           // scheduled gift (shared/numbers/scheduled.js), never set aside, so the file foots.
@@ -1490,8 +1507,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (methodCol && (!m.known || !m.original) && !inKind && !/^pledge$/i.test(m.original)) giftFlags.push("method_unknown");
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
-                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
-                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark,
+                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: (rep && rep.split ? null : s(ownId)) || null,
+                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags, ...rk.mark, ...(unreadable ? { unreadableDate: unreadable } : {}),
                      // ASKS-1: an auction purchase: the item and what it was worth
                      auction: role("item") ? auctionFactsOf({ itemRaw: get(b, "item"), fmvRaw: get(b, "fmv"), hasFmvColumn: !!role("fmv"), answers, moneyOf }) : null };
       // IMPORT-12: what the old system knew about this gift; a refund row waits for its gift
@@ -1551,7 +1568,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // (a guest list, a title row, or a file name with an event word) and holds
   // no dates, the event's date is a question that blocks: without it, every
   // gift would land "No date" and every pledge be due from a made-up day.
-  const undatedCount = gifts.filter(g => !g.date).length;
+  const undatedCount = gifts.filter(g => !g.date && !g.unreadableDate).length;   // IMPORT-13: blank dates; unreadable ones are their own question
   // IMPORT-8 · A FILE NAME NEVER BECOMES AN EVENT. "Spring Gala Donors.xlsx"
   // with undated gifts asked "What was this event called?" and offered to date
   // them by the file. An event comes from the file's contents (who was invited
@@ -1626,6 +1643,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      hint: "Yes marks them deposited on their own dates, so Finance does not list them as Not yet on a deposit. Pledges are not gifts yet and are not marked.",
                      options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, I still need to deposit them" }] });
   }
+  for (const q of [GR.unreadableDateQuestion({ aside, gifts, answers }), GR.emailOnlyQuestion({ aside, answers, emailOnlyUsed })]) if (q) questions.push(q);   // IMPORT-13
   const auctionQ = auctionValueQuestion(gifts, answers);   // ASKS-1: never assume what an item was worth
   if (auctionQ) questions.push(auctionQ);
   // undated gifts with no event are one optional question, never a block
@@ -1689,6 +1707,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const mergedLines = mergedLinesOf(merged);
   const { spouseLinks, householdGroups, householdLine } = partnersAndHouseholds(peopleList, answers);
   if (spouseLinks.length) questions.push(spouseQuestion(spouseLinks, answers));
+  const noteQ = GR.applyNoteFlags(peopleList, answers);   // IMPORT-13: "Mark them as the notes say", never ticked for her
+  if (noteQ) questions.push(noteQ);
   const { commsLines, prefNotes, prefNotePeople } = choiceLines(peopleList);
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
   // IMPORT-6 · EVERY ROW ACCOUNTED FOR (shared/importRows.js)
@@ -1787,6 +1807,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   };
   result.countLines = countLines(result);
   result.rowChecks = rowCheckLists({ gifts, aside, today: T });   // IMPORT-11
+  result.rowChecks.unreadable = GR.unreadableList({ aside, gifts });   // IMPORT-13: their own line on the receipt and the check page
+  result.counts.unreadableDates = result.rowChecks.unreadable ? result.rowChecks.unreadable.count : 0;
   return result;
 }
 
@@ -1900,57 +1922,5 @@ export function overridesFromMapping(sheets, mapping = {}) {
 }
 export function roleLabel(role) { return ROLE_LABELS[role] || null; }
 
-// When the file should be read by this reader rather than the column mapper:
-// whenever the mapper would dead-end ("shape unclear", "0 donors + 0 gift
-// rows") or misread it. A file with no date column, a paid/pledge/frequency
-// column, more than one table on a sheet, or nothing it recognises.
-export function wantsAdaptiveReading(sheets, roled = null) {
-  if (roled && roled.some(s => s.role === "unknown")) return true;
-  if (roled && !roled.some(s => ["donors", "gifts", "pledges", "recurring"].includes(s.role))) return true;
-  // IMPORT-4: a file that knows who came, who volunteers or who said don't
-  // email me, or whose gifts have no date, is read in layers here. The column
-  // mapper would set those gifts aside and leave those columns out (26 Oct:
-  // "Import 443 donors + 0 gifts" for an event workbook with 106 gifts).
-  const u0 = understand({ sheets });
-  const LAYER_ROLES = new Set([...ENGAGE_ROLES, ...COMMS_ROLES, ...ROLE_FLAG_ROLES]);
-  if (u0.tables.some(tb => tb.isVolunteer || tb.columns.some(c => LAYER_ROLES.has(c.role)))) return true;
-  if (u0.counts.undatedGifts > 0) return true;
-  if (u0.tables.some(tb => tb.linkedById)) return true;   // IMPORT-11: gifts joined to people by ID, no name on them
-  // a workbook the workbook flow already reads (a donors sheet and a gifts
-  // sheet, every sheet with a role) stays there
-  if (roled && roled.filter(s => s.rowCount > 0 && s.role !== "chrome").length > 1) return false;
-  const u = u0;
-  if (u.fileKind === "unknown") return true;
-  // No date column: an event night's sheet, unless the file is one row per
-  // donor with running totals (Total Giving, Last Gift, year columns), which
-  // the column mapper reads as an aggregate file.
-  const AGG_HDR = /total|lifetime|last gift|ytd|cumulative|\b(19|20)\d\d\b|first gift|largest/i;
-  const aggregate = u.tables.some(tb => tb.columns.some(c => c.role !== "pledgeTotal" && AGG_HDR.test(String(c.header || ""))));
-  if (u.fileKind === "gifts" && u.needsDate && !aggregate) return true;
-  const perSheet = new Map();
-  for (const tb of u.tables) if (tb.kind === "gifts" || tb.kind === "people") perSheet.set(tb.sheet, (perSheet.get(tb.sheet) || 0) + 1);
-  if ([...perSheet.values()].some(n => n > 1)) return true;
-  // what the mapper misreads: a paid/promised column, a multi-year pledge,
-  // a pledge list, couples ("Suzanna & Walt"), total and subtotal rows, and
-  // dates with no year ("Oct 22")
-  if (u.tables.some(tb => tb.columns.some(c => ["paid", "pledgeTotal"].includes(c.role)))) return true;
-  if (u.pledges.some(p => p.years > 1) || (u.pledges.length && !u.gifts.length)) return true;
-  // couples, when there is no email to tell people apart (an event sheet);
-  // subtotals (one TOTAL line the mapper already reads as chrome)
-  const hasEmail = u.tables.some(tb => tb.columns.some(c => c.role === "email"));
-  if ((u.counts.households > 0 && !hasEmail) || u.totals.filter(x => x.role === "amount").length > 1) return true;
-  return u.tables.some(tb => tb.columns.some(c => c.role === "date" && (c.sample || []).some(v => /^[A-Za-z]{3,9}\.?\s+\d{1,2}$/.test(String(v).trim()))));
-}
-
-// NUMBERS-5 · A WORKBOOK OF PEOPLE AND THEIR GIFTS IS READ BY THE WORKBOOK
-// SCREEN (WorkbookImport.jsx, BUILD-82), which reads every sheet; this reader
-// read messy-25k as 1,101 people and no gifts. `roled`: classifyWorkbookSheets'
-// answer. wantsAdaptiveReading's question is about shape, so it is asked of
-// each sheet's first rows: the same answer under that size, seconds for a big file.
-const SHAPE_ROWS = 2000;
-export function readsAsWorkbook(sheets, roled) {
-  const live = (roled || []).filter(s => s.rowCount > 0);
-  if (!live.some(s => s.role === "donors") || !live.some(s => s.role === "gifts")) return false;
-  const head = (sheets || []).map(sh => ({ ...sh, grid: (sh.grid || []).slice(0, SHAPE_ROWS) }));
-  return !wantsAdaptiveReading(head, roled);
-}
+// When the file is this reader's and when it is the workbook screen's: shared/sheetReadRoute.js (IMPORT-13 moved it, verbatim).
+export { wantsAdaptiveReading, readsAsWorkbook } from "./sheetReadRoute.js";

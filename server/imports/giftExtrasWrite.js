@@ -21,7 +21,7 @@ const { newId } = require("../shared/newId");
 // The plan's refunds whose gift is still in the plan (a person set aside takes their refunds with them).
 function refundsToWrite(u) {
   const rows = new Set(u.gifts.map(g => g.rowId));
-  return (u.refunds || []).filter(r => rows.has(r.refundOf));
+  return (u.refunds || []).filter(r => r.refundOfGiftId || r.alreadyHere || rows.has(r.refundOf));   // IMPORT-13: or a gift the org already holds
 }
 
 async function writeGiftExtras({ query, run, recalcPledgePayment }, { orgId, who, u, giftIdByRow, pledgeIdByRow, personId }) {
@@ -29,7 +29,7 @@ async function writeGiftExtras({ query, run, recalcPledgePayment }, { orgId, who
   const byRow = new Map(u.gifts.map(g => [g.rowId, g]));
   // refunds: point each at its gift
   const ref = [];
-  for (const g of u.gifts) if (g.kind === "refund" && giftIdByRow.has(g.rowId) && giftIdByRow.has(g.refundOf)) ref.push([giftIdByRow.get(g.rowId), giftIdByRow.get(g.refundOf), g]);
+  for (const g of u.gifts) if (g.kind === "refund" && giftIdByRow.has(g.rowId) && (g.refundOfGiftId || giftIdByRow.has(g.refundOf))) ref.push([giftIdByRow.get(g.rowId), g.refundOfGiftId || giftIdByRow.get(g.refundOf), g]);
   if (ref.length) {
     await run(`UPDATE gifts g SET refund_of = v.orig, refund_reason = 'In the imported file' FROM unnest(?::text[], ?::text[]) AS v(id, orig)
                 WHERE g.id = v.id AND g.org_id = ?`, [ref.map(r => r[0]), ref.map(r => r[1]), orgId]);

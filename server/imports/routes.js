@@ -743,8 +743,11 @@ async function importGivenParts(orgId, rows) {
     const firstC = summary.givenCents != null ? Number(summary.givenCents) - c(r.dollars_created) : paid.get(r.id) || 0;
     const givenC = c(r.dollars_created) + firstC;
     const pledgedC = summary.pledgedOpenCents != null ? Number(summary.pledgedOpenCents) || 0 : Math.max(0, pledgeC - firstC);
+    // IMPORT-13: given is net of the refunds the file brought (the receipt's "1 refund -$45"), and says so
+    const rf = summary.giftLine && Number(summary.giftLine.refunds) > 0 ? summary.giftLine : null;
+    const after = rf ? `, after ${rf.refunds === 1 ? "1 refund" : `${Number(rf.refunds).toLocaleString("en-US")} refunds`} of ${money.formatCentsPlain(Math.abs(Number(rf.refundCents) || 0))}` : "";
     return { dollarsGiven: givenC / 100, dollarsPledged: pledgedC / 100,
-             dollarsInWords: pledgedC ? `${money.formatCentsPlain(givenC)} given · ${money.formatCentsPlain(pledgedC)} pledged` : givenC || Number(r.gifts_created) ? money.formatCentsPlain(givenC) : "No gifts" };
+             dollarsInWords: pledgedC ? `${money.formatCentsPlain(givenC)} given${after} · ${money.formatCentsPlain(pledgedC)} pledged` : givenC || Number(r.gifts_created) ? `${money.formatCentsPlain(givenC)}${rf ? ` given${after}` : ""}` : "No gifts" };
   };
 }
 
@@ -883,7 +886,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
   const given = (await importGivenParts(req.user.orgId, [r]))(r, summary);
   // FIX-58: the gift rows said once, each part opening its rows
   const src = part => ({ key: "import-gifts", params: { import: r.id, ...(part ? { part } : {}) } });
-  const giftLine = summary.giftLine ? { ...summary.giftLine, sources: { gifts: src("gifts"), first: src("first"), all: src(null) } } : null;
+  const giftLine = summary.giftLine ? { ...summary.giftLine, sources: { gifts: src("gifts"), first: src("first"), refunds: src("refunds"), all: src(null) } } : null;
   res.json({
     import: {
       id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,

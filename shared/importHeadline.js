@@ -22,6 +22,8 @@ export function importHeadline({ gifts = 0, giftCents = 0, scheduled = 0, schedu
   const rows = gifts + already + pledges + aside;
   const cents = giftCents + alreadyCents + pledgeCents + asideCents;
   if (!rows) return null;
+  // IMPORT-13: a list of people with a total line set aside has no gift rows to foot ("1 row: 0 gifts $0 in")
+  if (!gifts && !already && !pledges && !asideCents) return null;
   const parts = [];
   const verb = done ? "in" : "to bring in";
   if (gifts || !pledges) parts.push(`${n(gifts, "gift", "gifts")} ${usd(giftCents)} ${verb}`

@@ -41,7 +41,7 @@ export function ImportsHistory(){
       <SectionLabel>Imports</SectionLabel>
       {moveReportId&&<MoveReport importId={moveReportId} onClose={()=>setMoveReportId(null)}/>}
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
-        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. Undo removes everything this import added. {/* POLISH-15 item 5 */}<span data-testid="imports-window-lengths">A gift file can be undone for {windowWords("gifts")} after it is imported, a spreadsheet for {windowWords("sheet")}, a bank deposit for {windowWords("deposit")}.</span>
+        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. Undo removes everything this import added. {/* POLISH-15 item 5 */}<span data-testid="imports-window-lengths">An import can be undone for {windowWords("sheet")} after it is imported (a bank deposit for {windowWords("deposit")}); each row says its date, in your organization's time zone.</span>
       </div>
       {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
       {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}

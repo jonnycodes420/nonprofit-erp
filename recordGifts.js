@@ -37,7 +37,8 @@ const COLS = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", 
   "idempotency_key", "created_by", "created_by_name", "import_id", "event_id", "gift_type",
   // ASKS-1: an auction purchase states what the item was worth, as recordGift does
   "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value",
-  "scheduled_on"];   // TRUTH-6: dated after today is scheduled (shared/numbers/scheduled.js), as in recordGift
+  "scheduled_on",   // TRUTH-6: dated after today is scheduled (shared/numbers/scheduled.js), as in recordGift
+  "external_id"];   // IMPORT-13: the old system's gift ID, so the same ID resent is the same gift
 const RESTRICTED = ["program_restricted", "capital", "time_restricted"];
 
 function refuse(o) {
@@ -95,10 +96,11 @@ async function recordGifts(list, deps) {
     r.o.quidProQuoValue != null ? round2(Math.max(0, r.amount - Number(r.o.quidProQuoValue))) : null,
     r.o.quidProQuoValue != null ? String(r.o.quidProQuoDesc || "").slice(0, 300) : null,
     r.o.quidProQuoValue != null ? round2(Number(r.o.quidProQuoValue)) : null,
-    r.date ? require("./shared/numbers/scheduled").scheduledOn(r.date, r.o.today || today) : null]);
+    r.date ? require("./shared/numbers/scheduled").scheduledOn(r.date, r.o.today || today) : null,
+    r.o.externalId ? String(r.o.externalId).slice(0, 200) : null]);
   const made = new Set((await query(
     `INSERT INTO gifts (${COLS.join(",")}) VALUES ${rows.map(() => "(" + COLS.map(() => "?").join(",") + ")").join(",")}
-     ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`, vals)).map(r => r.id));
+     ON CONFLICT DO NOTHING RETURNING id`, vals)).map(r => r.id));   // IMPORT-13: the same key, or a gift ID already here, is a duplicate
   const kept = rows.filter(r => made.has(r.id));
   if (kept.length) {
     const people = [...new Set(kept.map(r => r.o.donorId))];

@@ -101,10 +101,18 @@ async function everyRow() {
     "mixed-names-and-addresses.csv": { rows: 20, nameOnly: ["Bo Carrow", "Marisol", "Anthony C Thomas", "Erin Swanson Russell", "Dr. Priya Raman", "Glenn Ostrowski III", "Quinn Abernathy", "Owen Prescott", "Lark Hollow Community Garden", "Theo Lindqvist", "Juniper"] },
     "full-name-only.csv": { rows: 8, nameOnly: ["Harriet Vale", "Cormac", "Sunny Acres Farm Stand", "Basil Fenwick Sr."] },
     "first-and-last.csv": { rows: 7, nameOnly: ["Ivo", "Fairbanks", "Gwen Talley", "Ines Albright", "Kai Nakamura"] },
-    "full-name-and-parts.csv": { rows: 7, nameOnly: ["Dorian Pike", "Lucia Bramble", "Hollis", "just.an.email@example.org"] },
+    // IMPORT-13: a row with only an email asks once ("Use the email as their name, or set them aside?"); with her
+    // "use the email" it is a person, as it was; by default it is set aside, listed (checked just below)
+    "full-name-and-parts.csv": { rows: 7, nameOnly: ["Dorian Pike", "Lucia Bramble", "Hollis", "just.an.email@example.org"], answers: { emailOnly: "name" } },
   };
+  {
+    const u = await read(path.join(PS, "full-name-and-parts.csv"));
+    ok("§1 full-name-and-parts.csv: the email-only row is set aside by default, listed, and asked about once",
+       u.rowLedger.setAside.length === 1 && /only an email \(just\.an\.email@example\.org\)/.test(u.rowLedger.setAside[0].reason) && (u.questions || []).filter(x => x.id === "emailOnly").length === 1,
+       JSON.stringify([u.rowLedger.setAside, (u.questions || []).map(x => x.id)]));
+  }
   for (const [f, k] of Object.entries(key)) {
-    const u = await read(path.join(PS, f));
+    const u = await read(path.join(PS, f), k.answers || {});
     const names = new Set(u.people.map(p => p.name));
     const lost = k.nameOnly.filter(nm => !names.has(nm) && !u.people.some(p => (p.people || []).some(x => x.name === nm)));
     ok(`§1 ${f}: ${k.rows} rows, ${k.rows} on the list, every name-only row a person, nothing set aside`,

@@ -19,6 +19,7 @@ import {
 } from "../../../shared/importShape";
 import { detectExclusionColumn, proposeCustomField, proposalEvidenceText } from "../../../shared/customFieldShape";
 import { importLeadSentence, decisionsFromSubmission } from "../../../shared/importSentence";
+import { workbookUnbalanced, receiptDiffHeadline } from "../../../shared/importGiftRules";   // IMPORT-13: the receipt's own check stops the import
 import { makeT, capitalize } from "../../../shared/vocabulary";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { displayDate } from "../../../shared/displayDate";
@@ -379,7 +380,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         setProgressText("Step 2 of 3: routing pledges and merges…");
         const sem = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
           importId: runId,   // FIX-60: Undo import takes these pledges with the gifts
-          pledges: submission.pledges.pledges.map(p => ({ donorExternalId: p.donorExternalId, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
+          // IMPORT-13: the name and email ride too, so a Pledges sheet keyed by name finds its person
+          pledges: submission.pledges.pledges.map(p => ({ donorExternalId: p.donorExternalId, donorName: p.donorName, donorEmail: p.donorEmail, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
           // BUILD-83 FIX — send the fold in the shape the persist path stores:
           // surviving + an ARRAY of folded identities with their source ids and
           // gift ids, so every fold gets an undo record. (The old flat string
@@ -595,6 +597,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
 
   if (step === "summary" && submission) {
     const s = submission;
+    const unbalancedNow = workbookUnbalanced({ donorsSheet, totals: s.totals, perSheet: s.reconciliation.perSheet });   // IMPORT-13
     const reasonRows = {};
     for (const r of s.refusals) (reasonRows[r.reason] = reasonRows[r.reason] || []).push(r);
     const flagGroups = {};
@@ -766,8 +769,10 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
 
         {s.columnNotes.length > 0 && s.columnNotes.map((n, i) => <div key={i} style={{ fontSize: 11.5, color: T.ink3, marginBottom: 8 }}>{n}</div>)}
 
+        {unbalancedNow.length > 0 && <div role="alert" data-testid="wb-unbalanced" style={{ fontSize: 15, fontWeight: 700, color: T.terra700, margin: "4px 0 10px" }}>
+          {`Not imported yet: ${unbalancedNow.map(x => x.sentence).join("; ")}. Every row needs one place before Steward writes anything.`}</div>}
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
-          {btn(building ? "Importing…" : `Import ${fmtN(s.totals.donors)} donors + ${fmtN(s.totals.gifts)} gifts →`, doImport, { disabled: building, testid: "wb-import", commit: true })}
+          {btn(building ? "Importing…" : `Import ${fmtN(s.totals.donors)} donors + ${fmtN(s.totals.gifts)} gifts →`, doImport, { disabled: building || unbalancedNow.length > 0, testid: "wb-import", commit: true })}
           {btn("← Back", () => setStep("mapper"), { secondary: true, disabled: building })}
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
@@ -822,6 +827,9 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       <div data-testid="wb-result">
         {/* BUILD-87 Part 2 — THE SENTENCE COMES FIRST, BEFORE ANY NUMBER, and
             it is built from the decisions this person made, not from copy. */}
+        {/* IMPORT-13: a figure that differs is the headline, never fine print */}
+        {receiptDiffHeadline(mismatches, fmtVal) && <div role="alert" data-testid="wb-not-finished" style={{ fontSize: 19, lineHeight: 1.5, fontWeight: 700, color: T.terra700, marginBottom: 12, maxWidth: "52ch" }}>
+          {receiptDiffHeadline(mismatches, fmtVal)}</div>}
         <div data-testid="wb-lead-sentence" style={{ fontSize: 19, lineHeight: 1.55, color: T.ink, marginBottom: 16, maxWidth: "46ch" }}>
           {leadSentence}
         </div>

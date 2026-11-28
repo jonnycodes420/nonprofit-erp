@@ -16,8 +16,11 @@ export default function ImportGiftLine({ line, importId, style }) {
   );
   return (
     <div data-testid="import-gift-line" onClick={e => e.stopPropagation()} style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, ...(style || {}) }}>
-      {n(line.rows, "row", "rows")} · {n(line.gifts, "gift", "gifts")} {fig(line.giftCents, line.firstPayments ? "gifts" : null, "Gifts")}
-      {line.firstPayments ? <> · {n(line.firstPayments, "first payment", "first payments")} on pledges {fig(line.firstPaymentCents, "first", "First payments on pledges")} · {fig(line.totalCents, null, "Gifts in all")} in all</> : null}
+      {n(line.rows, "row", "rows")} · {n(line.gifts, "gift", "gifts")} {fig(line.giftCents, line.firstPayments || line.refunds ? "gifts" : null, "Gifts")}
+      {/* IMPORT-13: a refund is said as a refund, opening its own rows */}
+      {line.refunds ? <> · {n(line.refunds, "refund", "refunds")} {fig(line.refundCents, "refunds", "Refunds")}</> : null}
+      {line.firstPayments ? <> · {n(line.firstPayments, "first payment", "first payments")} on pledges {fig(line.firstPaymentCents, "first", "First payments on pledges")}</> : null}
+      {line.firstPayments || line.refunds ? <> · {fig(line.totalCents, null, "Gifts in all")} in all</> : null}
     </div>
   );
 }

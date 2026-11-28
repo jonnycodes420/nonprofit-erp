@@ -301,8 +301,10 @@ async function giftHistory() {
   const j = await importJob(tok, { fileName: "jp-gift-history-287.xlsx", sheets });
   const db = await one("SELECT COUNT(*)::int AS n, ROUND(SUM(amount)*100)::bigint AS c FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, j.importId]);
   const listed = ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === j.importId) || {};
-  ok("§5 the gift history: the Imports list says $571,129.93 given, its 278 gifts to the cent",
-     db.n === 278 && Number(db.c) === 57112993 && Math.round(listed.dollarsGiven * 100) === 57112993 && listed.dollarsInWords === "$571,129.93", JSON.stringify([db, listed.dollarsGiven, listed.dollarsInWords]));
+  // IMPORT-13: the one negative row that matches its donor's earlier gift is that gift's refund (-$6), so the
+  // 278 gifts ($571,129.93) are held net, $571,123.93, and the line says the refund
+  ok("§5 the gift history: the Imports list says $571,123.93 given after 1 refund of $6: its 278 gifts and the refund, to the cent",
+     db.n === 279 && Number(db.c) === 57112393 && Math.round(listed.dollarsGiven * 100) === 57112393 && listed.dollarsInWords === "$571,123.93 given, after 1 refund of $6", JSON.stringify([db, listed.dollarsGiven, listed.dollarsInWords]));
   let agree = null;
   try { agree = await assertSurfacesAgree(ORG, { token: tok, label: "after the gift history", soft: true }); } catch (e) { agree = { ok: false, diffs: [String(e.message)] }; }
   ok("§5 the truth check agrees with the receipt", agree.ok, (agree.diffs || []).join("\n"));

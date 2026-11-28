@@ -11,7 +11,7 @@ export function ImportedBefore({ q, setAnswer, onClose, disabled }) {
   return (
     <div data-testid="sheet-imported-before" style={{ background: T.white, border: "1px solid " + T.gold500, borderRadius: 10, padding: "12px 14px" }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{q.text}</div>
-      <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>Importing it again adds every gift in it a second time. Undo the earlier import from Settings, Imports if you meant to replace it.</div>
+      <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>Gifts already here are skipped, and only what is new in the file is added. To replace the earlier import instead, undo it from Settings, Imports first.</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
         <button type="button" data-testid="sheet-imported-before-close" style={btn(true)} onClick={onClose}>Close, don't import</button>
         <button type="button" data-testid="sheet-import-again" disabled={disabled} style={btn(false)} onClick={() => setAnswer({ importAgain: q.importId })}>Import again anyway</button>

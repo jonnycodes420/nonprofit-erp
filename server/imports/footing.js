@@ -25,6 +25,13 @@ const REASONS = [
   ["outlier", "far above the pattern", /far above/i],
   ["future", "future-dated", /after today|future/i],
   ["deleted", "matches deleted people", /someone you deleted/i],
+  // IMPORT-13: a gift ID twice, a gift changed since the last import, an unreadable date, a refund with no gift, a total line, an email alone
+  ["repeatId", "a gift ID already in the file", /gift ID .+ is already on/i],
+  ["changed", "changed since your last import", /changed since your last import/i],
+  ["unreadable", "dates Steward couldn't read", /couldn't read/i],
+  ["refundNoGift", "refunds with no gift to match", /refund with no gift to match/i],
+  ["total", "total lines", /a total line/i],
+  ["emailOnly", "only an email", /only an email/i],
   ["here", "already here", /already here|duplicate|same gift listed twice/i],
   ["refund", "refunds and money paid out", /refund|reversal|paid out/i],
   ["zero", "$0 or no amount", /\$0|no amount|not a number|zero/i],
@@ -64,9 +71,10 @@ function importFooting(row, summary) {
         asideC = c(s.dollarsSetAside), errC = c(s.dollarsErrored);
   const importedC = madeC + pledgeC;
   const by = asideByReason(s);
-  const parts = Object.entries(by).filter(([, v]) => v > 0);
+  // IMPORT-13: a negative part (a refund with no gift) is said too, so the parts add to the whole
+  const parts = Object.entries(by).filter(([, v]) => v !== 0);
   const named = parts.reduce((t, [, v]) => t + v, 0);
-  if (asideC > named) parts.push(["other", asideC - named]);   // what the tally does not name is still said
+  if (asideC !== named) parts.push(["other", asideC - named]);   // what the tally does not name is still said
   const order = k => { const i = REASONS.findIndex(([x]) => x === k); return i < 0 ? 99 : i; };
   parts.sort((a, b) => order(a[0]) - order(b[0]));
   // TRUTH-6: of what was imported, the part stored as scheduled (dated after the
@@ -84,8 +92,15 @@ function importFooting(row, summary) {
   if (s.dollarsCreated != null && c(s.dollarsCreated) !== madeC) stored.push(`Stored dollars created is ${money.formatCents(madeC)} but the receipt shows ${money.formatCents(c(s.dollarsCreated))}.`);
   const balanced = rows.balanced && dollars.balanced && stored.length === 0;
   const mark = balanced ? "✓" : "✗";
-  const rowsSentence = `${rowsIn.toLocaleString("en-US")} rows in the file = ${(created + pledges).toLocaleString("en-US")} written`
-    + ` + ${aside.toLocaleString("en-US")} set aside${errored ? ` + ${errored.toLocaleString("en-US")} errored` : ""} ${rows.balanced ? "✓" : "✗"}`;
+  // IMPORT-13: the rows already here are their own part, the same list the headline counts ("4 set aside" against 5 was the two disagreeing)
+  const already = Math.min(aside, n(s.headline && s.headline.already != null ? s.headline.already : sc.duplicates));
+  rows.already = already; rows.setAside = aside - already;
+  const nr = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
+  const peopleOnly = row.shape === "sheet" && !created && !pledges && !already && n(s.personRowsInFile) > 0 && !dollars.asideBy.length;
+  const rowsSentence = peopleOnly
+    ? `${nr(n(s.personRowsInFile) + aside, "row", "rows")} in the file = ${nr(n(sc.donorsCreated ?? row.donors_created), "person created", "people created")}${n(s.peopleMatched) ? ` + ${n(s.peopleMatched).toLocaleString("en-US")} already here` : ""} + ${aside.toLocaleString("en-US")} set aside ${rows.balanced ? "✓" : "✗"}`
+    : `${nr(rowsIn, "row", "rows")} in the file = ${(created + pledges).toLocaleString("en-US")} written`
+    + `${already ? ` + ${already.toLocaleString("en-US")} already here` : ""} + ${(aside - already).toLocaleString("en-US")} set aside${errored ? ` + ${errored.toLocaleString("en-US")} errored` : ""} ${rows.balanced ? "✓" : "✗"}`;
   const dollarsSentence = `File ${usd(inC)} = imported ${usd(importedC - schedC)}${schedC ? ` + scheduled ${usd(schedC)}` : ""} + set aside ${usd(asideC)}`
     + (dollars.asideBy.length ? ` (${dollars.asideBy.map(p => `${p.label} ${usd(p.cents)}`).join("; ")})` : "")
     + (errC ? ` + errored ${usd(errC)}` : "") + ` ${dollars.balanced ? "✓" : "✗"}`;

@@ -1,0 +1,110 @@
+{
+  "pass1": {
+    "people": 20,
+    "totalRowLine": 22
+  },
+  "pass2": {
+    "gifts": 37,
+    "giftCents": 562000,
+    "undated": 2,
+    "refunds": 1,
+    "refundCents": -4500,
+    "repeatedIdLines": [
+      36
+    ],
+    "unreadable": [
+      {
+        "line": 37,
+        "words": "next Friday",
+        "cents": 50000
+      }
+    ],
+    "unmatchedRefunds": [
+      {
+        "line": 42,
+        "who": "Cora Fenn",
+        "cents": -3000
+      }
+    ],
+    "newPeople": [
+      "New Donor One"
+    ]
+  },
+  "pass3": {
+    "rows": 22,
+    "alreadyHere": 13,
+    "changed": [
+      {
+        "id": "ST-001",
+        "wasCents": 25000,
+        "fileCents": 99900
+      }
+    ],
+    "lands": 6,
+    "landsCents": 122500
+  },
+  "pass4": {
+    "people": 4,
+    "gifts": 6,
+    "giftCents": 37500,
+    "pledges": 1,
+    "pledgeCents": 90000,
+    "pledger": "Wanda Pryce"
+  },
+  "pass5": {
+    "gifts": 3,
+    "giftCents": 21500,
+    "emailOnly": [
+      "orphan@stress.test",
+      "orphan2@stress.test",
+      "orphan3@stress.test"
+    ],
+    "emailOnlyCents": 8000,
+    "flagNotes": [
+      {
+        "who": "Ottoline Brack",
+        "flag": "deceased"
+      },
+      {
+        "who": "Percival Moon",
+        "flag": "doNotContact"
+      }
+    ],
+    "totalRowLine": 8
+  },
+  "pass6": {
+    "rows": 2500,
+    "gifts": 2465,
+    "giftCents": 13462500,
+    "people": 493,
+    "unreadable": [
+      {
+        "line": 1247,
+        "cents": 4000
+      },
+      {
+        "line": 1248,
+        "cents": 4000
+      },
+      {
+        "line": 1249,
+        "cents": 4000
+      },
+      {
+        "line": 1250,
+        "cents": 4000
+      },
+      {
+        "line": 1251,
+        "cents": 4000
+      }
+    ],
+    "noAmountRows": 30,
+    "unreadableWho": "QAIMP Scale Donor 250"
+  },
+  "lifetimes": {
+    "Amelia Hart": 37500,
+    "Rita Calloway": 10000,
+    "New Donor One": 50000
+  }
+}
