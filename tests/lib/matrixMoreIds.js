@@ -140,7 +140,6 @@ function resolve(p, n, B) {
     [/^\/going-out\/sent\//, { id: `ams_${B}` }],
     [/^\/report-schedules\/:id/, { id: `rsc_${B}` }],   // REPORTS-6: org B's schedule
     [/^\/report-people\/batches\//, { id: `rpb_${B}` }],   // REPORTS-6: org B's mailing-draft press
-    [/^\/your-dashboard\/(preview|tiles)\//, { key: "giving" }],   // REPORTS-6: a report's name, never a row
     [/^\/onboarding\/(concierge\/booking|booking-file)\//, { id: `sbk_${B}` }],   // ONBOARD-4: org B's booking file
     [/^\/going-out\/held\//, { id: `mblk_${B}` }],
     [/^\/donors\/:id\/blocked-mail\/:bid/, { bid: `mblk_${B}` }],

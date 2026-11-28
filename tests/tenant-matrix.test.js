@@ -697,6 +697,9 @@ const PARAM_EXEMPT = [
   // dashboard-tile catalogue is built from figureSources.js's own registry and
   // an unknown name is refused. There is no cross-org value to probe.
   [/^\/dashboard-tiles$/, "no parameters — the catalogue of a fixed registry"],
+  // REPORTS-6 — :key is a report's name from yourDashboard.js's fixed catalogue, never a row: a tile list is
+  // the caller's own (org, user), so there is no org B value to probe.
+  [/^\/your-dashboard\/(preview|tiles)\/:key$/, "a report name from a fixed catalogue; the tile list is the caller's own"],
   [/^\/portfolio\/officers\/:userId\/color$/, "cross-org userId probed via bResolver userId map"], // resolved, listed for clarity
   // INT-OAUTH — the param is a PROVIDER KEY from the fixed registry in
   // shared/oauth.js (xero · intuit · square), never a row id, and an unknown
