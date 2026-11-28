@@ -3431,6 +3431,7 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
   const sent = c ? await QS.sentSummary(orgId, "1970-01-01") : null;
   res.json({
     enabled: true, autoSync: org.qbo_auto_sync === true, demo, companySentence,
+    paused: c ? require("../server/finance/qboPause").pausedOf(c, (await query("SELECT timezone FROM orgs WHERE id=?", [orgId]))[0]?.timezone || undefined) : null,   // HONEST-4 item 2
     mappingReady: gaps.ok, canSync: !!gaps.canSync,
     mappingGaps: gaps.ok ? null : { funds: gaps.funds, depositAccount: gaps.depositAccount, sentence: gaps.sentence },
     sent,

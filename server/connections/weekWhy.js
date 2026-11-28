@@ -13,19 +13,20 @@ const monDay = d => { const t = new Date(String(d).length === 10 ? d + "T12:00:0
   return isNaN(t) ? "" : t.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }); };
 const dayOf = (iso, back = 0) => new Date(new Date(iso).getTime() - back * 86400000).toISOString().slice(0, 10);
 
-// `sources` are giving_sources rows with gifts_this_week. Returns { [sourceId]: sentence }.
-async function weekWhys(query, orgId, sources, { now = new Date() } = {}) {
+// HONEST-4 item 6: the same explanation for the 30-day figure on each card ("2 from Oct 27 are now
+// more than 30 days old"), against the last check's `seen`. `days` is the window, `key` the count kept.
+async function windowWhys(query, orgId, sources, { now = new Date(), days = 7, key = "week", countOf = s => s.gifts_this_week } = {}) {
   const ids = sources.map(s => s.id);
   if (!ids.length) return {};
   require("./checks");   // the table exists once checks.js has been asked for it
   const prev = await query(
-    `SELECT DISTINCT ON (card_key) card_key, checked_at, (counts->>'week')::int AS week FROM connection_checks
-      WHERE org_id = ? AND card_key = ANY(?::text[]) AND counts->>'week' IS NOT NULL AND checked_at < ?::timestamptz
+    `SELECT DISTINCT ON (card_key) card_key, checked_at, (counts->>'${key}')::int AS week FROM connection_checks
+      WHERE org_id = ? AND card_key = ANY(?::text[]) AND counts->>'${key}' IS NOT NULL AND checked_at < ?::timestamptz
       ORDER BY card_key, checked_at DESC`, [orgId, ids, new Date(new Date(now).getTime() - 60 * 60 * 1000).toISOString()]).catch(() => []);
   const out = {};
   for (const p of prev) {
     const s = sources.find(x => x.id === p.card_key);
-    const nowCount = Number(s && s.gifts_this_week) || 0;
+    const nowCount = Number(s && countOf(s)) || 0;
     if (!s || p.week == null || p.week === nowCount) continue;
     const at = new Date(p.checked_at).toISOString();
     const [r] = await query(
@@ -35,15 +36,21 @@ async function weekWhys(query, orgId, sources, { now = new Date() } = {}) {
               COUNT(*) FILTER (WHERE date >= ? AND date < ?)::int AS aged,
               MIN(date) FILTER (WHERE date >= ? AND date < ?) AS aged_from
          FROM gifts WHERE org_id = ? AND giving_source_id = ?`,
-      [at, at, at, dayOf(now, 7), dayOf(at, 7), dayOf(now, 7), dayOf(at, 7), dayOf(now, 7), orgId, s.id]);
+      [at, at, at, dayOf(now, days), dayOf(at, days), dayOf(now, days), dayOf(at, days), dayOf(now, days), orgId, s.id]);
     const parts = [];
     if (r.fresh) parts.push(`${r.fresh} new`);
     if (r.refunds) parts.push(`${r.refunds} ${r.refunds === 1 ? "refund" : "refunds"} recorded ${monDay(r.refund_at)}`);
-    if (r.aged) parts.push(`${r.aged} from ${monDay(r.aged_from)} ${r.aged === 1 ? "is" : "are"} now more than a week old`);
+    if (r.aged) parts.push(`${r.aged} from ${monDay(r.aged_from)} ${r.aged === 1 ? "is" : "are"} now more than ${days === 7 ? "a week" : `${days} days`} old`);
     if (!parts.length) parts.push("a gift in the window was changed or removed");
     out[s.id] = `${nowCount > p.week ? "Up" : "Down"} from ${p.week} at the ${monDay(at)} check: ${parts.join(", ")}.`;
   }
   return out;
 }
 
-module.exports = { weekWhys };
+const weekWhys = (query, orgId, sources, opts = {}) => windowWhys(query, orgId, sources, { ...opts, days: 7, key: "week" });
+// The cards' 30-day figure (`gifts30`) against the last check's `seen`. Giving sources only.
+const monthWhys = (query, orgId, cards, opts = {}) => windowWhys(query, orgId,
+  cards.filter(c => c.kind === "source" && c.connected && !String(c.id).startsWith("unconnected:")),
+  { ...opts, days: 30, key: "seen", countOf: c => c.gifts30 });
+
+module.exports = { weekWhys, monthWhys, windowWhys };

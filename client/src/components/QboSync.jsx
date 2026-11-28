@@ -178,7 +178,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         <strong style={{ fontSize: 15, color: T.ink }}>QuickBooks Online sync</strong>
         {d.environment === "sandbox" && <span data-testid="qbo-sandbox" style={{ fontSize: 11, fontWeight: 800, 
           color: T.gold700 }}>Intuit sandbox</span>}
-        {can && <button type="button" data-testid="qbo-auto" disabled={busy === "auto" || d.demo || (!d.autoSync && d.mappingReady === false)}
+        {can && <button type="button" id="qbo-auto" data-testid="qbo-auto" disabled={busy === "auto" || d.demo || (!d.autoSync && d.mappingReady === false)}
           title={!d.autoSync && d.mappingReady === false ? "Map every fund first" : ""} onClick={toggleAuto}
           style={{ ...btn(false), marginLeft: "auto", ...(!d.autoSync && d.mappingReady === false ? { opacity: 0.5, cursor: "not-allowed" } : {}) }}>{d.autoSync ? "Turn auto-sync off" : "Turn auto-sync on"}</button>}
         {can && !d.demo && <button type="button" data-testid="qbo-disconnect" disabled={busy === "disconnect"} onClick={disconnect}
@@ -189,6 +189,12 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         {d.autoSync ? "Auto-sync is on: once an hour Steward sends whatever is waiting." : "Auto-sync is off: nothing goes until somebody presses Sync."}
         {d.sent && d.sent.gifts > 0 && <> {d.sent.gifts} {d.sent.gifts === 1 ? "gift has" : "gifts have"} been sent to QuickBooks.</>}
       </div>
+      {/* HONEST-4 item 2: three failed tries pause the hourly sync; only a person's Try again resumes it. */}
+      {d.paused && <div data-testid="qbo-paused" style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 6 }}>
+        <span style={{ flex: "1 1 240px", minWidth: 0 }}>{d.paused.sentence}</span>
+        {can && <button type="button" id="qbo-try-again" data-testid="qbo-try-again" disabled={!!busy} onClick={() => sync({ all: true })} style={btn(false)}>
+          {busy === "all" ? "Trying…" : "Try again"}</button>}
+      </div>}
       {d.mappingGaps && <div data-testid="qbo-map-gaps" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.mappingGaps.sentence}</div>}
       <QboChecklist d={d} m={m} can={can} lists={lists} loadLists={loadLists} Pick={Pick} setMap={setMap} setPart={setPart} save={save} busy={busy} />
       {d.companySentence && <div data-testid="qbo-new-company" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 4 }}>{d.companySentence}</div>}
@@ -229,7 +235,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
       <div style={{ marginTop: 12 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
           <div style={h}>Where each gift lands</div>
-          <button type="button" data-testid="qbo-map-open" style={{ ...btn(false), marginLeft: "auto" }} onClick={openMapping}>
+          <button type="button" id="qbo-map-open" data-testid="qbo-map-open" style={{ ...btn(false), marginLeft: "auto" }} onClick={openMapping}>
             {mapOpen ? "Close" : "Review the mapping"}</button>
         </div>
         {!mapOpen && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>

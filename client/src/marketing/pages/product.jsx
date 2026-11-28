@@ -102,7 +102,7 @@ function ConnectionGroups() {
       <p style={{ marginTop: 6 }}>{d.words[k].sentence}</p>
       <div className="conn">
         {d.groups[k].map(c => <div className="cn" key={c.key} id={c.key === "api" ? "api" : undefined}><div><b>{c.name}</b><span>{c.line}</span></div>
-          <span className={"chip" + (k === "connects" ? "" : k === "files" ? " soon" : " q")}>{d.words[k].title}</span></div>)}
+          <span className={"chip" + (k === "connects" || k === "build" ? "" : k === "files" ? " soon" : " q")}>{d.words[k].title}</span></div>)}
       </div>
     </div>));
 }

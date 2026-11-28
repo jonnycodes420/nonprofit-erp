@@ -51,7 +51,13 @@ function usualWords(rhythm, noun = "gift") {
 }
 
 // The quiet sentence, ONE wording for the card, Home and the task (item 2).
-function quietSentence({ label, silentDays, rhythm, noun = "gift" }) {
+// HONEST-4 item 6: a sentence that is STORED (a task's title) names the day it went quiet, never a
+// count of days, which would be wrong tomorrow: Givebutter read 69 days on Settings, 68 on Home and 67
+// on the task written two days before. Live surfaces count from the org's own today; stored ones say since.
+const sinceWords = d => { const t = new Date(String(d).slice(0, 10) + "T12:00:00Z");
+  return isNaN(t) ? "" : t.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
+function quietSentence({ label, silentDays, rhythm, noun = "gift", lastDate = null, stored = false }) {
+  if (stored && lastDate) return `${label} hasn't sent a ${noun} since ${sinceWords(lastDate)}. ${usualWords(rhythm, noun)}`.trim();
   return `${label} hasn't sent a ${noun} in ${silentDays} days. ${usualWords(rhythm, noun)}`.trim();
 }
 
@@ -90,23 +96,28 @@ function flowOfReal(card, facts = {}) {
   }
 
   // ── QUICKBOOKS: what is waiting to go, and what is stopping it. ──────────────────────────
+  // HONEST-4 item 2: the headline is the waiting count and dollars; each reason after it is its own
+  // sentence and a link to the control that fixes it (`fixes`, the panel's anchors). A pause leads.
   if (card.kind === "bookkeeping" && card.provider === "quickbooks" && facts.qbo) {
     const q = facts.qbo;
-    const blockers = [];
-    if (q.gapFunds && q.gapFunds.length) blockers.push(`${plural(q.gapFunds.length, "fund")} ${q.gapFunds.length === 1 ? "isn't" : "aren't"} mapped yet (${list(q.gapFunds)})`);
-    if (q.noDeposit) blockers.push("the account the money lands in isn't chosen yet");
-    const waitingWords = q.pendingCount ? `${plural(q.pendingCount, "gift")} (${money(q.pendingCents)}) ${q.pendingCount === 1 ? "is" : "are"} waiting` : null;
+    const fixes = [];
+    const fix = (words, anchor) => fixes.push({ words, anchor });
+    if (q.paused) fix(`Needs attention: ${q.paused.words}.`, "qbo-try-again");
+    if (q.autoSync === false && (q.pendingCount || !q.sentEver)) fix("Auto-sync is off.", "qbo-auto");
+    if (q.gapFunds && q.gapFunds.length) fix(`${plural(q.gapFunds.length, "fund")} ${q.gapFunds.length === 1 ? "isn't" : "aren't"} mapped (${list(q.gapFunds)}).`, "qbo-map-open");
+    if (q.noDeposit) fix("The account the money lands in isn't chosen.", "qbo-map-open");
+    const head = q.pendingCount ? `${plural(q.pendingCount, "gift")} (${money(q.pendingCents)}) waiting.` : "Nothing is waiting.";
     const figure = q.pendingCount ? { value: q.pendingCents / 100, kind: "money", source: q.figureSource, count: q.pendingCount } : null;
-    const map = step("Map them", { section: "connections", focus: "quickbooks" });
-    if (blockers.length) {
-      const s = waitingWords ? `${waitingWords}: ${blockers.join(", and ")}.` : `Nothing can be sent yet: ${blockers.join(", and ")}.`;
-      return out(q.sentEver ? "needs_you" : "waiting", s, { step: map, figure });
-    }
+    const sentence = [head, ...fixes.map(f => f.words)].join(" ");
+    const extra = { figure, head, fixes };
+    if (q.paused) return out("needs_you", sentence, { ...extra, step: step("Try again", { section: "connections", focus: "quickbooks" }) });
+    const blocked = (q.gapFunds && q.gapFunds.length) || q.noDeposit;
+    if (blocked) return out(q.sentEver ? "needs_you" : "waiting", sentence, { ...extra, step: step("Map them", { section: "connections", focus: "quickbooks" }) });
     if (!q.sentEver)
-      return out("waiting", waitingWords ? `${waitingWords}. Everything is mapped; nothing has been sent yet.` : "Everything is mapped. Nothing has been sent yet.",
-        { step: step("Send to QuickBooks", { section: "connections", focus: "quickbooks" }), figure });
-    return out("working", `Last sent to QuickBooks ${agoWords(daysSince(q.lastSentAt, today))}.${waitingWords ? ` ${waitingWords}.` : ""}`,
-      { lastFlow: { what: "sent to QuickBooks", at: q.lastSentAt }, figure });
+      return out("waiting", `${sentence} Everything is mapped; nothing has been sent yet.`,
+        { ...extra, step: step("Send to QuickBooks", { section: "connections", focus: "quickbooks" }) });
+    return out("working", `Last sent to QuickBooks ${agoWords(daysSince(q.lastSentAt, today))}. ${sentence}`,
+      { ...extra, head: `Last sent to QuickBooks ${agoWords(daysSince(q.lastSentAt, today))}. ${head}`, lastFlow: { what: "sent to QuickBooks", at: q.lastSentAt } });
   }
   if (card.kind === "bookkeeping") {
     if (card.sends === false) return out("waiting", card.sentence || "Connected. Sending is not available yet.");
@@ -150,10 +161,11 @@ function lastGift(card, today) {
 }
 
 // The summary over the page, from the flows alone, so it can never disagree with a card.
+// HONEST-4 item 3: an example connection is not a connection, so no count includes it.
 function summarize(cards) {
-  const n = s => cards.filter(c => c.flow && c.flow.state === s).length;
+  const n = s => cards.filter(c => c.flow && c.flow.state === s && !c.example && !c.flow.example).length;
   const counts = { working: n("working"), waiting: n("waiting"), needs_you: n("needs_you") };
-  const needs = cards.filter(c => c.flow && c.flow.state === "needs_you");
+  const needs = cards.filter(c => c.flow && c.flow.state === "needs_you" && !c.example && !c.flow.example);
   return { counts,
     sentence: needs.length ? `${needs.length} ${needs.length === 1 ? "connection needs" : "connections need"} you: ${needs.map(c => c.label).join(", ")}.` : null };
 }

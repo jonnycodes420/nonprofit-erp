@@ -26,13 +26,14 @@ const RETRIES = 20;
 const ACTOR = { id: "system:connections/checks", name: "Steward (daily connection check)" };
 
 const LABEL = { connected: "Connected", attention: "Needs attention", not_connected: "Not connected",
-  unavailable: "Not available yet", file: "Brought in as a file" };
+  unavailable: "Not available yet", file: "", example: "Example data" };
 const DEFINITION = {
   connected: "A sign-in is held, connecting is on, and Steward's check in the last 24 hours passed.",
   attention: "Something stops this working today. The reason is beside it.",
   not_connected: "Steward is not reading this one.",
   unavailable: "Steward cannot connect to this one yet.",
   file: "A file somebody brings in. There is no sign-in to hold and nothing to check.",
+  example: "Made-up rows: the demo's, or sample data. Nothing real comes through it, so it is not counted as a connection.",
 };
 
 // ── THE TABLE ──────────────────────────────────────────────────────────────
@@ -97,6 +98,7 @@ function reasonsOf(card, facts = {}) {
     if (q && q.noDeposit) r.push("no deposit account");
     if (facts.qboAutoSync === false) r.push("auto-sync off");
     if (q && !q.sentEver) r.push("nothing sent yet");
+    if (q && q.paused) r.unshift(q.paused.words);   // HONEST-4 item 2: the pause leads
   }
   if (card.kind === "bookkeeping" && card.sends === false) r.push("sending not available yet");
   if (card.kind === "email_marketing" && !card.mapped) r.push(`no ${card.audienceNoun || "audience"} chosen`);
@@ -115,12 +117,17 @@ const isFileCard = c => c.kind === "statements" || c.mode === "file";
 
 // ── THE ONE BADGE ──────────────────────────────────────────────────────────
 // `checks` are this card's newest runs, newest first ({ at, ok, reasons, counts }).
-function badgeOf(card, { reasons = [], checks = [], now = null } = {}) {
+function badgeOf(card, { reasons = [], checks = [], now = null, example = false } = {}) {
   const t = now ? new Date(now).getTime() : Date.now();
   const out = (state, reason = null) => ({ state, label: LABEL[state], reason, definition: DEFINITION[state],
-    words: reason ? `${LABEL[state]} · ${reason}` : LABEL[state] });
+    words: reason ? `${LABEL[state]} · ${reason}` : LABEL[state], live: state === "connected" || state === "attention" });
   if (!card.connected) return out(card.flow && card.flow.state === "unavailable" ? "unavailable" : "not_connected");
   if (isFileCard(card)) return out("file");
+  // HONEST-4 items 1 and 3: an example (the demo's rows, or sample rows) has no live status, and a
+  // connection quiet past its own rhythm can't say Connected whatever its last check read.
+  if (example) return out("example");
+  if (card.status === "quiet" && !reasons.some(r => /^nothing in /.test(r)))
+    reasons = [...reasons, card.silentDays != null ? `nothing in ${card.silentDays} days` : "quiet past its rhythm"];
   if (reasons.length) return out("attention", reasons.slice(0, 2).join(", "));
   const last = checks[0];
   if (!last) return out("attention", "not checked yet");
@@ -240,7 +247,8 @@ function mailboxBadge(p, { demo = false, row = null, now = null } = {}) {
     if (p.lastError) reasons.push("last read failed");
   }
   const at = (p.health && p.health.lastMailReadAt) || p.lastSyncedAt;
-  return badgeOf(card, { reasons: [...new Set(reasons)], checks: at ? [{ at, ok: !p.lastError, reasons: [] }] : [], now });
+  return badgeOf(card, { reasons: [...new Set(reasons)], checks: at ? [{ at, ok: !p.lastError, reasons: [] }] : [], now,
+    example: !!p.connected && (demo || !!p.example) });   // HONEST-4 item 3: the demo's mailbox is an example
 }
 
 module.exports = { ensureCheckTable, mailboxBadge, reasonsOf, badgeOf, countsOf, checkSentence, recentChecks, weekCounts,
