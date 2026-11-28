@@ -823,7 +823,11 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     await person("f5kit", "Kit Halloran");
     await q(`UPDATE donors SET person_types='["volunteer"]'::jsonb WHERE id=$1`, [P("f5kit")]);
     await api("POST", `/donors/${P("f5kit")}/volunteer-hours`, tok, { date: dayOffset(-3), hours: 2, notes: "seed" });
-    ok("§N the fixture: a call, a pledge and a Lapsed person (auto-lapse) are on file", callN.status === 201 && pledgeN.status === 201 && eps && eps.stage === "lapsed", { call: callN.status, pledge: pledgeN.status, eps });
+    // The queue writes Ada's stored scores (with the pledge in the Suggested ask) before the walk, as on staging:
+    // a person with no stored row is scored on the fly, which would hide a delete that reaches no after-change step.
+    await require("./lib/drainQueue").drainQueue(q, { orgId: ORG, scores: true, timeout: 20000 });
+    const [adaRow] = await q(`SELECT 1 AS has FROM donor_scores WHERE org_id=$1 AND donor_id=$2`, [ORG, P("f5ada")]);
+    ok("§N the fixture: a call, a pledge (in Ada's stored scores) and a Lapsed person (auto-lapse) are on file", !!adaRow &&  callN.status === 201 && pledgeN.status === 201 && eps && eps.stage === "lapsed", { call: callN.status, pledge: pledgeN.status, eps });
     const file = path.join(require("os").tmpdir(), `walk-file-${process.pid}.txt`);
     fs.writeFileSync(file, "FRESH-5 walk file\n");
     const lgN = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
