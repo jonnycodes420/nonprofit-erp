@@ -109,7 +109,7 @@ function mount(ctx) {
     }
   }
 
-  const fyOf = async orgId => {
+  const reportYearOf = async orgId => {
     const [o] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
     return orgTime.orgReportYear({ ...(await orgTz(orgId)), vocabulary_json: o ? o.vocabulary_json : null }, "fiscal");
   };
@@ -128,7 +128,7 @@ function mount(ctx) {
   // GET, and it writes nothing: the tiles, each read through its report.
   app.get("/your-dashboard", requireAuth, wrap(async (req, res) => {
     const keys = await keysOf(req.user.orgId, req.user.userId);
-    const fy = await fyOf(req.user.orgId);
+    const fy = await reportYearOf(req.user.orgId);
     const tiles = [];
     for (const k of keys) { const t = await tile(req, k, fy); if (t) tiles.push(t); }
     const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM saved_reports WHERE org_id=? AND (shared = true OR owner_id = ?)`, [req.user.orgId, req.user.userId]);
@@ -141,7 +141,7 @@ function mount(ctx) {
     res.json({ reports: (await catalog()).map(c => ({ ...c, added: keys.has(c.key) })) });
   }));
   app.get("/your-dashboard/preview/:key", requireAuth, wrap(async (req, res) => {
-    const t = await tile(req, String(req.params.key), await fyOf(req.user.orgId));
+    const t = await tile(req, String(req.params.key), await reportYearOf(req.user.orgId));
     if (!t) return res.status(404).json({ error: "Not found" });
     res.json(t);
   }));
