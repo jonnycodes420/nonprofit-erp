@@ -8,7 +8,6 @@
 // are made by her button. The facts and the words come from the server
 // (insights.js); this file draws them.
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { WeekFive } from "./home/WeekFive";   // HOME-7
 import { apiFetch, takeParked } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-1
 import { T, Modal } from "./shared";   // FLOWS-10 item 8: the shared dialog (above the top bar; Escape closes it)
@@ -707,9 +706,6 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
     </section>
   );
 }
-
-// HOME-7: Home leads with this week's five (home/WeekFive.jsx); this deck is its "See all".
-export function HomeWeek(p) { return <WeekFive {...p} Deck={HomeMoves} />; }
 
 // THE FIRST LOOK: "What your file says", after an import and on demand from Home.
 export function FirstLook({ onNavigate, isReadOnly, onClose }) {

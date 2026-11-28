@@ -45,7 +45,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // render, before any effect (a child's effects run before this component's),
   // so every apiFetch below for one of these paths is handed the bundle's
   // answer. The list is exactly what Home and its panels read when it opens.
-  useState(()=>{ if(surface==="home"){ prefetch(["/insights?view=deck"]); prefetch(RAIL_READS); prefetch([...HOME_FIRST_READS,...HOME_SCOPED_FIRST]); } return null; });   // HOME-4: the deck and the rail first, side by side
+  useState(()=>{ if(surface==="home"){ prefetch(["/home/five"]); prefetch(RAIL_READS); prefetch([...HOME_FIRST_READS,...HOME_SCOPED_FIRST]); } return null; });   // HOME-4: the deck and the rail first, side by side
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   // BUILD-89 — which of the rail's two states is showing. `today` is the
@@ -1383,7 +1383,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // so the stack renders straight into it.
       // HOME-7: Home's work is the five (in the header), the panel and the cards; the old stack stays the board's.
       if(holdUnderDeck) return null;
-      return surface==="home"&&!editMode&&!scopedHome?HW.homeWork({ setPlanFor, auth, today:railReads.cards&&railReads.cards.today||null, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }):cardsBlock;
+      return surface==="home"&&!editMode&&!scopedHome?HW.homeWork({ threadSection, setPlanFor, auth, today:railReads.cards&&railReads.cards.today||null, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }):cardsBlock;
       })()}
       </div>{/* /home-shell-main */}
       {surface==="home"&&todayRail}

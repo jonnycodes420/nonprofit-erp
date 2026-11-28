@@ -39,7 +39,7 @@ function when(x, today) {
   return { words: days > 0 && days < 7 ? dayOf(due) : displayDateShort(due, new Date()) };
 }
 
-export function HomePanel({ userId, today, threads, threadOpen, finishRow, onSeeThread, onPlan, cards, drift, thankYouDrafts, onNavigate, openProfile, isReadOnly }) {
+export function HomePanel({ threadNode, userId, today, threads, threadOpen, finishRow, onSeeThread, onPlan, cards, drift, thankYouDrafts, onNavigate, openProfile, isReadOnly }) {
   const [tab, setTab] = useState(() => { try { const k = localStorage.getItem(tabKey(userId)); return TABS.some(t => t[0] === k) ? k : "thread"; } catch { return "thread"; } });
   const pick = k => { setTab(k); try { localStorage.setItem(tabKey(userId), k); } catch { /* private mode */ } };
   useEffect(() => { const on = e => pick(e.detail); window.addEventListener("steward:home-tab", on); return () => window.removeEventListener("steward:home-tab", on); }, []);
@@ -48,6 +48,12 @@ export function HomePanel({ userId, today, threads, threadOpen, finishRow, onSee
   const who = (id, name) => <DonorLink id={id} onOpen={() => openProfile(id)} className="attn-donor-name" style={NAME}>{name}</DonorLink>;
 
   const body = () => {
+    // The Thread is Home's own Thread section (home/threadSection.jsx: its rows, readouts, stopped cards and Plan a follow-up)
+    if (tab === "thread" && threadNode) return <>
+      <p style={DEF}>The Thread is one open next step per person. Each stays here until it's done.</p>
+      <div className="home-panel-thread">{threadNode}</div>
+      {threadOpen > 0 && <div style={{ paddingTop: 12 }}><button type="button" data-testid="panel-thread-all" style={LNK} onClick={onSeeThread}>See all {threadOpen.toLocaleString("en-US")} in the Thread</button></div>}
+    </>;
     if (tab === "thread") {
       const rows = (threads || []).slice(0, 6);
       return <>

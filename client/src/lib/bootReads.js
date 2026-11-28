@@ -57,7 +57,7 @@ export function startHomeReads(again = false) {
 // was not the first screen; HomeMoves then loads it as it always did.
 let deckCode = null;
 export function startHomeCode() {
-  if (!deckCode) deckCode = retryImport(() => import(/* first-look */ "../components/Insights"));
+  if (!deckCode) deckCode = retryImport(() => import(/* first-look */ "../components/home/WeekFive"));   // HOME-7: the five; the deck loads at See all
   return deckCode;
 }
 export const homeCode = () => deckCode;

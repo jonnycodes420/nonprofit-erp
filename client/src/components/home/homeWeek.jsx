@@ -16,7 +16,7 @@ const openDeck = tab => {
   if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
-export function homeWork({ setPlanFor, auth, today, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }) {
+export function homeWork({ threadSection, setPlanFor, auth, today, threadList, threadStat, threadsData, finishRow, setRailView, railReads, weekData, thankYouSection, onNavigate, openProfile, isReadOnly }) {
   const cards = railReads && railReads.cards;
   const drift = weekData ? weekData.drift : null;
   const seeThread = () => {
@@ -27,7 +27,7 @@ export function homeWork({ setPlanFor, auth, today, threadList, threadStat, thre
   return (
     <div data-testid="home-week" style={{ display: "flex", flexDirection: "column", gap: "var(--h-4, 24px)" }}>
       <HomePanel userId={auth && auth.user && auth.user.id} today={today} threads={threadList} threadOpen={threadsData && !threadsData.failed ? (threadStat && threadStat.open) || 0 : null}
-        finishRow={finishRow} onSeeThread={seeThread} onPlan={setPlanFor ? () => setPlanFor({ donor: null }) : null} cards={cards} drift={drift} thankYouDrafts={thankYouSection} onNavigate={onNavigate} openProfile={openProfile} isReadOnly={isReadOnly} />
+        threadNode={threadSection} finishRow={finishRow} onSeeThread={seeThread} onPlan={setPlanFor ? () => setPlanFor({ donor: null }) : null} cards={cards} drift={drift} thankYouDrafts={thankYouSection} onNavigate={onNavigate} openProfile={openProfile} isReadOnly={isReadOnly} />
       <MajorPlanned cards={cards} planned={weekData ? weekData.planned : null} onNavigate={onNavigate} openProfile={openProfile} onSeePlanned={() => openDeck("planned")} />
       <HomeBottomRow cards={cards} drift={drift} openProfile={openProfile} onNavigate={onNavigate} />
     </div>

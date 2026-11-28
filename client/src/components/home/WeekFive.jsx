@@ -8,7 +8,8 @@
 // and Doesn't fit bring in the next in rank. Under the card, how many more
 // people have a next move, and See all opens the four-tab deck (`Deck`, the
 // moves deck, kept whole as its own view). Nothing here sends.
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { retryImport } from "../../lib/lazyRetry";
 import { apiFetch, takeParked } from "../../api";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { T } from "../shared";
@@ -57,7 +58,7 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
       <Deck key={deckTab || "deck"} startTab={deckTab} onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonors} sample={sample} importAbove={importAbove} {...deckProps} />
     </div>
   );
-  if (err) return null;
+  if (err) return <section aria-label="This week's five" data-testid="home-five" className="home-card" style={{ fontSize: 14, color: T.ink }}>This week's five could not be read just now. Reload the page to try again.</section>;
   if (!data) return <section aria-label="This week's five" data-testid="home-five" className="home-card" style={{ color: T.ink3, fontSize: 14, minHeight: deckProps.reserve || 120, boxSizing: "border-box" }}>Reading your donors…</section>;
   if (noDonors && !data.open.length && !data.done.length && Deck) return <Deck onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors sample={sample} importAbove={importAbove} {...deckProps} />;
 
@@ -87,7 +88,7 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
     } catch (e) { setMsg({ text: e.message || "That didn't work. Nothing was changed.", err: true }); }
     finally { setBusy(false); }
   };
-  const fig = r => <span style={{ whiteSpace: "nowrap" }}><b data-testid="five-stake" style={{ fontVariantNumeric: "tabular-nums", color: T.ink }}>{r.stakeWords}</b> <span style={{ color: T.ink3, fontSize: 13 }}>{r.figureWords}</span></span>;
+  const fig = r => <span style={{ whiteSpace: "nowrap" }}><b data-testid="five-stake" style={{ fontVariantNumeric: "tabular-nums", color: T.ink }}>{r.stakeWords}</b><span style={{ color: T.ink3, fontSize: 13 }}>{" " + r.figureWords}</span></span>;
 
   return (
     <div ref={boxRef} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -170,3 +171,9 @@ export function WeekFive({ Deck, onNavigate, isReadOnly, noDonors, sample, impor
     </div>
   );
 }
+
+// HOME-7: Home's first look is this file (lib/bootReads.js startHomeCode). The four-tab deck is its
+// See all, and its code (Insights.jsx) loads when See all opens, never with Home's first look.
+const DeckLater = lazy(() => retryImport(() => import("../Insights")).then(m => ({ default: m.HomeMoves })));
+const Deck = p => <Suspense fallback={<div className="home-card" style={{ color: T.ink3, fontSize: 14 }}>Reading your moves…</div>}><DeckLater {...p} /></Suspense>;
+export function HomeWeek(p) { return <WeekFive {...p} Deck={Deck} />; }

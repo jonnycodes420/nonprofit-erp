@@ -21,17 +21,7 @@ export const PinnedAnswers = lazy(() => retryImport(() => import("../AskPanel"))
 // once instead of after this card, which was shorter and pushed the Thread down.
 let movesIn = null;
 if (homeCode()) homeCode().then(m => { movesIn = m; });
-const HomeMovesLater = lazy(() => startHomeCode().then(m => ({ default: m.HomeMoves })));
-// Chosen once per mount, so the deck is never swapped for itself mid-visit.
-export function HomeMoves(p) {
-  const [Now] = useState(() => movesIn && movesIn.HomeMoves);
-  // MOPUP-2: the deck reserves a phone's height and reports what it drew (lib/movesGate.js),
-  // passed in so the deck's own chunk never imports movesGate (a chunk of its own, on Home's first look).
-  const [reserve] = useState(reservedDeckHeight);
-  const q = { ...p, reserve, onDeckHeight: rememberDeckHeight };
-  return Now ? <Now {...q}/> : <HomeMovesLater {...q}/>;
-}
-// HOME-7: this week's five (home/WeekFive.jsx), in the deck's chunk, with the deck as its See all.
+// HOME-7: this week's five (home/WeekFive.jsx), Home's first-look chunk; the deck is its See all and loads then.
 const HomeWeekLater = lazy(() => startHomeCode().then(m => ({ default: m.HomeWeek })));
 export function HomeWeekView(p) {
   const [Now] = useState(() => movesIn && movesIn.HomeWeek);
