@@ -165,7 +165,7 @@ const { DIST } = require("./lib/dist");
     for (let i = 0; i < 45; i++) { const b = (await api("GET", "/insights?view=deck", tok)).body || {}; if (!b.stale && !b.preparing && b.deck && (b.deck.tabs || []).some(t => t.count >= 2)) { deck = b.deck; break; } await new Promise(r => setTimeout(r, 1000)); }
     if (!deck) ok("§9 fixture: Home has at least two moves to snooze", false, "the deck did not build");
     else {
-      await page.goto(`${APP}/dashboard`, { waitUntil: "networkidle", timeout: 60000 });
+      await page.goto(`${APP}/dashboard?moves=all`, { waitUntil: "networkidle", timeout: 60000 });
       const tabKey = deck.tabs.find(t => t.count >= 2).key;
       await page.locator(`[data-testid="moves-tab-${tabKey}"]`).click({ timeout: 20000 }).catch(() => {});
       const first = await page.locator('[data-testid="move-card"]').getAttribute("data-move", { timeout: 10000 }).catch(() => null);

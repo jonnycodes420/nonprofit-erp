@@ -57,7 +57,7 @@ export function startHomeReads(again = false) {
 // was not the first screen; HomeMoves then loads it as it always did.
 let deckCode = null;
 export function startHomeCode() {
-  if (!deckCode) deckCode = retryImport(() => import(/* first-look */ "../components/Insights"));
+  if (!deckCode) deckCode = retryImport(() => import(/* first-look */ "../components/home/WeekFive"));   // HOME-7: the five; the deck loads at See all
   return deckCode;
 }
 export const homeCode = () => deckCode;
@@ -68,7 +68,7 @@ const HOME_SHAPE_MS = 800;
 export function homeShape() {
   if (!deckCode) return null;
   return Promise.race([
-    Promise.all([deckCode, landed("/insights?view=deck"), landed("/home/lead")]),
+    Promise.all([deckCode, landed("/home/five"), landed("/home/lead")]),   // HOME-7: the five set the first look's shape
     new Promise(r => setTimeout(r, HOME_SHAPE_MS)),
   ]);
 }

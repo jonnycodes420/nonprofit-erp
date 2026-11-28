@@ -21,15 +21,13 @@ export const PinnedAnswers = lazy(() => retryImport(() => import("../AskPanel"))
 // once instead of after this card, which was shorter and pushed the Thread down.
 let movesIn = null;
 if (homeCode()) homeCode().then(m => { movesIn = m; });
-const HomeMovesLater = lazy(() => startHomeCode().then(m => ({ default: m.HomeMoves })));
-// Chosen once per mount, so the deck is never swapped for itself mid-visit.
-export function HomeMoves(p) {
-  const [Now] = useState(() => movesIn && movesIn.HomeMoves);
-  // MOPUP-2: the deck reserves a phone's height and reports what it drew (lib/movesGate.js),
-  // passed in so the deck's own chunk never imports movesGate (a chunk of its own, on Home's first look).
+// HOME-7: this week's five (home/WeekFive.jsx), Home's first-look chunk; the deck is its See all and loads then.
+const HomeWeekLater = lazy(() => startHomeCode().then(m => ({ default: m.HomeWeek })));
+export function HomeWeekView(p) {
+  const [Now] = useState(() => movesIn && movesIn.HomeWeek);
   const [reserve] = useState(reservedDeckHeight);
-  const q = { ...p, reserve, onDeckHeight: rememberDeckHeight };
-  return Now ? <Now {...q}/> : <HomeMovesLater {...q}/>;
+  const q = { ...p, deckProps: { reserve, onDeckHeight: rememberDeckHeight } };
+  return Now ? <Now {...q}/> : <HomeWeekLater {...q}/>;
 }
 // MOPUP-2: on a phone the stand-in is as tall as the deck it becomes (lib/movesGate.js).
 export const MovesWait = () => <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14,boxSizing:"border-box",minHeight:reservedDeckHeight()||undefined}}>Reading your donors…</section>;

@@ -228,7 +228,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
   });
 
   // ── §5 · A PLEDGE PAYMENT ──────────────────────────────────────────────────
-  await open(`/dashboard`);
+  await open(`/dashboard?moves=all`);
   await noReload("§5", async () => {
     await page.locator('[data-testid="home-moves"]').first().waitFor({ timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(800);
@@ -244,7 +244,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
     await drainQueue(q).catch(() => {});
     const cm = await until(([b]) => { const el = document.querySelector('[data-testid="dp-open-pledge-words"]'); return !el || el.textContent.replace(/\s+/g, " ").trim() !== b; }, [cardBefore]);
     await check("§5 the pledge card moves", cm, { before: cardBefore, after: await text('[data-testid="dp-open-pledge-words"]') });
-    await go(`/dashboard`);
+    await go(`/dashboard?moves=all`);
     const hm = await until(([b]) => { const el = document.querySelector('[data-testid="home-moves"]'); return el && el.textContent.replace(/\s+/g, " ").trim() !== b; }, [home0]);
     await check("§5 Home's moves move with the payment", hm, { before: home0.slice(0, 160), after: (await text('[data-testid="home-moves"]')).slice(0, 160) });
     await go(`/app/fundraising`);
@@ -347,7 +347,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
     const fm = await until(([w]) => Number((((document.querySelector('[data-testid="fr-pledges"]') || {}).textContent || "").match(/\$[\d,]+/) || ["0"])[0].replace(/[^0-9]/g, "")) === w, [want]);
     await check("§5a Atlas records a $300 pledge payment: Fundraising's still-to-come drops by $300", fm, { before: fr0, after: await text('[data-testid="fr-pledges"]') });
   });
-  await open(`/dashboard`);
+  await open(`/dashboard?moves=all`);   // HOME-7: the deck is See all
   await noReload("§5b", async () => {
     await page.locator('[data-testid="home-moves"]').first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(800);

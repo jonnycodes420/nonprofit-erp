@@ -586,6 +586,39 @@ async function main() {
     ok(`§10 no span says a zero or a plural one (${spans.join(", ")})`, spans.every(s => s && !BAD.test(s)), spans);
   }
 
+  // §11 HOME-7 · THIS WEEK'S FIVE. Chosen on the org's Monday from the deck, ranked by what is at
+  // stake, one person each, Planned never above money; kept per user all week; Not now brings in the
+  // sixth in rank; Done moves a person to the done strip and never brings anyone in. Tue 27 Oct 2026
+  // is in the week of Mon 26 Oct; Fri 30 Oct is the same week.
+  {
+    const five = async (day, method = "GET", path = "", body = {}) => (await api(method, `/home/five${path}?asOf=${day}`, tok, method === "GET" ? undefined : { ...body, asOf: day })).body;
+    const until = async day => { for (let i = 0; i < 30; i++) { const b = await five(day); if (b && !b.preparing) return b; await new Promise(r => setTimeout(r, 1000)); } return null; };
+    const pv = await until(AS_OF);
+    const people = b => (b && b.open || []).map(r => r.donorId);
+    ok("§11 the first read is a preview: five people, one each, and nothing is stored by a GET", !!pv && pv.preview === true && pv.weekOf === "2026-10-26" && people(pv).length === 5 && new Set(people(pv)).size === 5
+       && Number((await q(`SELECT COUNT(*)::int AS n FROM home_week_five WHERE org_id=$1`, [ORG]))[0].n) === 0, pv && { weekOf: pv.weekOf, open: people(pv) });
+    const st = pv && pv.open.filter(r => r.tab !== "planned").map(r => r.stakeCents);
+    ok("§11 ranked by what is at stake, largest first (nobody here is owned), and no Planned move above a move with money", !!st && st.length > 0 && st.every((c, i) => i === 0 || c <= st[i - 1])
+       && pv.open.every((r, i) => r.tab !== "planned" || pv.open.slice(i).every(x => x.tab === "planned")), pv && pv.open.map(r => [r.name, r.tab, r.stakeCents]));
+    const s1 = await five(AS_OF, "POST", "/start");
+    const again = await five(AS_OF, "POST", "/start");
+    ok("§11 start keeps those five, once (a second start changes nothing)", JSON.stringify(people(s1)) === JSON.stringify(people(pv)) && JSON.stringify(people(again)) === JSON.stringify(people(pv))
+       && Number((await q(`SELECT COUNT(*)::int AS n FROM home_week_five WHERE org_id=$1`, [ORG]))[0].n) === 5, { s1: people(s1), again: people(again) });
+    const fri = await until("2026-10-30");
+    ok("§11 the same five all week: Friday reads Tuesday's five", !!fri && fri.weekOf === "2026-10-26" && JSON.stringify(people(fri)) === JSON.stringify(people(pv)), fri && people(fri));
+    const first = s1.open[0];
+    const after = await five(AS_OF, "POST", `/${encodeURIComponent(first.id)}/skip`, { why: "not_now" });
+    const sixth = after && after.open.find(r => !people(pv).includes(r.donorId));
+    ok("§11 Not now takes the person out and brings in the sixth in rank, so five still show", !!after && after.open.length === 5 && !people(after).includes(first.donorId) && !!sixth
+       && people(pv).slice(1).every(id => people(after).includes(id)), after && { open: people(after), sixth: sixth && sixth.name });
+    const d = after.open[0];
+    const done = await five(AS_OF, "POST", `/${encodeURIComponent(d.id)}/done`);
+    ok("§11 Done moves the person to the done strip and never brings anyone in", !!done && done.open.length === 4 && done.done.some(r => r.donorId === d.donorId && /done/.test(r.outcome))
+       && !people(done).includes(d.donorId) && people(done).every(id => people(after).includes(id)), done && { open: people(done), done: done.done.map(r => [r.name, r.outcome]) });
+    const other = await api("GET", `/home/five?asOf=${AS_OF}`, await (async () => { const u = "u2_" + ORG; await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Second Test','admin') ON CONFLICT DO NOTHING`, [u, ORG, `${u}@test.local`, bcrypt.hashSync(PASSWORD, 4)]); return login(`${u}@test.local`, PASSWORD); })());
+    ok("§11 the five are per user: a second person in the org gets a fresh five on first open", other.status === 200 && other.body.preview === true && other.body.open.length === 5, other.body && people(other.body));
+  }
+
   // ONE-MOVE-1: one move and one ask per person on every screen (tests/lib/oneMoveChecks.js)
   await require("./lib/oneMoveChecks").oneMove({ ok, api, q, freshOrg });
 

@@ -478,14 +478,14 @@ function NoDonorsCard({ onNavigate, sample, importAbove = false }) {
   );
 }
 
-export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null, reserve = null, onDeckHeight = null }) {
+export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null, reserve = null, onDeckHeight = null, startTab = null }) {
   // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
   // PERF-2: Home's first read carries each tab's first moves (deck.partial);
   // every move is read when she first reaches for the deck (a touch, a hover,
   // the keyboard, Next or a tab), not with Home's first look.
   const [full, setFull] = useState(false);
   const [data, load, err] = useInsights(full ? "deck&moves=all" : "deck");
-  const [tab, setTab] = useState(null);
+  const [tab, setTab] = useState(startTab);   // HOME-7: the Planned card opens the deck at Planned
   const [pos, setPos] = useState({});            // tab -> index
   const [gone, setGone] = useState(() => new Set());   // move ids acted on here
   const [slide, setSlide] = useState(null);

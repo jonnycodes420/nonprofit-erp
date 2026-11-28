@@ -3418,6 +3418,7 @@ async function main() {
     if (who) await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,created_at,proposal_stage,expected_close,notes,created_by,created_by_name)
         VALUES ('opp_b72_sail',$1,$2,'Summer sailing scholarships',10000,'open','u_b72demo','Dana Reyes',NOW() - interval '48 days','asked',$3::date,
                 'Said they would decide by the end of September.','u_b72demo','Dana Reyes')`, [ORG, who.id, orgTime.addDays(TODAY, -6)]);
+    await require("../lib/demoBequests").seedBequests({ q, ORG, TODAY, driftedIds, orgTime });   // HOME-7: "N have told you you're in their will"
     // The journeys a donor's rail can suggest beyond the first year: lapsed,
     // monthly and major. From the catalogue, like the first-year one. NOT
     // armed (journey_enabled false): starting one is a person's choice on the

@@ -169,8 +169,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   route and "Home" label, and the board is `board`. (BUILD-86 A)
 - **Layout edits move or hide whole sections only.** `mergeLayout` appends unknown ids as visible, Reset
   saves NULL, each surface has one unhideable section (Thread, hero) and `moveToTop` is surface-scoped. (BUILD-34, BUILD-86 A)
-- **Every row on Home names a person.** Home shows no goal percentage and no measure over a period. Those
-  belong on the board. (BUILD-86 A)
+- **Every row on Home names a person.** ~~Home shows no goal percentage and no measure over a period. Those
+  belong on the board.~~ (BUILD-86 A; HOME-7 reverses the second sentence for the rail's Year-end so far and Retention
+  cards only, each stating its period and definition.)
 - **The Home note never has holes, lets a name beat a count and treats "Nothing is waiting on you this
   morning." as a whole answer.** Use surnames for people and whole names for organisations. (BUILD-86 A)
 - **Write time in words, not as a day count.** Spell numbers under ten, use no colons or em dashes, and let
@@ -563,7 +564,7 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 
 - Nothing renders above Home's greeting except the trial banner: org and greeting, the date, Ask, then Your moves (HOME-5 took the pace sentence out). On a phone: greeting, tabs, the card, then Today.
 - ~~Pace is said once, in the greeting~~ (superseded by HOME-5: Home says no pace). The insights engine has no pace card.
-- The deck is `insights.js buildDeck`: Keep (year-end, pledges, sponsors, lapsing), Grow (second gift, moving up), Major, Planned. One person, one move (the highest-value one; Planned never outranks money); the rest are "also" lines. Planned counts people.
+- ~~Home's moves are the four-tab deck.~~ (HOME-7: Home leads with this week's five; the deck is its See all.) The deck is `insights.js buildDeck`: Keep (year-end, pledges, sponsors, lapsing), Grow (second gift, moving up), Major, Planned. One person, one move (the highest-value one; Planned never outranks money); the rest are "also" lines. Planned counts people.
 - A move's button makes a task dated for its window (kind write, call or meeting) with the line and the ask in its notes, and records Done. Home never sends.
 - Sentences treat one giver's gifts on one day as one gift (`giftDays`). Planned excludes organisations, foundations, companies and funds.
 
@@ -571,7 +572,7 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 
 - The rail draws once, whole: its reads are `lib/homeReads.js RAIL_READS`, asked for in their own bundle at the same moment as the deck's, and nothing in the rail starts a read after Home's first paint (perf-app checks it). Until then `HomeRailSkeleton` holds its shape.
 - Today is one card that never shows a zero ("Nothing due today." when nothing is); Calls to make shows three then "See all N", named by what it holds; To confirm is one line. On a wide screen the rail is sticky; the app root uses `overflow-x: clip`, never `hidden`, or sticky breaks.
-- Under the deck: one row of chips (`MoveChips`), each hidden at zero. The Thread draws on Home only when it has rows. Home has no Drift section: `insights.js withDrift` puts every person GET /drift lists (early signs too) into the deck, and the Drift chip opens Drift on the Donors page.
+- Under the deck: one row of chips (`MoveChips`), each hidden at zero. The Thread draws on Home only when it has rows. ~~Home has no Drift section~~ (HOME-7: Drift is a tab of Home's panel and a card in its bottom row, reading `driftPeople.js`): `insights.js withDrift` puts every person GET /drift lists (early signs too) into the deck, and the Drift chip opens Drift on the Donors page.
 - Setup: `HomeSetup.jsx setupStage` places it: "first" (under Ask) for a new org, "rail" mid-way or after "I'll finish later", nothing when done or dismissed.
 - Home reads `/insights?view=deck` (the deck, no cards); panels read the cards when they open.
 
@@ -781,3 +782,32 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   the import list and receipt (and the undo sentence's day), Add to calls (Insights' call-list name, Calls to make),
   The Thread's rows, the recurring plan's sentence and dates, and the pledge schedule preview
   (`scheduleWords(rows, today)`, semicolons once a date carries its year).
+
+## HOME-7 · this week's five, and everything else in its place (2026-11-27)
+
+- **This week's five** (`server/insights/weekFive.js`, `home/WeekFive.jsx`). On the org's Monday the top five of the
+  deck (Drift and event guests in) across Keep, Grow, Major and Planned, one move per person, ranked by what is at stake:
+  a major move's ask (the top of its range), else the person's last 12 months of giving (`units.l12Cents`). Planned never
+  outranks money; the people she owns come first. Stored per user per week (`home_week_five`); a GET writes nothing (the
+  first read is a preview, the page POSTs `/home/five/start`). Not now and Doesn't fit bring in the next in rank; Doesn't
+  fit is also the deck's Doesn't fit. Done (the Done link, the move's Done in the deck, a call or meeting logged, a gift
+  in since Monday) moves the person to the done strip and never brings anyone in. `tests/insights.test.js` §11.
+- **See all** is the four-tab deck, kept whole as its own view (`/dashboard?moves=all`); the Planned card's See all
+  opens it at Planned.
+- **The panel**: The Thread (default), Thank-yous, Recent gifts, Drift; each tab's count is its list's; the last tab is
+  remembered per person. Thank-yous is `thankBacklog.js` (the rail card and Reports read the same); Recent gifts is
+  figureSources `gifts` over the last 7 days; Drift is the five's `driftPeople.js` list. The bottom row reads the same.
+- **Major gifts** shows only when Major Gifts is on the org's sidebar (NAV-2); its figures are `/major-gifts/dashboard`'s
+  tiles (the pipeline tile now carries `people`). The stage line is the assigned people at each `donors.stage`, Lapsed
+  left out (figureSources `pipeline-stage`). **Planned giving** is the deck's Planned tab, its sign sentence is the
+  deck's own rule (not the mockup's, which named a note about an estate Steward does not read), and "N have told you
+  you're in their will" counts people with a bequest under Planned giving (`planned-bequests`).
+- **The rail**: Today (meetings, each with what the person gave this fiscal year), Year-end so far (since Nov 1, every
+  fund, against last year by the same date; a goal bar only for a running goal named for year-end), Thank-yous,
+  Retention (`computeRetentionRate`, this year and last), Your givers (no unowned count), Connections (HONEST-3's badge).
+  All one read, `GET /home/cards`, in `RAIL_READS`. Calls to make, To confirm and the inbox banner left Home's rail.
+- **Gone from Home**: the tiles, "1 of 239", the "Also" lines, the unowned count, Home's Edit layout (the board keeps
+  it) and the old section stack. On a phone: greeting, the five, the panel, the cards, then the rail.
+- The truth check (`tests/lib/home7Checks.js`) holds Home's thank-yous, year-end, retention and Major gifts against
+  their reports.
+

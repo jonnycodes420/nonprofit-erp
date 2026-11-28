@@ -61,6 +61,21 @@ async function givingBetweenByPerson(query, orgId, { from, to, today, visible = 
   return rows.map(r => ({ id: r.id, name: r.name, cents: Number(r.cents) }));
 }
 
+// HOME-7 · the same money for a few named people at once (the week's five: "a gift in" is a gift
+// in the span), one row per person who gave in it, never a statement per person.
+// Map donor id -> { cents, gifts }.
+async function givingBetweenOf(query, orgId, { from, to, today, donorIds = [] }) {
+  const s = capped({ from, to }, today);
+  const ids = [...new Set((donorIds || []).filter(Boolean))];
+  if (!ids.length || !s.from || !s.to || s.to < s.from) return new Map();
+  const rows = await query(
+    `SELECT g.donor_id, COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, COUNT(*) FILTER (WHERE ${require("./giftCount").COUNTED("g")})::int AS n
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND ${LIVE("d")} AND ${IN_SPAN("g")} AND g.donor_id = ANY(?)
+      GROUP BY g.donor_id`, [orgId, s.from, s.to, ids]);
+  return new Map(rows.filter(r => Number(r.n) > 0).map(r => [r.donor_id, { cents: Number(r.cents), gifts: Number(r.n) }]));
+}
+
 // LEDGER-1 · THE LAST YEAR THEY GAVE. LYBUNT's and SYBUNT's amount, one rule:
 // what the person gave in the latest year, before the year that starts on
 // `yearFrom`, in which they gave anything. The years are the report's own,
@@ -94,4 +109,4 @@ const LAST_YEAR_SUM = (d = "d") => `(SELECT COALESCE(SUM(lg.amount), 0) FROM gif
      WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND ${MONEY("lg")} AND lg.date >= ly.f AND lg.date <= ly.t)`;
 const lastYearArgs = (yearFrom) => { const y = yearsBefore(yearFrom); return [yearFrom, y.froms, y.tos]; };
 
-module.exports = { SPAN_SUM_OF_MONEY, capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, givingBetweenByPerson, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };
+module.exports = { SPAN_SUM_OF_MONEY, capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, givingBetweenByPerson, givingBetweenOf, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };

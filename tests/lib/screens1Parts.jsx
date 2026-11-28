@@ -80,6 +80,10 @@ import * as goalSections from "../../client/src/components/home/goalSections.jsx
 import * as homeChips from "../../client/src/components/home/homeChips.jsx";
 import * as HomeFirstLook from "../../client/src/components/home/HomeFirstLook.jsx";
 import * as homeLower from "../../client/src/components/home/homeLower.jsx";
+import * as WeekFive from "../../client/src/components/home/WeekFive.jsx";   // HOME-7
+import * as HomePanel from "../../client/src/components/home/HomePanel.jsx";   // HOME-7
+import * as HomeCards from "../../client/src/components/home/HomeCards.jsx";   // HOME-7
+import * as homeWeek from "../../client/src/components/home/homeWeek.jsx";   // HOME-7
 import * as homeParts from "../../client/src/components/home/homeParts.jsx";
 import * as moreSections from "../../client/src/components/home/moreSections.jsx";
 import * as railViews from "../../client/src/components/home/railViews.jsx";
@@ -213,6 +217,11 @@ export const CASES = [
   // ACCESS-3: the header of someone who sees only their own people: the date, the greeting, the org's name.
   ["home/PortfolioCard", () => <PortfolioCard.ScopedHead data={{ org: { name: "Zzwren Valley Arts Trust" } }} editMode={false} firstName="Sam" greeting="Good evening" layout={[]} todayLongStr="Tuesday, November 10" enterEdit={noop} cancelEdit={noop} saveEdit={noop} resetLayout={noop}/>, /Tuesday, November 10[\s\S]*Good evening, Sam[\s\S]*Zzwren Valley Arts Trust/],
   ["home/HomeLater", () => <div>{["threadSection", "driftSection", "sectionStack", "homeOverlays", "cardsBlock"].filter(k => typeof HomeLater[k] === "function").join(" ")}</div>, /threadSection driftSection sectionStack homeOverlays cardsBlock/],
+  // HOME-7: this week's five (while it reads), the panel, the cards and Home's work column.
+  ["home/WeekFive", () => <WeekFive.WeekFive onNavigate={noop} isReadOnly={false}/>, /Reading your donors|could not be read/],
+  ["home/HomePanel", () => <HomePanel.HomePanel userId="u1" today="2026-11-27" threads={[{ id: "t1", donorId: "d1", donorName: "Odessa Penwright", overdue: true, overdueDays: 2, nextStep: { label: "Send the photos", due: "2026-11-25" } }]} threadOpen={9} finishRow={noop} onSeeThread={noop} cards={null} drift={null} openProfile={noop}/>, /The Thread · 9[\s\S]*2 days late[\s\S]*Odessa Penwright[\s\S]*See all 9 in the Thread/],
+  ["home/HomeCards", () => <HomeCards.MajorPlanned cards={null} planned={{ count: 4, bequests: 0, definition: "A sign is something in their own record.", top: [{ donorId: "d2", name: "Harlan Quist", sign: "Stock" }] }} onNavigate={noop} openProfile={noop} onSeePlanned={noop}/>, /Planned giving[\s\S]*See all 4[\s\S]*Harlan Quist/],
+  ["home/homeWeek", () => homeWeek.homeWork(ctx({ auth: { user: { id: "u1" } }, today: "2026-11-27", threadList: [], threadStat: { open: 0 }, threadsData: {}, finishRow: noop, setRailView: noop, railReads: { cards: null }, weekData: null, thankYouSection: null, onNavigate: noop, openProfile: noop, isReadOnly: false })), /The Thread · 0[\s\S]*Nothing is waiting on you/],
 ];
 
 class Boundary extends React.Component {

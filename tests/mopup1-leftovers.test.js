@@ -216,7 +216,7 @@ async function walk(chromium) {
     ok(`§2 the Deposit sheet fills in the org's day at 9 PM Eastern (${day})`, dep === day, JSON.stringify({ dep, day }));
 
     // §2 + §3 Home's move card: "Show again on" is two weeks from the org's day; no "Ask" over "Ask $…".
-    await page.goto(APP + "/dashboard", { waitUntil: "load", timeout: 30000 }).catch(() => {});
+    await page.goto(APP + "/dashboard?moves=all", { waitUntil: "load", timeout: 30000 }).catch(() => {});
     await page.waitForSelector('[data-testid="move-card"]', { timeout: 30000 }).catch(() => {});
     const cards = await page.locator('[data-testid="move-card"]').count();
     let askChecked = 0; const doubled = [];

@@ -284,3 +284,10 @@ removed it, listed in `run-all.sh` CORE, and struck from the table above.
 | Suite | Restored by | Why |
 |---|---|---|
 | `fix2-a-footing` | GTM-1a (B) | Every figure with a source is fetched and its rows footed to it, in cents. Nothing else checks that the drawer behind a number adds up to the number; `fix2-a-dashboards` checks the figures exist, not that they foot. Money is going on sale, so the numbers on the board have to be right. |
+
+## HOME-7 (27 Nov 2026)
+
+`tests/home6-layout.test.js` is retired: it measured HOME-6's moves tiles, the move card, the
+drifting list and the Today follow-ups line, none of which is on Home since HOME-7 (this week's five,
+the tabbed panel and the cards; the deck is See all). Bring it back with
+`git checkout 84ee6ca -- tests/home6-layout.test.js` and point it at `/dashboard?moves=all`.

@@ -35,6 +35,8 @@ const RULES = [
 ];
 // Writes no screen's figure reads. Prefix matches end in "_".
 const SILENT = [
+  // HOME-7: this week's five, one user's list; only the five reads it and its own POSTs answer with it.
+  /^home_week_five$/,
   // ONBOARD-5: her yearly events are listed only on the setup page's Funds step, which re-reads them; no figure reads them.
   /^org_yearly_events$/,
   /^(audit_log|audit_trail|fin_audit_log|portal_audit_log|api_call_log|ai_log|ai_usage|ai_fallbacks|question_log|rate_limit_hits)$/,

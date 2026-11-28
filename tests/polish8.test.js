@@ -87,14 +87,14 @@ const leg = k => !ONLY.length || ONLY.includes(k);
 
     if (leg("2")) await step("§2", async () => {
       await open("/dashboard");
-      const b = page.locator('[data-testid="home-today-followups"]');
+      const b = page.locator('[data-testid="panel-thread-all"]');   // HOME-7: the Thread tab's See all
       const label = await b.innerText({ timeout: 30000 });
       await b.click();
       // the list reads past the Thread's first 12 ("Reading the rest…"); it settles on every one it counts
       await page.waitForFunction(() => (document.querySelector('[data-testid="rail-list"]') || {}).getAttribute && document.querySelector('[data-testid="rail-list"]').getAttribute("data-rows") === "13", null, { timeout: 8000 }).catch(() => {});
       const rows = await page.locator('[data-testid="rail-list"]').getAttribute("data-rows", { timeout: 8000 }).catch(() => null);
       const names = await page.locator('[data-testid="rail-list"]').innerText({ timeout: 3000 }).catch(() => "");
-      ok("§2 (browser) \"13 people with a next step\" opens the 13 it counts", /^13 people with a next step$/.test(label.trim()) && rows === "13" && /Ines Calloway/.test(names), { label, rows, names: names.slice(0, 120) });
+      ok("§2 (browser) \"See all 13 in the Thread\" opens the 13 it counts", /^See all 13 in the Thread$/.test(label.trim()) && rows === "13" && /Ines Calloway/.test(names), { label, rows, names: names.slice(0, 120) });
     });
 
     if (leg("3")) await step("§3", async () => {
@@ -227,7 +227,7 @@ const leg = k => !ONLY.length || ONLY.includes(k);
       const keep = deck && deck.tabs.find(t => t.key === "keep");
       ok("§12 fixture: the deck has Keep moves", !!keep, deck && deck.tabs.map(t => [t.key, t.count]));
       if (!keep) return;
-      await open("/dashboard");
+      await open("/dashboard?moves=all");
       const tab = page.locator('[data-testid="moves-tab-keep"]');
       await tab.click({ timeout: 20000 });
       const n0 = Number(await tab.getAttribute("data-count"));

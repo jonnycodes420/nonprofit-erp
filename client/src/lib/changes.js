@@ -58,6 +58,9 @@ const RULES = [
   [/^\/drift\/[^/]+\/done\b|^\/plan-steps\/[^/]+\/(done|reopen)\b|^\/journeys\/[^/]+\/apply\b|^\/journeys\/[^/]+\/batch\b|^\/journeys\/batches\//, ["task", "person"]],
   [/^\/deleted-records\b/, ["person", "gift", "pledge", "group", "totals", "task", "note", "event", "volunteer"]],
   [/^\/home\/owners\b/, ["person", "totals", "task"]],
+  // HOME-7: keeping this week's five changes nothing on screen; Not now, Doesn't fit, Done and Add to calls move the deck and tasks.
+  [/^\/home\/five\/start$/, []],
+  [/^\/home\/five\b/, ["insights", "task"]],
   [/^\/donor-relationships?\b/, ["person", "totals", "pledge"]],
   [/^\/gift-attribution\b/, ["gift", "person", "totals"]],
   // LETTERS-1: "Mark these as sent" stamps each printed gift's acknowledgment (and its thank-you when she says so).

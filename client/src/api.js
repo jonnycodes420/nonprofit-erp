@@ -267,6 +267,13 @@ const forgetLists = (w) => { for (const fn of writeHooks) { try { fn(w || {}); }
 // (the Tasks badge's kept count did that for 60 seconds after Atlas added one).
 onAnyChange(c => { if (c.source !== "write") { writeGen++; kept.clear(); parked.clear(); handed.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });   // STALE-2: and the answer just handed over (a re-read inside 1.5 s was given it back)
 
+// HOME-7: a write that changes nothing any screen shows (its answer says X-Steward-Changed: none),
+// sent without forgetting the answers the boot parked: keeping this week's five on Home's first
+// open made Home ask for every one of its bundled reads again (page-budget, perf-app).
+export function apiWriteQuiet(path, body = {}) {
+  return apiFetchNow(path, { method: "POST", body: JSON.stringify(body) });
+}
+
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   // ACCESS-1: a viewer's write never leaves the browser; it is answered here
