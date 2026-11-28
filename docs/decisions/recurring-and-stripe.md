@@ -59,6 +59,18 @@ Read this when you touch Stripe Connect, the donation webhook, recurring gifts, 
   `card_auto_updated` recovery event and a timeline note ("Card updated by the bank, ends 4242, exp
   09/29"), and Recurring counts them through the one `cards-auto-updated` figure source (monthly gifts
   still giving, at their monthly amount). It depends on the card network and the org's own Stripe account.
+- **What we say about the card updater, exactly** (HONEST-4 item 4, from docs.stripe.com/payments/cards/overview,
+  read 28 Nov 2026). Stripe works with the card networks to update a saved card when the bank replaces it
+  (expired, lost or stolen) and tells us with `payment_method.automatically_updated`. It only works where the
+  issuing bank takes part. Stripe says that is widely supported in the US, covering most American Express,
+  Visa, Mastercard and Discover cards issued there. Support outside the US varies by country, and nobody can
+  tell in advance which cards will be updated. It does not cover a closed account with no replacement card,
+  a bank that doesn't take part, or a card that is not saved. A card whose brand changed (Visa to Mastercard)
+  needs the donor's new agreement before it is charged again. So the claim is "when the bank reissues a card,
+  most US cards update by themselves, and Recurring Health shows each one". Never say "cards never fail" or
+  "every card". Recurring Health shows "Cards updated by the bank this year: N" (the rows open), and each
+  recurring gift's card line says when its card was last updated and by whom: the bank (`card_auto_updated`)
+  or the donor through the update link (`card_updated`). `server/give/cardLine.js`.
 - **Handle `payment_method.automatically_updated` by storing the new card and clearing
   `card_expiry_notified_for`.** Without it, the sweep emails donors whose card the network already fixed.
   (card recovery, 2026-09-11)

@@ -2,8 +2,8 @@
 //
 // PUBLIC (the website's one action):
 //   GET    /public/book/partner/:code     { name } for "Recommended by <name>"; 404 for an unknown code
-//   GET    /public/book/times             BOOK-1: the next five weekdays and the intro call's open times
-//                                         (calendlyTimes.js), or { source: "embed" } with no token
+//   GET    /public/book/times             BOOK-1, HONEST-4: three weeks of weekdays (?page= for later) and the open times
+//                                         (calendlyTimes.js), or { source: "unavailable", link } when unread
 //   POST   /public/book                   the form (rate-limited, honeypot "website") with her chosen time
 //                                         (`slot`): the deal lands first, then Calendly books it or its
 //                                         own page opens that time, prefilled, for her last click
@@ -35,10 +35,12 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
     if (!p) return res.status(404).json({ error: "not_found" });
     res.json({ ok: true, name: p.name });
   }));
-  // A read of Calendly's open times; no limiter beyond the cache (each answer is kept for a minute).
+  // A read of Calendly's open times; no limiter beyond the cache (each week is kept five minutes).
+  // HONEST-4 item 7: `?page=` pages through three weeks at a time; the first page is kept warm.
+  TIMES.startWarm();
   app.get("/public/book/times", wrap(async (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json(await TIMES.times());
+    res.json(await TIMES.times(new Date(), { page: Number(req.query.page) || 0 }));
   }));
   app.post("/public/book", bookLimiter, wrap(async (req, res) => {
     const r = await withAmbientTransaction(() => BOOK.submit(ctx, req.body || {}, { ip: req.ip }));

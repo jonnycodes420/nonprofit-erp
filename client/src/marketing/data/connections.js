@@ -6,4 +6,5 @@
 // (GET /public/connections, server/connections/publicList.js), built from the registries Settings
 // reads, in Settings' three groups. The Connections page (pages/product.jsx) fetches it.
 // HONEST-3 item 3: the site lists what connects and what is imported from a file; nothing unavailable.
-export const GROUP_ORDER = ["connects", "files"];
+// HONEST-4 item 5: Zapier, API keys and webhooks under one "Build your own" heading.
+export const GROUP_ORDER = ["connects", "build", "files"];

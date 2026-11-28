@@ -15,7 +15,7 @@ const { flowOf, summarize } = require("./status");
 async function qboFacts(query, orgId) {
   const [c] = await query(
     `SELECT * FROM bookkeeping_connections WHERE org_id=? AND vendor='quickbooks' AND status <> 'disconnected'`, [orgId]);
-  const [o] = await query("SELECT qbo_sync_enabled FROM orgs WHERE id=?", [orgId]);
+  const [o] = await query("SELECT qbo_sync_enabled, qbo_auto_sync FROM orgs WHERE id=?", [orgId]);
   if (!c || !o || o.qbo_sync_enabled !== true) return null;
   const QS = require("../../qboSync");
   const map = QS.readMapping(c);
@@ -24,7 +24,10 @@ async function qboFacts(query, orgId) {
   const rows = await query(q.sql, q.args);
   const gaps = await QS.mappingGaps(orgId, map);
   const ever = await QS.sentSummary(orgId, "1900-01-01");
+  const [tzRow] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
   return {
+    paused: require("../finance/qboPause").pausedOf(c, (tzRow && tzRow.timezone) || undefined),   // HONEST-4 item 2
+    autoSync: o.qbo_auto_sync === true,
     pendingCount: rows.length, pendingCents: rows.reduce((t, r) => t + Number(r.cents || 0), 0),
     gapFunds: gaps.ok ? [] : gaps.funds, noDeposit: !gaps.ok && gaps.depositAccount === false,
     sentEver: ever.gifts > 0, lastSentAt: ever.lastAt,
@@ -60,6 +63,11 @@ async function connectionsFor(deps, orgId, { now = null, skipChecks = false } = 
   const [org] = await deps.query("SELECT org_kind, qbo_auto_sync FROM orgs WHERE id=?", [orgId]);
   const demo = require("../../orgKind").isDemoOrg(org);   // HONEST-2 item 1: a demo's connections are examples
   const checks = skipChecks ? {} : await CK.recentChecks(deps.query, orgId);
+  // HONEST-4 item 1: each card's proof (its last real activity, what moved in 30 days), from its own rows.
+  const PF = require("./proof");
+  const act = await PF.realActivity(deps.query, orgId);
+  const [tzRow] = await deps.query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
+  const tz = (tzRow && tzRow.timezone) || "America/New_York";
   for (const card of body.cards) {
     const oauthReady = card.oauthProvider ? ready[card.oauthProvider] !== false : null;
     card.flow = flowOf(card, { today, qbo, demo, oauthReady });
@@ -67,7 +75,15 @@ async function connectionsFor(deps, orgId, { now = null, skipChecks = false } = 
     card.reasons = CK.reasonsOf(card, { demo, oauthReady, now, qbo: isQbo ? qbo : null, qboAutoSync: isQbo ? org && org.qbo_auto_sync === true : null });
     if (isQbo && skipChecks) Object.defineProperty(card, "_qbo", { value: qbo, enumerable: false });
     card.checks = checks[card.id] || [];
-    card.badge = CK.badgeOf(card, { reasons: card.reasons, checks: card.checks, now });
+    card.proof = PF.proofOf(card, { demo, act: act[card.id] || null, tz });
+    card.example = !!(card.proof && card.proof.example);
+    if (card.example && card.flow) card.flow = { ...card.flow, example: true };
+    card.badge = CK.badgeOf(card, { reasons: card.reasons, checks: card.checks, now, example: card.example });
+  }
+  // HONEST-4 item 6: a 30-day figure that moved since the last check says why.
+  if (!skipChecks) {
+    const why = await require("./weekWhy").monthWhys(deps.query, orgId, body.cards, { now: now || new Date() }).catch(() => ({}));
+    for (const card of body.cards) if (why[card.id] && card.proof) card.proof.moved30.why = why[card.id];
   }
   const sum = summarize(body.cards);
   // HONEST-3 item 2: when a connection needs someone, whether anyone will be emailed about it.

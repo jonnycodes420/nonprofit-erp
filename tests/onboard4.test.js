@@ -187,8 +187,17 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
       const u = new URL(req.url, "http://x"), send = (c, j) => { res.writeHead(c, { "Content-Type": "application/json" }); res.end(JSON.stringify(j)); };
       if (u.pathname === "/users/me") return send(200, { resource: { uri: "https://api.calendly.com/users/u1" } });
       if (u.pathname === "/event_types") return send(200, { collection: [{ uri: "et1", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call" }] });
-      if (u.pathname === "/event_type_available_times") return send(200, { collection: [
-        { status: "available", start_time: "2026-12-01T15:30:00Z", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call/2026-12-01T15:30:00Z" }] });
+      if (u.pathname === "/event_type_available_times") {
+        // HONEST-4 item 7: Calendly refuses a span over a week, so the stand-in does too, and counts each read.
+        const a = Date.parse(u.searchParams.get("start_time")), z = Date.parse(u.searchParams.get("end_time"));
+        stub.reads = (stub.reads || 0) + 1;
+        if (stub.fail) return send(stub.fail, { message: "stand-in failure" });
+        if (z - a > 7 * 86400000) return send(400, { message: "date range can be no greater than 1 week" });
+        const all = [{ status: "available", start_time: "2026-12-01T15:30:00Z", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call/2026-12-01T15:30:00Z" },
+          { status: "available", start_time: "2026-12-16T19:00:00Z", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call/2026-12-16T19:00:00Z" },
+          { status: "available", start_time: "2027-01-06T16:00:00Z", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call/2027-01-06T16:00:00Z" }];
+        return send(200, { collection: all.filter(x => Date.parse(x.start_time) >= a && Date.parse(x.start_time) < z) });
+      }
       if (u.pathname === "/invitees") { stub.posted = (stub.posted || 0) + 1; return send(201, { resource: {} }); }
       send(404, {});
     });
@@ -198,8 +207,18 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
     TIMES._reset();
     const at = new Date("2026-11-27T15:00:00Z");   // a Friday: the next weekdays are Mon Nov 30 to Fri Dec 4
     const t = await TIMES.times(at);
-    ok("§4 the next five weekdays, Eastern, with the open time read as 10:30 AM on Tue, Dec 1", t.source === "calendly" && t.days.map(d => d.date).join(",") === "2026-11-30,2026-12-01,2026-12-02,2026-12-03,2026-12-04"
-      && t.days[1].slots.length === 1 && t.days[1].slots[0].time === "10:30" && t.days[1].slots[0].ampm === "AM", t.days && t.days.map(d => d.slots.length));
+    // HONEST-4 item 7 (W-1126-Integrations-03): three weeks, read a week per request. HOW IT GOES RED: on
+    // main the card showed five weekdays, and the 16 Dec time was never on it.
+    ok("§4 three weeks of weekdays (Nov 30 to Dec 18), Eastern, with the open time read as 10:30 AM on Tue, Dec 1", t.source === "calendly" && t.days.length === 15
+      && t.days[0].date === "2026-11-30" && t.days[14].date === "2026-12-18" && t.days[1].slots.length === 1 && t.days[1].slots[0].time === "10:30" && t.days[1].slots[0].ampm === "AM"
+      && t.days.find(d => d.date === "2026-12-16").slots[0].time === "2:00", t.days && t.days.map(d => d.date + ":" + d.slots.length));
+    ok("§4 …asked a week per request (three reads, none over a week), and a day with no times is listed with none",
+      stub.reads === 3 && t.days.find(d => d.date === "2026-12-02").slots.length === 0 && t.more === true, stub.reads);
+    const t2 = await TIMES.times(at);
+    ok("§4 a second look draws from the cache: no new read", stub.reads === 3 && t2.days.length === 15, stub.reads);
+    const later = await TIMES.times(at, { page: 1 });
+    ok("§4 Later dates: the next three weeks (Dec 21 to Jan 8), with the Jan 6 time on it", later.source === "calendly" && later.days[0].date === "2026-12-21"
+      && later.days[14].date === "2027-01-08" && later.days.find(d => d.date === "2027-01-06").slots.length === 1, later.days && later.days.map(d => d.date));
     const open = await TIMES.book({ start: "2026-12-01T15:30:00Z", name: "Rowan Pike", email: "rowan@cedar-hollow.onb4.example.org" }, at);
     ok("§4 booking that time opens Calendly's own page for it, her name and email filled in, and books nothing itself", !!open.open && !stub.posted
       && open.open.startsWith("https://calendly.com/jonathan-stewardapp/steward-intro-call/2026-12-01T15:30:00Z?") && /name=Rowan\+Pike/.test(open.open) && /email=rowan%40/.test(open.open), open);
@@ -208,6 +227,15 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
     process.env.CALENDLY_DIRECT_BOOK = "1";
     const direct = await TIMES.book({ start: "2026-12-01T15:30:00Z", name: "Rowan Pike", email: "rowan@cedar-hollow.onb4.example.org" }, at);
     ok("§4 with the scheduling API switched on, Calendly books it (one request) and the page says she's booked", direct.booked === true && stub.posted === 1, direct);
+    // HONEST-4 item 7: a read Calendly refuses says so at once, with the calendar's link, never the embed.
+    TIMES._reset(); stub.fail = 503;
+    const warn = console.warn, warned = []; console.warn = m => warned.push(String(m));
+    const t0 = process.hrtime.bigint();
+    const failed = await TIMES.times(at);
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    console.warn = warn; stub.fail = 0;
+    ok("§4 when Calendly can't be read: unavailable with the calendar link, in under a second, the status logged",
+      failed.source === "unavailable" && /^https:\/\/calendly\.com\//.test(failed.link || "") && ms < 1000 && warned.some(w => /status 503/.test(w)), { failed, ms, warned });
     for (const [k, v] of [["CALENDLY_API_TOKEN", keep.t], ["CALENDLY_API_BASE", keep.b], ["CALENDLY_DIRECT_BOOK", keep.d]]) { if (v == null) delete process.env[k]; else process.env[k] = v; }
     TIMES._reset();
     await new Promise(r => stub.close(r));
@@ -229,7 +257,7 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
       const out = {};
       for (const [w, h] of [[1440, 900], [1280, 800]]) {
         const pg = await b.newPage({ viewport: { width: w, height: h } });
-        await pg.route("**/public/book/times", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: "calendly", days }) }));
+        await pg.route("**/public/book/times*", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: "calendly", days }) }));
         await pg.goto(APP + "/book", { waitUntil: "load" });
         await pg.waitForSelector("[data-book-slot]", { timeout: 15000 }).catch(() => {});
         const box = await pg.locator("[data-book-button]").boundingBox().catch(() => null);

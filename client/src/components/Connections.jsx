@@ -44,6 +44,11 @@ const money = cents => {
 const DOT = { broken: T.gold700, quiet: T.gold600, healthy: T.greenDk, not_connected: T.ink3 };
 // HONEST-1: the detail's badge is the card's one flow, the same as the Settings card above it.
 const FLOW_DOT = { working: T.greenDk, waiting: T.ink, needs_you: T.gold700, not_connected: T.ink3, unavailable: T.ink3 };
+// HONEST-4 item 2: a reason's link lands on the control that fixes it, once the panel has drawn.
+const goTo = anchor => setTimeout(() => {
+  const el = typeof document !== "undefined" ? document.getElementById(anchor) : null;
+  if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); if (el.focus) el.focus(); }
+}, 450);
 const dotOf = c => c.flow ? FLOW_DOT[c.flow.state] : DOT[c.status];
 
 const shortDate = v => {
@@ -631,7 +636,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               ))}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
-          <div data-testid="connection-sentence" style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.flow ? <FlowSentence flow={c.flow} /> : c.sentence}</div>
+          <div data-testid="connection-sentence" style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.flow ? <FlowSentence flow={c.flow} onFix={goTo} /> : c.sentence}</div>
 
           {/* FIX-10 D — THE TWO THINGS INSIDE THE STRIPE CARD. Stripe used to
               be two cards, both labelled Stripe, both offering "Connect", and
@@ -853,6 +858,9 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
             </>}
           </div>
           {c.heldSentence && <div style={{ fontSize: 12.5, color: T.gold700, marginTop: 6 }}>{c.heldSentence}</div>}
+          {/* HONEST-4 item 1: the panel says the same proof as the card: the last real activity, and what moved. */}
+          {c.proof && <div data-testid="connection-proof" data-example={c.proof.example ? "1" : "0"} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, marginTop: 8 }}>
+            {c.proof.lastWords} · {c.proof.moved30.words}{c.proof.moved30.why ? <span data-testid="proof-why"> · {c.proof.moved30.why}</span> : null}</div>}
           {/* HONEST-3 item 1: the daily check's last three runs, with what each one read. */}
           {c.connected && c.badge && c.badge.state !== "file" && (
             <div data-testid="connection-checks" style={{ marginTop: 10, borderTop: "1px solid " + T.bg2, paddingTop: 8 }}>
@@ -975,7 +983,8 @@ const sinceWord = ts => {
   return "synced " + t.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 // HONEST-1: a connection's state is its `flow`, computed once on the server (server/connections/status.js).
-const statusOf = c => c.flow ? c.flow.state : c.status === "broken" || c.status === "quiet" ? "needs_you"
+// HONEST-4 item 3: an example (the demo's rows, sample rows) is never counted as a connection.
+const statusOf = c => c.badge && c.badge.state === "example" ? "example" : c.flow ? c.flow.state : c.status === "broken" || c.status === "quiet" ? "needs_you"
   : c.connected ? "working" : "not_connected";
 const sectionOf = c => c.kind === "email_marketing" ? "marketing" : c.kind === "bookkeeping" ? "books"
   : c.kind === "pos" ? "pos" : "giving";
@@ -1021,8 +1030,9 @@ function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
         </div>
         <div data-testid="conn-status" style={{ display: "flex", gap: 7, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, flexShrink: 0, boxSizing: "border-box",
-            background: att ? T.gold600 : bucket === "working" ? T.ink : "transparent",
-            border: bucket === "waiting" ? "1.5px solid " + T.ink : card.status === "not_connected" ? "1.5px solid " + T.ink3 : "none" }} />
+            // HONEST-4 item 1: the dot is the action colour only when the status function says Connected.
+            background: att ? T.gold600 : badge && badge.state === "connected" ? T.greenDk : bucket === "working" && !badge ? T.ink : "transparent",
+            border: bucket === "waiting" ? "1.5px solid " + T.ink : card.status === "not_connected" || card.status === "example" ? "1.5px solid " + T.ink3 : "none" }} />
           <span data-testid="conn-badge" data-state={badge ? badge.state : card.status} title={badge ? badge.definition : undefined}
             style={{ fontSize: 12, fontWeight: 700, color: att ? T.gold700 : card.status === "not_connected" ? T.ink3 : T.ink }}>
             {badge ? badge.label : STATUS_WORD[card.status]}</span>
@@ -1030,8 +1040,10 @@ function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
           {bucket === "working" && !card.flow && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
         </div>
         {card.flow && card.status !== "not_connected"
-          ? <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink, lineHeight: 1.5, marginTop: 4 }}><FlowSentence flow={card.flow} /></div>
+          ? <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink, lineHeight: 1.5, marginTop: 4 }}><FlowSentence flow={card.flow} onFix={onButton ? anchor => { if (!open) onButton(); goTo(anchor); } : null} /></div>
           : card.reason && <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink3, lineHeight: 1.5, marginTop: 4 }}>{card.reason}</div>}
+        {card.proof && <div data-testid="conn-proof" data-example={card.proof.example ? "1" : "0"} style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>
+          {card.proof.lastWords} · {card.proof.moved30.words}{card.proof.moved30.why ? <span data-testid="proof-why"> · {card.proof.moved30.why}</span> : null}</div>}
         {card.note}
       </div>
     </div>
@@ -1114,10 +1126,13 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
       reason = stripe.checked ? "Stripe setup isn't finished. Stripe cannot take gifts on it until it is." : "Steward could not check with Stripe just now.";
     }
     let button;
+    // HONEST-4 item 6 (F20): a connected row opens its own panel, its proof and checks first, and
+    // the giving-pages setup after; it never opens on Connect.
     const detail = () => <>
-      {c.kind === "own_stripe" && paymentsPanel}
+      {c.kind === "own_stripe" && !c.connected && paymentsPanel}
       <ConnectionsView key={nonce} isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate} onlyIds={[c.id]} bare
         mappings={c.kind === "bookkeeping" ? "books" : c.kind === "pos" ? "pos" : null} />
+      {c.kind === "own_stripe" && c.connected && paymentsPanel}
       {c.kind === "source" && giving(null)}
     </>;
     if (status === "not_connected") {
@@ -1132,7 +1147,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
       const fix = status === "attention" || status === "needs_you";
       const stepLabel = c.flow && c.flow.step && c.flow.step.to ? c.flow.step.label : null;
       button = { kind: fix ? "fix" : "manage", label: stepLabel && status !== "working" ? stepLabel : fix ? "Fix" : "Manage", opens: true,
-        onClick: () => (status === "attention" && c.kind === "own_stripe" && stripe && stripe.checked && onConnectStripe) ? onConnectStripe() : toggle(key),
+        onClick: () => (status === "attention" && c.kind === "own_stripe" && !c.connected && stripe && stripe.checked && onConnectStripe) ? onConnectStripe() : toggle(key),
         detail: c.kind === "statements" ? () => giving(null) : detail };
       if (c.kind === "statements") button = { ...button, label: stmt.opening ? "Opening…" : "Upload", opens: false, onClick: stmt.open, detail: null };   // POLISH-15 item 5
     }
@@ -1146,7 +1161,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
       icon: c.kind === "own_stripe" ? "stripe" : c.kind === "source" || c.kind === "statements" ? key : c.kind,
       name: c.label, line: c.subtitle, status, badge: status === "attention" ? { state: "attention", label: "Needs attention", reason: null } : c.badge,
       reason: reason || (c.kind === "statements" ? lastFileLine(c) : "") || (isFile && c.flow && c.connected ? c.flow.sentence : ""),
-      synced: sinceWord(c.lastSyncedAt || c.lastSentAt || c.lastGiftDate), button });
+      synced: sinceWord(c.lastSyncedAt || c.lastSentAt || c.lastGiftDate), button, proof: c.proof || null });
   }
   // DONORBOX HAS NO ADAPTER (LANDING-3). It is listed because people ask for
   // it, and it says what is true: its export comes in as a statement.
@@ -1166,7 +1181,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     const inboxBadge = badges.find(b => b.state === "attention") || badges[0] || null;
     cards.push({ key: "inbox", section: "inbox", icon: "inbox", name: "Gmail and Outlook",
       line: "Emails and meetings with people on file land on their timeline. Each person connects their own.",
-      badge: inboxBadge, status: inboxBadge && inboxBadge.state === "attention" ? "attention" : st, reason: broken ? broken.lastError : st === "connected" ? `Connected as ${conn.map(p => p.address).filter(Boolean).join(", ")}.` : "",
+      badge: inboxBadge, status: inboxBadge && inboxBadge.state === "example" ? "example" : inboxBadge && inboxBadge.state === "attention" ? "attention" : st, reason: broken ? broken.lastError : st === "connected" ? `Connected as ${conn.map(p => p.address).filter(Boolean).join(", ")}.` : "",
       synced: sinceWord(last), note: privacy && privacy.on ? <PrivacyLine data={privacy} /> : null,
       button: { kind: st === "attention" ? "fix" : st === "connected" ? "manage" : "connect", label: st === "attention" ? "Fix" : st === "connected" ? "Manage" : "Connect",
         opens: true, onClick: () => toggle("inbox"),
@@ -1217,7 +1232,8 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
         opens: true, onClick: () => toggle("webhooks"), detail: hookDetail } });
     const zap = eps.filter(e => /zapier\.com/i.test(e.url || ""));
     cards.push({ key: "zapier", section: "api", icon: "zapier", name: "Zapier",
-      line: "Start a Zap when a gift comes in, or record one from somewhere else, with an API key.",
+      // HONEST-4 item 5: Zapier as Zapier: what its app triggers and does, never each app it reaches.
+      line: "Zapier: connect to 6,000+ apps. Starts a Zap on New gift, New person or Stage changed; can Create person, Record gift or Add note.",
       status: zap.length ? "connected" : "not_connected",
       reason: zap.length ? `${zap.length} ${zap.length === 1 ? "Zap is" : "Zaps are"} listening.` : "",
       button: { kind: zap.length ? "manage" : "connect", label: zap.length ? "Manage" : "Connect", opens: true, onClick: () => toggle("zapier"),
